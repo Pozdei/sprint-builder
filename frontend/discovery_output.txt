@@ -1,0 +1,87 @@
+
+======================================================================
+1. ПОИСК КАСТОМНОГО ПОЛЯ 'Ответственный'
+======================================================================
+  customfield_10105         | Ответственный | custom=True
+  customfield_12407         | Ответственное подразделение | custom=True
+  customfield_11604         | BusinessOwner | custom=True
+  customfield_10198         | Ответственный | custom=True
+  customfield_11373         | Ответственный | custom=True
+  customfield_10142         | Ответственный | custom=True
+
+======================================================================
+2. НУЖНЫЕ ДОСКИ И ИХ СТАТУСЫ
+======================================================================
+
+--- Board: Serial (id=1665, type=kanban) ---
+  Колонка: Бэклог                    -> status_ids: [10244, 10776]
+  Колонка: К выполнению              -> status_ids: [10359]
+  Колонка: Дизайн                    -> status_ids: [11864, 10700, 11863]
+  Колонка: В разработке              -> status_ids: [10704, 10705, 10747, 10064]
+  Колонка: тестирование              -> status_ids: [10808, 10084]
+  Колонка: к релизу                  -> status_ids: [10812, 10778]
+  Колонка: готово                    -> status_ids: [10065, 10299, 10078]
+
+--- Board: Purchase Order Management (id=1896, type=kanban) ---
+  Колонка: Бэклог                    -> status_ids: [10244, 10776]
+  Колонка: К выполнению              -> status_ids: [10359]
+  Колонка: Дизайн                    -> status_ids: [11864, 11863, 10700]
+  Колонка: В разработке              -> status_ids: [10704, 10705, 10747, 10064]
+  Колонка: Тестирование              -> status_ids: [10808, 10084]
+  Колонка: к релизу                  -> status_ids: [10812, 10778]
+  Колонка: готово                    -> status_ids: [10065, 10299, 10078]
+
+--- Board: Retail Wms (id=1995, type=kanban) ---
+  Колонка: Бэклог                    -> status_ids: []
+  Колонка: К выполнению              -> status_ids: [10776, 10244]
+  Колонка: Анализ                    -> status_ids: [10359, 10064]
+  Колонка: К Дизайну                 -> status_ids: [11864]
+  Колонка: Дизайн                    -> status_ids: [10700]
+  Колонка: Дизайн-Ревью              -> status_ids: [11863]
+  Колонка: Готов к разработке        -> status_ids: [10704]
+  Колонка: Разработка                -> status_ids: [10705, 10747]
+  Колонка: К тестированию            -> status_ids: [10808]
+  Колонка: Тестирование              -> status_ids: [10084]
+  Колонка: Готово к релизу           -> status_ids: [10778]
+  Колонка: Готово                    -> status_ids: [10065, 10299, 10078, 10812]
+
+--- Board: Space (id=3296, type=kanban) ---
+  Колонка: Бэклог                    -> status_ids: []
+  Колонка: К выполнению              -> status_ids: [10776, 10244]
+  Колонка: Анализ                    -> status_ids: [10359, 10064]
+  Колонка: Дизайн                    -> status_ids: [11864, 10700]
+  Колонка: Дизайн-ревью              -> status_ids: [11863]
+  Колонка: Разработка                -> status_ids: [10704, 10705]
+  Колонка: Тестирование              -> status_ids: [10084, 10808]
+  Колонка: Код-ревью                 -> status_ids: [10747]
+  Колонка: Готово к Релизу           -> status_ids: [10778]
+  Колонка: Готово                    -> status_ids: [10065, 10299, 10078, 10812]
+
+======================================================================
+3. ВСЕ СТАТУСЫ ПРОЕКТА (id -> name)
+======================================================================
+  10064  | В работе                       | category=indeterminate
+  10065  | Отменено                       | category=done
+  10078  | Завершено                      | category=done
+  10084  | Тестирование                   | category=indeterminate
+  10244  | Создана                        | category=new
+  10299  | Выполнено                      | category=done
+  10359  | Анализ                         | category=indeterminate
+  10700  | Дизайн                         | category=indeterminate
+  10704  | Готов к разработке             | category=new
+  10705  | В разработке                   | category=indeterminate
+  10747  | Код-ревью                      | category=indeterminate
+  10776  | Новый                          | category=new
+  10778  | Готово к релизу                | category=indeterminate
+  10808  | К тестированию                 | category=indeterminate
+  10812  | Перенесено на PROD             | category=indeterminate
+  11863  | Дизайн-ревью                   | category=indeterminate
+  11864  | К дизайну                      | category=new
+
+======================================================================
+4. ПОИСК accountId ДЛЯ КОМАНДЫ
+======================================================================
+  'Badamova Aida' -> displayName='Aida Badamova' email='badamova.ae@lime-shop.com' accountId=712020:4eef6bdf-ac1f-4ef0-821d-836758c09514
+  'Aleksey Strazdin' -> displayName='Aleksey Strazdin' email='strazdin.al@lime-shop.com' accountId=712020:abca6d44-4a90-4a35-951b-fa9bf2811287
+  'Aleksey Batrakov' -> displayName='Aleksey Batrakov' email='batrakov.ai@lime-shop.com' accountId=712020:ab0ca3ac-138c-4f14-b983-6211fc0bb850
+  'Amanov Ruslan' -> displayName='Ruslan Amanov' email='amanov.rm@lime-shop.com' accountId=712020:02f9154d-d25a-4a6b-9226-4d092c3970c7
