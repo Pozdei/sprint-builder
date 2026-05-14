@@ -1,12 +1,14 @@
 import { useState } from "react";
-import type { TeamMember } from "../../types/api";
+import type { TeamMemberOut } from "../../types/api";
 
 interface Props {
-  value: Record<string, TeamMember>;
-  onChange: (next: Record<string, TeamMember>) => void;
+  value: Record<string, TeamMemberOut>;
+  onChange: (next: Record<string, TeamMemberOut>) => void;
+  /** Список доступных ролей (из roles конфига) — для dropdown. */
+  roleOptions: { name: string; display_name: string }[];
 }
 
-export function TeamEditor({ value, onChange }: Props) {
+export function TeamEditor({ value, onChange, roleOptions }: Props) {
   const [accountIds, setAccountIds] = useState<string[]>(() => Object.keys(value));
 
   const handleAccountIdChange = (i: number, newId: string) => {
@@ -14,7 +16,7 @@ export function TeamEditor({ value, onChange }: Props) {
     const newIds = [...accountIds];
     newIds[i] = newId;
     setAccountIds(newIds);
-    const next: Record<string, TeamMember> = {};
+    const next: Record<string, TeamMemberOut> = {};
     newIds.forEach((id, idx) => {
       const source = idx === i ? oldId : id;
       next[id] = value[source];
@@ -22,7 +24,11 @@ export function TeamEditor({ value, onChange }: Props) {
     onChange(next);
   };
 
-  const handleFieldChange = (i: number, field: "jira_name" | "file_name", v: string) => {
+  const handleFieldChange = (
+    i: number,
+    field: "jira_name" | "file_name" | "role",
+    v: string,
+  ) => {
     const id = accountIds[i];
     onChange({ ...value, [id]: { ...value[id], [field]: v } });
   };
@@ -30,7 +36,15 @@ export function TeamEditor({ value, onChange }: Props) {
   const handleAdd = () => {
     const newId = `новый_account_id_${Date.now()}`;
     setAccountIds([...accountIds, newId]);
-    onChange({ ...value, [newId]: { jira_name: "", file_name: "" } });
+    onChange({
+      ...value,
+      [newId]: {
+        id: 0,
+        jira_name: "",
+        file_name: "",
+        role: roleOptions[0]?.name || "analyst",
+      },
+    });
   };
 
   const handleRemove = (i: number) => {
@@ -50,6 +64,7 @@ export function TeamEditor({ value, onChange }: Props) {
             <th className="text-left px-2 py-1 border-b font-semibold">accountId Jira</th>
             <th className="text-left px-2 py-1 border-b font-semibold">Имя в Jira</th>
             <th className="text-left px-2 py-1 border-b font-semibold">Имя в файле</th>
+            <th className="text-left px-2 py-1 border-b font-semibold">Роль</th>
             <th className="px-2 py-1 border-b w-12"></th>
           </tr>
         </thead>
@@ -80,6 +95,19 @@ export function TeamEditor({ value, onChange }: Props) {
                   onChange={(e) => handleFieldChange(i, "file_name", e.target.value)}
                   className="w-full px-2 py-1 border rounded"
                 />
+              </td>
+              <td className="px-2 py-1">
+                <select
+                  value={value[id]?.role || ""}
+                  onChange={(e) => handleFieldChange(i, "role", e.target.value)}
+                  className="w-full px-2 py-1 border rounded bg-white"
+                >
+                  {roleOptions.map((r) => (
+                    <option key={r.name} value={r.name}>
+                      {r.display_name}
+                    </option>
+                  ))}
+                </select>
               </td>
               <td className="px-2 py-1 text-center">
                 <button

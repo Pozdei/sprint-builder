@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import router
+from app.api import router
 from app.db.seed import seed_default_config
 from app.db.session import SessionLocal
 

@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getDefaultConfig, updateConfig } from "../api/client";
 import { DictEditor } from "../components/settings/DictEditor";
+import { PseudoTasksEditor } from "../components/settings/PseudoTasksEditor";
+import { RolesEditor } from "../components/settings/RolesEditor";
+import { RoleStatusBucketsEditor } from "../components/settings/RoleStatusBucketsEditor";
+import { RoleStatusHoursEditor } from "../components/settings/RoleStatusHoursEditor";
 import { StringListEditor } from "../components/settings/StringListEditor";
 import { TeamEditor } from "../components/settings/TeamEditor";
 import type { ConfigOut } from "../types/api";
 
-interface Props {
-  onSaved?: () => void;
-}
-
-export function SettingsPage({ onSaved }: Props) {
+export function SettingsPage() {
   const [config, setConfig] = useState<ConfigOut | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -23,17 +23,36 @@ export function SettingsPage({ onSaved }: Props) {
       .finally(() => setLoading(false));
   }, []);
 
+  // Список уникальных бакетов — для подсказок в редакторе маппинга
+  const knownBuckets = useMemo(() => {
+    if (!config) return [];
+    const set = new Set<string>();
+    config.role_status_buckets.forEach((r) => set.add(r.bucket));
+    // Добавим зарезервированные для псевдо-задач
+    ["Руководство", "Отсутствие", "Обучение"].forEach((b) => set.add(b));
+    return Array.from(set).sort();
+  }, [config]);
+
   const handleSave = async () => {
     if (!config) return;
     setSaving(true);
     setError(null);
     try {
-      // Отправляем все поля кроме id и is_default
-      const { id, is_default: _isDef, ...body } = config;
+      // Передаём team как {accountId: {jira_name, file_name, role}}
+      const teamForApi: Record<string, { jira_name: string; file_name: string; role: string }> = {};
+      Object.entries(config.team).forEach(([accId, m]) => {
+        teamForApi[accId] = {
+          jira_name: m.jira_name,
+          file_name: m.file_name,
+          role: m.role,
+        };
+      });
+
+      const { id, is_default: _isDef, team: _t, ...rest } = config;
+      const body = { ...rest, team: teamForApi };
       const updated = await updateConfig(id, body);
       setConfig(updated);
       setSavedAt(new Date());
-      onSaved?.();
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -46,14 +65,15 @@ export function SettingsPage({ onSaved }: Props) {
   }
   if (error && !config) {
     return (
-      <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg p-3">
-        Не удалось загрузить конфиг: {error}
+      <div className="max-w-7xl mx-auto px-6 py-6">
+        <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg p-3">
+          Не удалось загрузить конфиг: {error}
+        </div>
       </div>
     );
   }
   if (!config) return null;
 
-  // Хелпер для частичного обновления — вместо setConfig({...config, X})
   const update = <K extends keyof ConfigOut>(key: K, val: ConfigOut[K]) =>
     setConfig({ ...config, [key]: val });
 
@@ -77,7 +97,7 @@ export function SettingsPage({ onSaved }: Props) {
               className="w-full px-2 py-1 border rounded"
             />
           </Field>
-          <Field label="Часов на спринт на человека">
+          <Field label="Часов на человека">
             <input
               type="number"
               value={config.hours_per_person}
@@ -91,6 +111,22 @@ export function SettingsPage({ onSaved }: Props) {
               value={config.default_task_hours}
               onChange={(e) => update("default_task_hours", Number(e.target.value))}
               className="w-full px-2 py-1 border rounded"
+            />
+          </Field>
+          <Field label="Часы лидов на руководство">
+            <input
+              type="number"
+              value={config.leader_hours}
+              onChange={(e) => update("leader_hours", Number(e.target.value))}
+              className="w-full px-2 py-1 border rounded"
+            />
+          </Field>
+          <Field label="Добавлять «Руководство» лидам автоматически">
+            <input
+              type="checkbox"
+              checked={config.leader_management_enabled}
+              onChange={(e) => update("leader_management_enabled", e.target.checked)}
+              className="mt-2"
             />
           </Field>
           <Field label="Поле Sprint (customfield_)">
@@ -112,8 +148,26 @@ export function SettingsPage({ onSaved }: Props) {
         </div>
       </Section>
 
+      <Section title="Роли">
+        <p className="text-xs text-gray-500 mb-2">
+          Чек-бокс «В спринт» включает роль для формирования. «Лид» — флаг для авто-добавления
+          «Руководство».
+        </p>
+        <RolesEditor
+          value={config.roles}
+          onChange={(v) => update("roles", v)}
+        />
+      </Section>
+
       <Section title="Команда">
-        <TeamEditor value={config.team} onChange={(v) => update("team", v)} />
+        <p className="text-xs text-gray-500 mb-2">
+          Один человек — одна роль. Если человек в двух ролях — заведи две записи с одним accountId.
+        </p>
+        <TeamEditor
+          value={config.team}
+          onChange={(v) => update("team", v)}
+          roleOptions={config.roles.map((r) => ({ name: r.name, display_name: r.display_name }))}
+        />
       </Section>
 
       <Section title="Доски (Jira board id)">
@@ -133,26 +187,25 @@ export function SettingsPage({ onSaved }: Props) {
         <StringListEditor
           value={config.extra_components}
           onChange={(v) => update("extra_components", v)}
-          placeholder="например: 3PL integration hub"
         />
       </Section>
 
-      <Section title="Маппинг статусов → бакет">
+      <Section title="Маппинг статусов на бакеты (по ролям)">
         <p className="text-xs text-gray-500 mb-2">
-          Статус Jira → к какой фазе в файле относится.
+          Один статус может относиться к разным бакетам у разных ролей. Например,
+          «В разработке» = «Разработка» у разработчика и «Тестирование» у аналитика.
         </p>
-        <DictEditor
-          value={config.status_bucket}
-          onChange={(v) => update("status_bucket", v)}
-          keyLabel="Статус Jira"
-          valueLabel="Бакет"
-          valueOptions={["Анализ", "Тестирование"]}
+        <RoleStatusBucketsEditor
+          value={config.role_status_buckets}
+          onChange={(v) => update("role_status_buckets", v)}
+          roles={config.roles}
+          buckets={knownBuckets}
         />
       </Section>
 
       <Section title="Приоритеты статусов">
         <p className="text-xs text-gray-500 mb-2">
-          Чем меньше число — тем раньше задача попадает в спринт.
+          Чем меньше число — тем раньше задача попадает в спринт. Глобально на статус.
         </p>
         <DictEditor
           value={config.status_priority}
@@ -163,39 +216,48 @@ export function SettingsPage({ onSaved }: Props) {
         />
       </Section>
 
-      <Section title="Поля часов по бакету">
+      <Section title="Дефолтные часы (роль, статус)">
         <p className="text-xs text-gray-500 mb-2">
-          Какое customfield считать оценкой для каждого бакета.
+          Если у задачи нет оценки, применяется этот дефолт. Например, для пары
+          (Лид разработки, Код-ревью) = 1 — лид тратит на ревью 1ч по умолчанию.
         </p>
-        <DictEditor
-          value={config.bucket_hours_field}
-          onChange={(v) => update("bucket_hours_field", v)}
-          keyLabel="Бакет"
-          valueLabel="Customfield"
+        <RoleStatusHoursEditor
+          value={config.role_status_default_hours}
+          onChange={(v) => update("role_status_default_hours", v)}
+          roles={config.roles}
         />
       </Section>
 
-      <Section title="Поля часов по ролям">
+      <Section title="Поля часов в Jira по «категориям»">
         <p className="text-xs text-gray-500 mb-2">
-          Соответствие роль → customfield с часами. Пригодится для будущих ролей.
+          analyst → Время аналитика, tester → Время тестировщика, developer → Время разработчика.
+          Используется для оценки часов по бакету.
         </p>
         <DictEditor
           value={config.role_hours_fields}
           onChange={(v) => update("role_hours_fields", v)}
-          keyLabel="Роль"
+          keyLabel="Категория"
           valueLabel="Customfield"
         />
       </Section>
 
-      <Section title="Strict assignee buckets">
+      <Section title="Псевдо-задачи (отпуск, обучение, …)">
+        <PseudoTasksEditor
+          value={config.pseudo_tasks}
+          onChange={(v) => update("pseudo_tasks", v)}
+          team={config.team}
+        />
+      </Section>
+
+      <Section title="Терминальные статусы">
         <p className="text-xs text-gray-500 mb-2">
-          Бакеты, где владельцем задачи может быть только assignee из команды
-          (обычно пусто).
+          Статусы, в которых задача считается выполненной. Используется при закрытии
+          спринта для подсчёта % выполнения.
         </p>
         <StringListEditor
-          value={config.strict_assignee_buckets}
-          onChange={(v) => update("strict_assignee_buckets", v)}
-          placeholder="например: Тестирование"
+          value={config.terminal_statuses}
+          onChange={(v) => update("terminal_statuses", v)}
+          placeholder="например: Выполнено"
         />
       </Section>
 

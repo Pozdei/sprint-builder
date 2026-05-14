@@ -10,15 +10,19 @@ interface Props {
   tasks: TaskOut[];
 }
 
-// Цвет ячейки бакета — наглядно отделяет анализ от тестирования
 function bucketColor(bucket: string): string {
   if (bucket === "Тестирование") return "bg-blue-50 text-blue-800";
   if (bucket === "Анализ") return "bg-amber-50 text-amber-800";
+  if (bucket === "Дизайн") return "bg-pink-50 text-pink-800";
+  if (bucket === "Дизайн-ревью") return "bg-pink-100 text-pink-900";
+  if (bucket === "Разработка") return "bg-green-50 text-green-800";
+  if (bucket === "Код-ревью") return "bg-green-100 text-green-900";
+  if (bucket === "Руководство") return "bg-purple-50 text-purple-800";
+  if (bucket === "Отсутствие") return "bg-gray-100 text-gray-700";
   return "";
 }
 
 export function SprintTable({ tasks }: Props) {
-  // Описание колонок. В TanStack Table колонка = объект с accessorKey и header.
   const columns: ColumnDef<TaskOut>[] = [
     {
       accessorKey: "priority",
@@ -30,6 +34,9 @@ export function SprintTable({ tasks }: Props) {
       header: "Задача",
       cell: (info) => {
         const t = info.row.original;
+        if (t.is_pseudo) {
+          return <span className="text-gray-400 italic">(псевдо)</span>;
+        }
         return (
           <a
             href={t.url}
@@ -52,6 +59,15 @@ export function SprintTable({ tasks }: Props) {
       ),
     },
     { accessorKey: "owner_file_name", header: "Консультант" },
+    {
+      accessorKey: "role",
+      header: "Роль",
+      cell: (info) => {
+        const t = info.row.original;
+        if (t.is_pseudo) return <span className="text-gray-400">—</span>;
+        return <span className="text-xs text-gray-700">{String(info.getValue())}</span>;
+      },
+    },
     {
       accessorKey: "bucket",
       header: "Фаза",
@@ -101,12 +117,15 @@ export function SprintTable({ tasks }: Props) {
           <tbody>
             {table.getRowModel().rows.map((row) => {
               const t = row.original;
+              const rowClass = t.is_pseudo
+                ? "bg-gray-50 italic"
+                : t.partial_from
+                ? "bg-orange-50"
+                : "";
               return (
                 <tr
                   key={row.id}
-                  className={`border-b hover:bg-gray-50 ${
-                    t.partial_from ? "bg-orange-50" : ""
-                  }`}
+                  className={`border-b hover:bg-gray-100 ${rowClass}`}
                   title={t.partial_from ? `Переходящая, в Jira ${t.partial_from} ч` : ""}
                 >
                   {row.getVisibleCells().map((cell) => (

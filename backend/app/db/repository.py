@@ -1,6 +1,7 @@
 """Репозиторий конфига: CRUD-операции через SQLAlchemy.
 
-Эндпоинты работают только с этим модулем, не с моделями напрямую.
+Фаза 2: добавлены roles, role_status_buckets, role_status_default_hours, pseudo_tasks.
+Убраны bucket_hours_field и strict_assignee_buckets.
 """
 
 from sqlalchemy import select
@@ -9,16 +10,17 @@ from sqlalchemy.orm import Session, selectinload
 from app.db import models
 
 
-# Загружаем конфиг со ВСЕМИ дочерними таблицами одним запросом.
 _eager_config = [
-    selectinload(models.Config.team_members),
+    selectinload(models.Config.team_members).selectinload(models.TeamMember.pseudo_tasks),
     selectinload(models.Config.boards),
     selectinload(models.Config.components),
-    selectinload(models.Config.status_buckets),
     selectinload(models.Config.status_priorities),
-    selectinload(models.Config.bucket_hours_fields),
     selectinload(models.Config.role_hours_fields),
-    selectinload(models.Config.strict_assignee_buckets),
+    selectinload(models.Config.roles),
+    selectinload(models.Config.role_status_buckets),
+    selectinload(models.Config.role_status_default_hours),
+    selectinload(models.Config.pseudo_tasks),
+    selectinload(models.Config.terminal_statuses),
 ]
 
 
@@ -38,18 +40,10 @@ def get_default_config(db: Session) -> models.Config | None:
     )
 
 
-# -------------------- Перезапись связанных коллекций --------------------
-#
-# Из-за unique-индексов вида (config_id, bucket) нельзя просто .clear() и .append() —
-# SQLAlchemy сначала пытается INSERT новые, и они конфликтуют со старыми.
-# Поэтому везде явный flush() между удалением и вставкой:
-#   1) clear()  — пометили старые на удаление
-#   2) flush()  — выдали DELETE в БД
-#   3) append() новых — будут INSERT-ы при следующем flush/commit
-#
-# Без этого flush() порядок DELETE/INSERT не гарантирован.
+# -------------------- Перезапись коллекций (с flush между clear и insert) --------------------
 
 def upsert_team_members(db: Session, config: models.Config, items: list[dict]) -> None:
+    """items: список dict с jira_account_id, jira_name, file_name, role, sort_order."""
     config.team_members.clear()
     db.flush()
     for i, item in enumerate(items):
@@ -58,6 +52,7 @@ def upsert_team_members(db: Session, config: models.Config, items: list[dict]) -
                 jira_account_id=item["jira_account_id"],
                 jira_name=item["jira_name"],
                 file_name=item["file_name"],
+                role=item.get("role", "analyst"),
                 sort_order=item.get("sort_order", i),
             )
         )
@@ -79,30 +74,18 @@ def upsert_components(db: Session, config: models.Config, items: list[str]) -> N
         config.components.append(models.ConfigComponent(name=name))
 
 
-def upsert_status_buckets(db: Session, config: models.Config, items: dict[str, str]) -> None:
-    config.status_buckets.clear()
-    db.flush()
-    for status, bucket in items.items():
-        config.status_buckets.append(models.StatusBucket(jira_status=status, bucket=bucket))
-
-
-def upsert_status_priorities(db: Session, config: models.Config, items: dict[str, int]) -> None:
+def upsert_status_priorities(db: Session, config: models.Config,
+                              items: dict[str, int]) -> None:
     config.status_priorities.clear()
     db.flush()
     for status, prio in items.items():
-        config.status_priorities.append(models.StatusPriority(jira_status=status, priority=prio))
-
-
-def upsert_bucket_hours_fields(db: Session, config: models.Config, items: dict[str, str]) -> None:
-    config.bucket_hours_fields.clear()
-    db.flush()
-    for bucket, fid in items.items():
-        config.bucket_hours_fields.append(
-            models.BucketHoursField(bucket=bucket, customfield_id=fid)
+        config.status_priorities.append(
+            models.StatusPriority(jira_status=status, priority=prio)
         )
 
 
-def upsert_role_hours_fields(db: Session, config: models.Config, items: dict[str, str]) -> None:
+def upsert_role_hours_fields(db: Session, config: models.Config,
+                              items: dict[str, str]) -> None:
     config.role_hours_fields.clear()
     db.flush()
     for role, fid in items.items():
@@ -111,38 +94,106 @@ def upsert_role_hours_fields(db: Session, config: models.Config, items: dict[str
         )
 
 
-def upsert_strict_assignee_buckets(db: Session, config: models.Config, items: list[str]) -> None:
-    config.strict_assignee_buckets.clear()
+def upsert_roles(db: Session, config: models.Config, items: list[dict]) -> None:
+    """items: список dict с name, display_name, enabled, is_lead, sort_order."""
+    config.roles.clear()
     db.flush()
-    for bucket in items:
-        config.strict_assignee_buckets.append(models.StrictAssigneeBucket(bucket=bucket))
+    for i, item in enumerate(items):
+        config.roles.append(
+            models.Role(
+                name=item["name"],
+                display_name=item["display_name"],
+                enabled=item.get("enabled", True),
+                is_lead=item.get("is_lead", False),
+                sort_order=item.get("sort_order", i),
+            )
+        )
 
+
+def upsert_role_status_buckets(db: Session, config: models.Config,
+                                items: list[dict]) -> None:
+    """items: список dict с role, jira_status, bucket."""
+    config.role_status_buckets.clear()
+    db.flush()
+    for item in items:
+        config.role_status_buckets.append(
+            models.RoleStatusBucket(
+                role=item["role"],
+                jira_status=item["jira_status"],
+                bucket=item["bucket"],
+            )
+        )
+
+
+def upsert_role_status_default_hours(db: Session, config: models.Config,
+                                      items: list[dict]) -> None:
+    """items: список dict с role, jira_status, hours."""
+    config.role_status_default_hours.clear()
+    db.flush()
+    for item in items:
+        config.role_status_default_hours.append(
+            models.RoleStatusDefaultHours(
+                role=item["role"],
+                jira_status=item["jira_status"],
+                hours=item["hours"],
+            )
+        )
+
+
+def upsert_pseudo_tasks(db: Session, config: models.Config,
+                        items: list[dict]) -> None:
+    """items: список dict с member_id, name, bucket, hours, recurring, target_sprint_num.
+
+    Внимание: member_id должен соответствовать реальным id из team_members
+    в этом конфиге. Если пришёл несуществующий — будет ошибка FK.
+    """
+    config.pseudo_tasks.clear()
+    db.flush()
+    for item in items:
+        config.pseudo_tasks.append(
+            models.PseudoTask(
+                member_id=item["member_id"],
+                name=item["name"],
+                bucket=item["bucket"],
+                hours=item["hours"],
+                recurring=item.get("recurring", False),
+                target_sprint_num=item.get("target_sprint_num"),
+            )
+        )
+
+
+def upsert_terminal_statuses(db: Session, config: models.Config,
+                              items: list[str]) -> None:
+    """Заменить список терминальных статусов."""
+    config.terminal_statuses.clear()
+    db.flush()
+    for i, status in enumerate(items):
+        config.terminal_statuses.append(
+            models.TerminalStatus(jira_status=status, sort_order=i)
+        )
+
+
+# -------------------- Обновление конфига --------------------
 
 def update_config(db: Session, config_id: int, data: dict) -> models.Config | None:
-    """Полное обновление конфига одним вызовом."""
     config = get_config(db, config_id)
     if not config:
         return None
 
-    if "name" in data:
-        config.name = data["name"]
-    if "project_key" in data:
-        config.project_key = data["project_key"]
-    if "sprint_field" in data:
-        config.sprint_field = data["sprint_field"]
-    if "responsible_field" in data:
-        config.responsible_field = data["responsible_field"]
-    if "hours_per_person" in data:
-        config.hours_per_person = data["hours_per_person"]
-    if "default_task_hours" in data:
-        config.default_task_hours = data["default_task_hours"]
+    for field in ("name", "project_key", "sprint_field", "responsible_field",
+                  "hours_per_person", "default_task_hours",
+                  "leader_hours", "leader_management_enabled"):
+        if field in data:
+            setattr(config, field, data[field])
 
     if "team" in data:
+        # team — dict {accountId: {jira_name, file_name, role}}
         items = [
             {
                 "jira_account_id": acc_id,
                 "jira_name": info["jira_name"],
                 "file_name": info["file_name"],
+                "role": info.get("role", "analyst"),
             }
             for acc_id, info in data["team"].items()
         ]
@@ -150,45 +201,92 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
 
     if "boards" in data:
         upsert_boards(db, config, [
-            {"name": name, "jira_board_id": board_id}
-            for name, board_id in data["boards"].items()
+            {"name": name, "jira_board_id": bid}
+            for name, bid in data["boards"].items()
         ])
-
     if "extra_components" in data:
         upsert_components(db, config, data["extra_components"])
-    if "status_bucket" in data:
-        upsert_status_buckets(db, config, data["status_bucket"])
     if "status_priority" in data:
         upsert_status_priorities(db, config, data["status_priority"])
-    if "bucket_hours_field" in data:
-        upsert_bucket_hours_fields(db, config, data["bucket_hours_field"])
     if "role_hours_fields" in data:
         upsert_role_hours_fields(db, config, data["role_hours_fields"])
-    if "strict_assignee_buckets" in data:
-        upsert_strict_assignee_buckets(db, config, list(data["strict_assignee_buckets"]))
+
+    if "roles" in data:
+        upsert_roles(db, config, data["roles"])
+    if "role_status_buckets" in data:
+        upsert_role_status_buckets(db, config, data["role_status_buckets"])
+    if "role_status_default_hours" in data:
+        upsert_role_status_default_hours(db, config, data["role_status_default_hours"])
+    if "pseudo_tasks" in data:
+        upsert_pseudo_tasks(db, config, data["pseudo_tasks"])
+    if "terminal_statuses" in data:
+        upsert_terminal_statuses(db, config, data["terminal_statuses"])
 
     db.commit()
     db.refresh(config)
     return config
 
 
+# -------------------- Преобразование в dict для бизнес-логики --------------------
+
 def model_to_sprint_config_dict(config: models.Config) -> dict:
-    """Преобразовать ORM-объект в dict в формате SprintConfig."""
+    """ORM → dict в формате, ожидаемом сервисами и бизнес-логикой.
+
+    Структура расширена под фазу 2: вместо плоских team/status_bucket теперь
+    включает roles, role_status_buckets, role_status_default_hours, pseudo_tasks.
+    """
     return {
         "project_key": config.project_key,
         "sprint_field": config.sprint_field,
         "responsible_field": config.responsible_field,
         "hours_per_person": config.hours_per_person,
         "default_task_hours": config.default_task_hours,
+        "leader_hours": config.leader_hours,
+        "leader_management_enabled": config.leader_management_enabled,
         "team": {
-            tm.jira_account_id: {"jira_name": tm.jira_name, "file_name": tm.file_name}
+            tm.jira_account_id: {
+                "jira_name": tm.jira_name,
+                "file_name": tm.file_name,
+                "role": tm.role,
+                "id": tm.id,  # нужно для привязки pseudo_tasks
+            }
             for tm in sorted(config.team_members, key=lambda m: m.sort_order)
         },
         "boards": {b.name: b.jira_board_id for b in config.boards},
         "extra_components": [c.name for c in config.components],
-        "status_bucket": {sb.jira_status: sb.bucket for sb in config.status_buckets},
         "status_priority": {sp.jira_status: sp.priority for sp in config.status_priorities},
-        "bucket_hours_field": {bh.bucket: bh.customfield_id for bh in config.bucket_hours_fields},
         "role_hours_fields": {rh.role: rh.customfield_id for rh in config.role_hours_fields},
-        "strict_assignee_buckets": {sab.bucket for sab in config.strict_assignee_buckets},
+        "roles": [
+            {
+                "name": r.name,
+                "display_name": r.display_name,
+                "enabled": r.enabled,
+                "is_lead": r.is_lead,
+                "sort_order": r.sort_order,
+            }
+            for r in sorted(config.roles, key=lambda x: x.sort_order)
+        ],
+        "role_status_buckets": [
+            {"role": rsb.role, "jira_status": rsb.jira_status, "bucket": rsb.bucket}
+            for rsb in config.role_status_buckets
+        ],
+        "role_status_default_hours": [
+            {"role": rsdh.role, "jira_status": rsdh.jira_status, "hours": rsdh.hours}
+            for rsdh in config.role_status_default_hours
+        ],
+        "pseudo_tasks": [
+            {
+                "member_id": pt.member_id,
+                "name": pt.name,
+                "bucket": pt.bucket,
+                "hours": pt.hours,
+                "recurring": pt.recurring,
+                "target_sprint_num": pt.target_sprint_num,
+            }
+            for pt in config.pseudo_tasks
+        ],
+        "terminal_statuses": [
+            ts.jira_status
+            for ts in sorted(config.terminal_statuses, key=lambda x: x.sort_order)
+        ],
     }

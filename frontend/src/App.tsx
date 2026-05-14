@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { checkJira } from "./api/client";
+import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SprintPage } from "./pages/SprintPage";
 
@@ -8,7 +9,7 @@ type JiraStatus =
   | { kind: "ok"; name: string }
   | { kind: "error"; message: string };
 
-type Page = "sprint" | "settings";
+type Page = "sprint" | "history" | "settings";
 
 function App() {
   const [jiraStatus, setJiraStatus] = useState<JiraStatus>({ kind: "checking" });
@@ -30,6 +31,9 @@ function App() {
               <NavTab active={page === "sprint"} onClick={() => setPage("sprint")}>
                 Спринт
               </NavTab>
+              <NavTab active={page === "history"} onClick={() => setPage("history")}>
+                История
+              </NavTab>
               <NavTab active={page === "settings"} onClick={() => setPage("settings")}>
                 Настройки
               </NavTab>
@@ -40,6 +44,7 @@ function App() {
       </header>
 
       {page === "sprint" && <SprintPage jiraReady={jiraStatus.kind === "ok"} />}
+      {page === "history" && <HistoryPage />}
       {page === "settings" && <SettingsPage />}
     </div>
   );
