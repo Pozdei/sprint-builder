@@ -1,17 +1,21 @@
 """Репозиторий конфига: CRUD-операции через SQLAlchemy.
 
-Фаза 2: добавлены roles, role_status_buckets, role_status_default_hours, pseudo_tasks.
-Убраны bucket_hours_field и strict_assignee_buckets.
+Фаза 2.8: добавлен Person, team_member ссылается на person_id.
+Источник данных о человеке — Person (jira_account_id, jira_name, file_name),
+старые поля в team_members оставлены для совместимости и заполняются из Person.
 """
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.db import models
+from app.db import models, people_repository
 
 
 _eager_config = [
-    selectinload(models.Config.team_members).selectinload(models.TeamMember.pseudo_tasks),
+    selectinload(models.Config.team_members)
+        .selectinload(models.TeamMember.person),
+    selectinload(models.Config.team_members)
+        .selectinload(models.TeamMember.pseudo_tasks),
     selectinload(models.Config.boards),
     selectinload(models.Config.components),
     selectinload(models.Config.status_priorities),
@@ -28,27 +32,52 @@ def list_configs(db: Session) -> list[models.Config]:
     return list(db.scalars(select(models.Config).options(*_eager_config)).all())
 
 
+def list_configs_for_user(db: Session, owner_user_id: int) -> list[models.Config]:
+    return list(db.scalars(
+        select(models.Config)
+        .where(models.Config.owner_user_id == owner_user_id)
+        .order_by(models.Config.id)
+        .options(*_eager_config)
+    ).all())
+
+
 def get_config(db: Session, config_id: int) -> models.Config | None:
     return db.scalar(
         select(models.Config).where(models.Config.id == config_id).options(*_eager_config)
     )
 
 
-def get_default_config(db: Session) -> models.Config | None:
+def get_user_config_by_name(db: Session, owner_user_id: int, name: str) -> models.Config | None:
     return db.scalar(
-        select(models.Config).where(models.Config.is_default == True).options(*_eager_config)  # noqa: E712
+        select(models.Config)
+        .where(models.Config.owner_user_id == owner_user_id,
+               models.Config.name == name)
+        .options(*_eager_config)
     )
 
 
-# -------------------- Перезапись коллекций (с flush между clear и insert) --------------------
+# -------------------- Перезапись коллекций --------------------
 
 def upsert_team_members(db: Session, config: models.Config, items: list[dict]) -> None:
-    """items: список dict с jira_account_id, jira_name, file_name, role, sort_order."""
+    """items: список dict с jira_account_id, jira_name, file_name, role, sort_order.
+
+    Под капотом находим/создаём Person в справочнике пользователя.
+    """
     config.team_members.clear()
     db.flush()
+    owner_id = config.owner_user_id
     for i, item in enumerate(items):
+        person = None
+        if owner_id is not None:
+            person = people_repository.get_or_create_person(
+                db, owner_id,
+                jira_account_id=item["jira_account_id"],
+                jira_name=item["jira_name"],
+                file_name=item["file_name"],
+            )
         config.team_members.append(
             models.TeamMember(
+                person_id=person.id if person else None,
                 jira_account_id=item["jira_account_id"],
                 jira_name=item["jira_name"],
                 file_name=item["file_name"],
@@ -95,7 +124,6 @@ def upsert_role_hours_fields(db: Session, config: models.Config,
 
 
 def upsert_roles(db: Session, config: models.Config, items: list[dict]) -> None:
-    """items: список dict с name, display_name, enabled, is_lead, sort_order."""
     config.roles.clear()
     db.flush()
     for i, item in enumerate(items):
@@ -112,7 +140,6 @@ def upsert_roles(db: Session, config: models.Config, items: list[dict]) -> None:
 
 def upsert_role_status_buckets(db: Session, config: models.Config,
                                 items: list[dict]) -> None:
-    """items: список dict с role, jira_status, bucket."""
     config.role_status_buckets.clear()
     db.flush()
     for item in items:
@@ -127,7 +154,6 @@ def upsert_role_status_buckets(db: Session, config: models.Config,
 
 def upsert_role_status_default_hours(db: Session, config: models.Config,
                                       items: list[dict]) -> None:
-    """items: список dict с role, jira_status, hours."""
     config.role_status_default_hours.clear()
     db.flush()
     for item in items:
@@ -142,11 +168,6 @@ def upsert_role_status_default_hours(db: Session, config: models.Config,
 
 def upsert_pseudo_tasks(db: Session, config: models.Config,
                         items: list[dict]) -> None:
-    """items: список dict с member_id, name, bucket, hours, recurring, target_sprint_num.
-
-    Внимание: member_id должен соответствовать реальным id из team_members
-    в этом конфиге. Если пришёл несуществующий — будет ошибка FK.
-    """
     config.pseudo_tasks.clear()
     db.flush()
     for item in items:
@@ -164,7 +185,6 @@ def upsert_pseudo_tasks(db: Session, config: models.Config,
 
 def upsert_terminal_statuses(db: Session, config: models.Config,
                               items: list[str]) -> None:
-    """Заменить список терминальных статусов."""
     config.terminal_statuses.clear()
     db.flush()
     for i, status in enumerate(items):
@@ -187,7 +207,6 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
             setattr(config, field, data[field])
 
     if "team" in data:
-        # team — dict {accountId: {jira_name, file_name, role}}
         items = [
             {
                 "jira_account_id": acc_id,
@@ -227,14 +246,32 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
     return config
 
 
-# -------------------- Преобразование в dict для бизнес-логики --------------------
+# -------------------- Преобразование в dict --------------------
 
 def model_to_sprint_config_dict(config: models.Config) -> dict:
     """ORM → dict в формате, ожидаемом сервисами и бизнес-логикой.
 
-    Структура расширена под фазу 2: вместо плоских team/status_bucket теперь
-    включает roles, role_status_buckets, role_status_default_hours, pseudo_tasks.
+    Источник правды о человеке — Person (если есть). Если person_id NULL —
+    fallback на старые поля в team_member.
     """
+    team: dict = {}
+    for tm in sorted(config.team_members, key=lambda m: m.sort_order):
+        if tm.person is not None:
+            acc_id = tm.person.jira_account_id
+            jira_name = tm.person.jira_name
+            file_name = tm.person.file_name
+        else:
+            acc_id = tm.jira_account_id
+            jira_name = tm.jira_name
+            file_name = tm.file_name
+        team[acc_id] = {
+            "jira_name": jira_name,
+            "file_name": file_name,
+            "role": tm.role,
+            "id": tm.id,
+            "person_id": tm.person_id,
+        }
+
     return {
         "project_key": config.project_key,
         "sprint_field": config.sprint_field,
@@ -243,25 +280,15 @@ def model_to_sprint_config_dict(config: models.Config) -> dict:
         "default_task_hours": config.default_task_hours,
         "leader_hours": config.leader_hours,
         "leader_management_enabled": config.leader_management_enabled,
-        "team": {
-            tm.jira_account_id: {
-                "jira_name": tm.jira_name,
-                "file_name": tm.file_name,
-                "role": tm.role,
-                "id": tm.id,  # нужно для привязки pseudo_tasks
-            }
-            for tm in sorted(config.team_members, key=lambda m: m.sort_order)
-        },
+        "team": team,
         "boards": {b.name: b.jira_board_id for b in config.boards},
         "extra_components": [c.name for c in config.components],
         "status_priority": {sp.jira_status: sp.priority for sp in config.status_priorities},
         "role_hours_fields": {rh.role: rh.customfield_id for rh in config.role_hours_fields},
         "roles": [
             {
-                "name": r.name,
-                "display_name": r.display_name,
-                "enabled": r.enabled,
-                "is_lead": r.is_lead,
+                "name": r.name, "display_name": r.display_name,
+                "enabled": r.enabled, "is_lead": r.is_lead,
                 "sort_order": r.sort_order,
             }
             for r in sorted(config.roles, key=lambda x: x.sort_order)

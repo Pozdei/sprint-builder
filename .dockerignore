@@ -1,0 +1,20 @@
+# Не тащить в контейнер
+.git
+.gitignore
+.env
+.env.local
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.pytest_cache
+**/.mypy_cache
+**/.idea
+**/.vscode
+**/*.log
+**/sprint_builder*.sql

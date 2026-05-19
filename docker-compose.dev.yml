@@ -1,0 +1,20 @@
+# Dev-оверлей. Накладывается поверх docker-compose.yml.
+#
+# Запуск:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Изменения относительно прода:
+# - backend: bind-mount исходников и --reload (правка app/*.py → перезапуск uvicorn).
+# - открыт порт 8000 для прямого обращения к API без Caddy (Swagger /docs и т.п.).
+#
+# Фронт остаётся как в проде — собирается Caddy. Если нужен hot reload фронта —
+# запускай локально через `cd frontend && npm run dev` (порт 5173). Vite будет
+# смотреть в API через http://localhost:8000 (которое прокинут в dev compose).
+
+services:
+  backend:
+    volumes:
+      - ./backend:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports:
+      - "8000:8000"

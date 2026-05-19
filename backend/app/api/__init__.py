@@ -1,17 +1,23 @@
-"""Главный API-роутер: собирает все подроутеры по доменам.
+"""Главный API-роутер.
 
-Чтобы добавить новый домен — создать app/api/<domain>.py с APIRouter,
-импортировать и подключить здесь.
+Открытые: /health, /auth.
+Защищённые JWT: /sprint, /sprints, /configs, /export, /admin.
+Проверка ролей — внутри роутеров (require_lead / require_admin).
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from app.api import configs, export, health, sprint, sprints
+from app.api import admin, auth, configs, export, health, sprint, sprints
+from app.api.deps import get_current_user
 
 router = APIRouter()
 
 router.include_router(health.router)
-router.include_router(sprint.router)
-router.include_router(sprints.router)
-router.include_router(configs.router)
-router.include_router(export.router)
+router.include_router(auth.router)
+
+_protected = [Depends(get_current_user)]
+router.include_router(sprint.router, dependencies=_protected)
+router.include_router(sprints.router, dependencies=_protected)
+router.include_router(configs.router, dependencies=_protected)
+router.include_router(export.router, dependencies=_protected)
+router.include_router(admin.router, dependencies=_protected)

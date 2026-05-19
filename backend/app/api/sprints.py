@@ -1,18 +1,19 @@
-"""Эндпоинты истории спринтов."""
+"""Эндпоинты истории спринтов (lead-only). Фильтрация по config_id текущего пользователя."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.db import models
+from app.api.deps import current_config
+from app.db import models, sprints_repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
 from app.schemas.sprints import (
-    SaveDraftRequest, SetTasksRequest, SprintOut, SprintSummary, ClosedTaskData,
+    ClosedTaskData, SaveDraftRequest, SetTasksRequest, SprintOut, SprintSummary,
 )
-from app.services import config_service, sprints_service
+from app.services import sprints_service
 from app.services.sprints_service import (
-    JiraSprintNotClosedError, JiraSprintNotFoundError, SprintNotADraftError,
-    SprintNotApprovedError,
+    JiraSprintNotClosedError, JiraSprintNotFoundError, SprintAccessDeniedError,
+    SprintNotADraftError, SprintNotApprovedError,
 )
 
 router = APIRouter(prefix="/sprints", tags=["sprints"])
@@ -60,31 +61,41 @@ def _to_out(sprint: models.Sprint) -> SprintOut:
 # -------------------- Просмотр --------------------
 
 @router.get("", response_model=list[SprintSummary])
-def list_all(db: Session = Depends(get_db)):
-    from app.db import sprints_repository
-    items = sprints_repository.list_sprints(db)
+def list_all(
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    """Все спринты текущего пользователя."""
+    items = sprints_repository.list_sprints_for_config(db, config.id)
     return [_to_summary(s) for s in items]
 
 
 @router.get("/{sprint_id}", response_model=SprintOut)
-def get_one(sprint_id: int, db: Session = Depends(get_db)):
-    from app.db import sprints_repository
+def get_one(
+    sprint_id: int,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
     sprint = sprints_repository.get_sprint(db, sprint_id)
     if not sprint:
+        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
+    if sprint.config_id != config.id:
         raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
     return _to_out(sprint)
 
 
-# -------------------- Создание / перезапись draft --------------------
+# -------------------- Создание draft --------------------
 
 @router.post("/draft", response_model=SprintOut)
-def save_draft(body: SaveDraftRequest, db: Session = Depends(get_db)):
-    config = config_service.get_default(db)
-    if not config:
-        raise HTTPException(status_code=500, detail="Дефолтный конфиг не найден")
-
+def save_draft(
+    body: SaveDraftRequest,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
     try:
-        sprint_num = sprints_service.compute_next_sprint_num(db, body.max_sprint_in_jira)
+        sprint_num = sprints_service.compute_next_sprint_num(
+            db, config.id, body.max_sprint_in_jira,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -106,11 +117,17 @@ def save_draft(body: SaveDraftRequest, db: Session = Depends(get_db)):
 # -------------------- Утверждение --------------------
 
 @router.post("/{sprint_id}/approve", response_model=SprintOut)
-def approve(sprint_id: int, db: Session = Depends(get_db)):
+def approve(
+    sprint_id: int,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
     try:
-        sprint = sprints_service.approve_sprint(db, client, sprint_id)
+        sprint = sprints_service.approve_sprint(db, client, sprint_id, config.id)
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except SprintAccessDeniedError:
+        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
     except SprintNotADraftError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except JiraSprintNotFoundError as e:
@@ -123,15 +140,17 @@ def approve(sprint_id: int, db: Session = Depends(get_db)):
 # -------------------- Закрытие --------------------
 
 @router.post("/{sprint_id}/close", response_model=SprintOut)
-def close(sprint_id: int, db: Session = Depends(get_db)):
-    """Перевести approved → closed. Снять снапшот статусов из Jira.
-
-    Требует, чтобы спринт в Jira уже имел state='closed'.
-    """
+def close(
+    sprint_id: int,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
     try:
-        sprint = sprints_service.close_sprint(db, client, sprint_id)
+        sprint = sprints_service.close_sprint(db, client, sprint_id, config.id)
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except SprintAccessDeniedError:
+        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
     except SprintNotApprovedError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except JiraSprintNotClosedError as e:
@@ -144,26 +163,39 @@ def close(sprint_id: int, db: Session = Depends(get_db)):
 # -------------------- Удаление --------------------
 
 @router.delete("/{sprint_id}", status_code=204)
-def delete_one(sprint_id: int, db: Session = Depends(get_db)):
+def delete_one(
+    sprint_id: int,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
     try:
-        sprints_service.delete_draft(db, sprint_id)
+        sprints_service.delete_draft(db, sprint_id, config.id)
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except SprintAccessDeniedError:
+        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
     except SprintNotADraftError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
 
-# -------------------- Ручное редактирование состава --------------------
+# -------------------- Ручное редактирование --------------------
 
 @router.put("/{sprint_id}/tasks", response_model=SprintOut)
-def set_tasks(sprint_id: int, body: SetTasksRequest, db: Session = Depends(get_db)):
+def set_tasks(
+    sprint_id: int,
+    body: SetTasksRequest,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
     try:
         sprint = sprints_service.set_sprint_tasks(
-            db, sprint_id,
+            db, sprint_id, config.id,
             [t.model_dump() for t in body.tasks],
         )
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except SprintAccessDeniedError:
+        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
     except SprintNotADraftError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return _to_out(sprint)

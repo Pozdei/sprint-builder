@@ -1,0 +1,26 @@
+# Caddyfile.
+#
+# Логика:
+# - DOMAIN=localhost (или :80) → Caddy слушает HTTP, без сертификатов.
+# - DOMAIN=ваш-домен.com → Caddy сам выпустит Let's Encrypt и обновит.
+#
+# Все /api/* → reverse_proxy на backend:8000.
+# Остальное — статика из /srv с SPA-fallback на index.html.
+
+{
+    email {$ADMIN_EMAIL}
+}
+
+{$DOMAIN} {
+    encode gzip
+
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}

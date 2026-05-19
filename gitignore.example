@@ -1,0 +1,11 @@
+# Добавь эти строки в свой .gitignore (если его ведёшь):
+
+.env
+.env.local
+*.sql
+backend/venv/
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+**/__pycache__/
+**/.DS_Store

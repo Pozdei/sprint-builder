@@ -1,20 +1,72 @@
 import axios from "axios";
 import type {
-  BuildAndSaveResponse, ClosedTaskData, ConfigOut, ConfigUpdate, OwnerStat,
-  SprintBuildResponse, SprintOut, SprintSummary, TaskOut,
+  BuildAndSaveResponse, ClosedTaskData, ConfigOut, ConfigUpdate, LoginResponse,
+  OwnerStat, SprintBuildResponse, SprintOut, SprintSummary, TaskOut, UserOut,
 } from "../types/api";
 
-const baseURL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// baseURL:
+// - В Docker-проде VITE_API_URL пустой → axios ходит на относительные пути
+//   (browser сам подставит текущий origin, и Caddy прокинет /api/* на backend).
+// - В локальном dev (npm run dev) VITE_API_URL не задан → fallback на :8000.
+//
+// Тонкость: import.meta.env.VITE_API_URL может быть undefined (не задано) или
+// пустой строкой (задано как ""). Различаем явно — пустая строка значит
+// "относительные пути".
+const envUrl = import.meta.env.VITE_API_URL;
+const baseURL =
+  envUrl === undefined ? "http://localhost:8000" : envUrl;
+
 const api = axios.create({ baseURL });
 
-// ---------- Health / Jira ----------
+// -------------------- Auth helpers --------------------
+
+const TOKEN_KEY = "sb_token";
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string | null): void {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
+api.interceptors.request.use((cfg) => {
+  const t = getToken();
+  if (t) cfg.headers.Authorization = `Bearer ${t}`;
+  return cfg;
+});
+
+api.interceptors.response.use(
+  (r) => r,
+  (err) => {
+    if (err?.response?.status === 401) {
+      setToken(null);
+    }
+    return Promise.reject(err);
+  },
+);
+
+// -------------------- Auth API --------------------
+
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  const r = await api.post("/api/auth/login", { email, password });
+  return r.data;
+}
+
+export async function getMe(): Promise<UserOut> {
+  const r = await api.get("/api/auth/me");
+  return r.data;
+}
+
+// -------------------- Health / Jira --------------------
 
 export async function checkJira(): Promise<{ display_name: string; email: string }> {
   const r = await api.get("/api/jira/check");
   return r.data;
 }
 
-// ---------- Sprint build ----------
+// -------------------- Sprint build --------------------
 
 export async function fetchCandidates(): Promise<{
   candidates: TaskOut[];
@@ -25,21 +77,19 @@ export async function fetchCandidates(): Promise<{
   return r.data;
 }
 
-/** allocate + автосохранение в БД как draft. Атомарно. */
 export async function buildAndSaveSprint(candidates?: TaskOut[]): Promise<BuildAndSaveResponse> {
   const body = candidates ? { candidates } : {};
   const r = await api.post("/api/sprint/build-and-save", body);
   return r.data;
 }
 
-/** Чистый allocate без сохранения — для отладки. */
 export async function buildSprint(candidates?: TaskOut[]): Promise<SprintBuildResponse> {
   const body = candidates ? { candidates } : {};
   const r = await api.post("/api/sprint/build", body);
   return r.data;
 }
 
-// ---------- Config ----------
+// -------------------- Config --------------------
 
 export async function getDefaultConfig(): Promise<ConfigOut> {
   const r = await api.get("/api/configs/default");
@@ -51,7 +101,7 @@ export async function updateConfig(id: number, body: ConfigUpdate): Promise<Conf
   return r.data;
 }
 
-// ---------- Sprint history ----------
+// -------------------- Sprint history --------------------
 
 export async function listSprints(): Promise<SprintSummary[]> {
   const r = await api.get("/api/sprints");
@@ -82,7 +132,7 @@ export async function setSprintTasks(id: number, tasks: TaskOut[]): Promise<Spri
   return r.data;
 }
 
-// ---------- Скачивание xlsx ----------
+// -------------------- Скачивание xlsx --------------------
 
 interface SprintExportPayload {
   allocated: TaskOut[];

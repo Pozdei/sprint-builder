@@ -1,4 +1,4 @@
-"""Репозиторий спринтов — CRUD над таблицами sprints и sprint_tasks."""
+"""Репозиторий спринтов — фильтрация по config_id (фаза 2.7b)."""
 
 from datetime import datetime, timezone
 
@@ -12,8 +12,19 @@ def _eager() -> list:
     return [selectinload(models.Sprint.tasks)]
 
 
-def list_sprints(db: Session) -> list[models.Sprint]:
-    """Все спринты — последние сверху."""
+def list_sprints_for_config(db: Session, config_id: int) -> list[models.Sprint]:
+    """Спринты конкретного конфига — для lead-юзеров."""
+    return list(
+        db.scalars(
+            select(models.Sprint)
+            .where(models.Sprint.config_id == config_id)
+            .order_by(models.Sprint.sprint_num.desc(), models.Sprint.id.desc())
+        ).all()
+    )
+
+
+def list_all_sprints(db: Session) -> list[models.Sprint]:
+    """Все спринты — для admin-эндпоинтов."""
     return list(
         db.scalars(
             select(models.Sprint)
@@ -30,11 +41,11 @@ def get_sprint(db: Session, sprint_id: int) -> models.Sprint | None:
     )
 
 
-def get_draft_by_num(db: Session, sprint_num: int) -> models.Sprint | None:
-    """Draft с указанным номером (если есть)."""
+def get_draft_by_num(db: Session, config_id: int, sprint_num: int) -> models.Sprint | None:
     return db.scalar(
         select(models.Sprint)
         .where(
+            models.Sprint.config_id == config_id,
             models.Sprint.sprint_num == sprint_num,
             models.Sprint.status == "draft",
         )
@@ -42,11 +53,14 @@ def get_draft_by_num(db: Session, sprint_num: int) -> models.Sprint | None:
     )
 
 
-def get_max_approved_num(db: Session) -> int | None:
-    """Максимальный номер approved-спринта в БД, или None."""
+def get_max_approved_num(db: Session, config_id: int) -> int | None:
+    """Максимальный номер approved-спринта в КОНФИГЕ."""
     return db.scalar(
         select(models.Sprint.sprint_num)
-        .where(models.Sprint.status == "approved")
+        .where(
+            models.Sprint.config_id == config_id,
+            models.Sprint.status == "approved",
+        )
         .order_by(models.Sprint.sprint_num.desc())
         .limit(1)
     )
@@ -54,30 +68,26 @@ def get_max_approved_num(db: Session) -> int | None:
 
 def upsert_draft(
     db: Session,
+    config_id: int,
     sprint_num: int,
     config_snapshot: dict,
     owner_stats: list[dict],
     tasks: list[dict],
     max_sprint_in_jira: int | None,
 ) -> models.Sprint:
-    """Создать draft с указанным номером, или перезаписать существующий.
-
-    Если есть approved с таким же номером — это ОШИБКА вызывающего кода
-    (сервис должен был не пустить эту ситуацию). Здесь не проверяем.
-    """
-    existing = get_draft_by_num(db, sprint_num)
+    """Создать draft с указанным номером, или перезаписать существующий."""
+    existing = get_draft_by_num(db, config_id, sprint_num)
 
     if existing:
-        # Перезапись — очищаем задачи, переставляем поля
         existing.tasks.clear()
-        db.flush()  # как в репозитории конфига — иначе INSERT новых упрётся в FK
+        db.flush()
         existing.config_snapshot = config_snapshot
         existing.owner_stats_snapshot = owner_stats
         existing.max_sprint_in_jira = max_sprint_in_jira
-        # created_at не трогаем — это всё ещё тот же draft, просто перезаполненный
         sprint = existing
     else:
         sprint = models.Sprint(
+            config_id=config_id,
             sprint_num=sprint_num,
             status="draft",
             config_snapshot=config_snapshot,
@@ -85,7 +95,7 @@ def upsert_draft(
             max_sprint_in_jira=max_sprint_in_jira,
         )
         db.add(sprint)
-        db.flush()  # получим sprint.id
+        db.flush()
 
     for i, task in enumerate(tasks, start=1):
         sprint.tasks.append(models.SprintTask(position=i, task_data=task))
@@ -96,7 +106,6 @@ def upsert_draft(
 
 
 def approve(db: Session, sprint: models.Sprint) -> models.Sprint:
-    """Перевести draft в approved. Время — текущее UTC."""
     sprint.status = "approved"
     sprint.approved_at = datetime.now(timezone.utc)
     db.commit()
@@ -111,10 +120,6 @@ def delete_sprint(db: Session, sprint: models.Sprint) -> None:
 
 def replace_tasks(db: Session, sprint: models.Sprint,
                    tasks: list[dict], new_owner_stats: list[dict]) -> models.Sprint:
-    """Полностью заменить sprint_tasks и обновить owner_stats_snapshot.
-
-    Используется для ручного редактирования draft через UI.
-    """
     sprint.tasks.clear()
     db.flush()
     for i, t in enumerate(tasks, start=1):
@@ -128,14 +133,12 @@ def replace_tasks(db: Session, sprint: models.Sprint,
 def close_sprint(db: Session, sprint: models.Sprint,
                   closed_data_by_position: dict[int, dict],
                   jira_completed_at) -> models.Sprint:
-    """Закрыть спринт: сохранить снапшот статусов и перевести в closed."""
-    from datetime import datetime, timezone as tz
     for task in sprint.tasks:
         data = closed_data_by_position.get(task.position)
         if data is not None:
             task.closed_task_data = data
     sprint.status = "closed"
-    sprint.closed_at = datetime.now(tz.utc)
+    sprint.closed_at = datetime.now(timezone.utc)
     sprint.jira_completed_at = jira_completed_at
     db.commit()
     db.refresh(sprint)

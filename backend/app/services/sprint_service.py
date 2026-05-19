@@ -1,39 +1,38 @@
-"""Sprint service — бизнес-логика формирования спринта.
+"""Sprint service — фаза 2.8: работа с активным конфигом lead-пользователя.
 
-Эндпоинты вызывают только функции отсюда. Сервис не знает про HTTP,
-не знает про Pydantic, работает с обычными dict'ами и Session.
-
-Преобразование dict → Pydantic делает уровень эндпоинтов.
+Все функции принимают user_id и читают его АКТИВНЫЙ конфиг через config_service.
 """
 
 from sqlalchemy.orm import Session
 
-from app.db import repository
+from app.db import users_repository
 from app.jira.client import JiraClient
+from app.services import config_service
 from app.sprint.config import from_dict
 from app.sprint.logic import allocate, collect_candidates, compute_priorities
 
 
 class ConfigNotFoundError(Exception):
-    """Дефолтный конфиг не найден в БД (нужно запустить seed/миграции)."""
+    """У пользователя нет конфига (даже после ensure)."""
 
 
-def _load_active_config(db: Session):
-    """Достать дефолтный конфиг и превратить в SprintConfig."""
-    cfg_model = repository.get_default_config(db)
+def _load_user_config(db: Session, user_id: int):
+    """Грузим активный конфиг пользователя; если нет — ensure создаст пустой."""
+    user = users_repository.get_user_by_id(db, user_id)
+    if not user:
+        raise ConfigNotFoundError(f"Пользователь {user_id} не найден")
+
+    cfg_model = config_service.ensure_active_config(db, user)
     if not cfg_model:
         raise ConfigNotFoundError(
-            "Дефолтный конфиг не найден. Выполни alembic upgrade head и перезапусти бэкенд."
+            "У вас нет активного конфига. Создайте его в шапке через 'Конфиг'."
         )
+    from app.db import repository
     return from_dict(repository.model_to_sprint_config_dict(cfg_model))
 
 
-def collect_sprint_candidates(db: Session, jira: JiraClient) -> dict:
-    """Собрать кандидатов из Jira с приоритизацией. Без allocate.
-
-    Возвращает dict с ключами: candidates (list[dict]), diagnostics, max_sprint_num.
-    """
-    cfg = _load_active_config(db)
+def collect_sprint_candidates(db: Session, jira: JiraClient, user_id: int) -> dict:
+    cfg = _load_user_config(db, user_id)
     candidates, diagnostics = collect_candidates(jira, cfg)
     compute_priorities(candidates, cfg)
     max_n = max((c["sprint_num"] for c in candidates if c.get("sprint_num")), default=None)
@@ -47,19 +46,11 @@ def collect_sprint_candidates(db: Session, jira: JiraClient) -> dict:
 def build_sprint(
     db: Session,
     jira: JiraClient,
+    user_id: int,
     candidates_in: list[dict] | None = None,
     target_sprint_num: int | None = None,
 ) -> dict:
-    """Сформировать спринт: allocate поверх кандидатов.
-
-    target_sprint_num — номер целевого спринта (для фильтра разовых псевдо-задач).
-    Если не передан — будут использованы только recurring-задачи + автоматическое
-    добавление "Руководство" для лидов.
-
-    Если candidates_in передан — используем его (без повторного похода в Jira).
-    Иначе — собираем сами.
-    """
-    cfg = _load_active_config(db)
+    cfg = _load_user_config(db, user_id)
 
     if candidates_in:
         candidates = candidates_in

@@ -167,3 +167,19 @@ export interface SprintOut {
 export interface BuildAndSaveResponse extends SprintBuildResponse {
   sprint: SprintOut;
 }
+
+// ---------- Auth ----------
+
+export interface UserOut {
+  id: number;
+  email: string;
+  display_name: string;
+  role: string;  // 'admin' | 'lead'
+  is_active: boolean;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  user: UserOut;
+}
