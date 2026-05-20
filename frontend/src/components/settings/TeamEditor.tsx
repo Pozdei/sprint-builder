@@ -1,106 +1,95 @@
 import { useState } from "react";
+import { JiraUserSearchModal } from "../JiraUserSearchModal";
 import type { TeamMemberOut } from "../../types/api";
+import type { JiraUserSearchResult } from "../../types/intrusions";
 
 interface Props {
   value: Record<string, TeamMemberOut>;
   onChange: (next: Record<string, TeamMemberOut>) => void;
-  /** Список доступных ролей (из roles конфига) — для dropdown. */
   roleOptions: { name: string; display_name: string }[];
 }
 
 export function TeamEditor({ value, onChange, roleOptions }: Props) {
-  const [accountIds, setAccountIds] = useState<string[]>(() => Object.keys(value));
+  const [searchOpen, setSearchOpen] = useState(false);
 
-  const handleAccountIdChange = (i: number, newId: string) => {
-    const oldId = accountIds[i];
-    const newIds = [...accountIds];
-    newIds[i] = newId;
-    setAccountIds(newIds);
-    const next: Record<string, TeamMemberOut> = {};
-    newIds.forEach((id, idx) => {
-      const source = idx === i ? oldId : id;
-      next[id] = value[source];
-    });
-    onChange(next);
-  };
-
-  const handleFieldChange = (
-    i: number,
-    field: "jira_name" | "file_name" | "role",
-    v: string,
-  ) => {
-    const id = accountIds[i];
-    onChange({ ...value, [id]: { ...value[id], [field]: v } });
-  };
-
-  const handleAdd = () => {
-    const newId = `новый_account_id_${Date.now()}`;
-    setAccountIds([...accountIds, newId]);
-    onChange({
+  const handlePickFromJira = (user: JiraUserSearchResult) => {
+    const accId = user.account_id;
+    if (!accId) return;
+    if (value[accId]) {
+      setSearchOpen(false);
+      return;
+    }
+    const next: Record<string, TeamMemberOut> = {
       ...value,
-      [newId]: {
+      [accId]: {
         id: 0,
-        jira_name: "",
+        person_id: null,
+        jira_name: user.display_name,
         file_name: "",
         role: roleOptions[0]?.name || "analyst",
       },
-    });
+    };
+    onChange(next);
+    setSearchOpen(false);
   };
 
-  const handleRemove = (i: number) => {
-    const id = accountIds[i];
-    const newIds = accountIds.filter((_, idx) => idx !== i);
-    setAccountIds(newIds);
+  const handleRemove = (accId: string) => {
+    if (!window.confirm("Удалить человека из команды?")) return;
     const next = { ...value };
-    delete next[id];
+    delete next[accId];
     onChange(next);
   };
 
+  const updateField = (
+    accId: string,
+    field: "file_name" | "role",
+    val: string,
+  ) => {
+    onChange({
+      ...value,
+      [accId]: { ...value[accId], [field]: val },
+    });
+  };
+
+  const rows = Object.entries(value);
+
   return (
     <div>
-      <table className="w-full text-sm border">
-        <thead className="bg-gray-100">
+      <table className="w-full text-sm bg-white border rounded-lg overflow-hidden">
+        <thead className="bg-gray-100 border-b">
           <tr>
-            <th className="text-left px-2 py-1 border-b font-semibold">accountId Jira</th>
-            <th className="text-left px-2 py-1 border-b font-semibold">Имя в Jira</th>
-            <th className="text-left px-2 py-1 border-b font-semibold">Имя в файле</th>
-            <th className="text-left px-2 py-1 border-b font-semibold">Роль</th>
-            <th className="px-2 py-1 border-b w-12"></th>
+            <th className="text-left px-3 py-1.5">Имя в Jira</th>
+            <th className="text-left px-3 py-1.5 w-48">Имя для файла</th>
+            <th className="text-left px-3 py-1.5 w-40">Роль</th>
+            <th className="text-left px-3 py-1.5 w-64">accountId</th>
+            <th className="w-10"></th>
           </tr>
         </thead>
         <tbody>
-          {accountIds.map((id, i) => (
-            <tr key={i} className="border-b">
-              <td className="px-2 py-1">
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={5} className="text-center text-gray-400 py-3 italic">
+                Команда пуста. Добавьте через «+ Добавить из Jira».
+              </td>
+            </tr>
+          )}
+          {rows.map(([accId, m]) => (
+            <tr key={accId} className="border-b">
+              <td className="px-3 py-1.5">{m.jira_name}</td>
+              <td className="px-3 py-1.5">
                 <input
                   type="text"
-                  value={id}
-                  onChange={(e) => handleAccountIdChange(i, e.target.value)}
-                  className="w-full px-2 py-1 border rounded font-mono text-xs"
-                  spellCheck={false}
+                  value={m.file_name}
+                  onChange={(e) => updateField(accId, "file_name", e.target.value)}
+                  placeholder="напр. Бадамова А."
+                  className="w-full px-2 py-1 border rounded text-sm"
                 />
               </td>
-              <td className="px-2 py-1">
-                <input
-                  type="text"
-                  value={value[id]?.jira_name || ""}
-                  onChange={(e) => handleFieldChange(i, "jira_name", e.target.value)}
-                  className="w-full px-2 py-1 border rounded"
-                />
-              </td>
-              <td className="px-2 py-1">
-                <input
-                  type="text"
-                  value={value[id]?.file_name || ""}
-                  onChange={(e) => handleFieldChange(i, "file_name", e.target.value)}
-                  className="w-full px-2 py-1 border rounded"
-                />
-              </td>
-              <td className="px-2 py-1">
+              <td className="px-3 py-1.5">
                 <select
-                  value={value[id]?.role || ""}
-                  onChange={(e) => handleFieldChange(i, "role", e.target.value)}
-                  className="w-full px-2 py-1 border rounded bg-white"
+                  value={m.role}
+                  onChange={(e) => updateField(accId, "role", e.target.value)}
+                  className="w-full px-2 py-1 border rounded text-sm bg-white"
                 >
                   {roleOptions.map((r) => (
                     <option key={r.name} value={r.name}>
@@ -109,10 +98,14 @@ export function TeamEditor({ value, onChange, roleOptions }: Props) {
                   ))}
                 </select>
               </td>
-              <td className="px-2 py-1 text-center">
+              <td className="px-3 py-1.5 font-mono text-xs text-gray-500 truncate"
+                  title={accId}>
+                {accId}
+              </td>
+              <td className="text-center px-3 py-1.5">
                 <button
-                  onClick={() => handleRemove(i)}
-                  className="text-red-500 hover:text-red-700 text-lg"
+                  onClick={() => handleRemove(accId)}
+                  className="text-red-500 hover:text-red-700"
                   title="Удалить"
                 >
                   ×
@@ -122,12 +115,20 @@ export function TeamEditor({ value, onChange, roleOptions }: Props) {
           ))}
         </tbody>
       </table>
+
       <button
-        onClick={handleAdd}
-        className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+        onClick={() => setSearchOpen(true)}
+        className="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-semibold"
       >
-        + Добавить участника
+        + Добавить из Jira
       </button>
+
+      {searchOpen && (
+        <JiraUserSearchModal
+          onClose={() => setSearchOpen(false)}
+          onPick={handlePickFromJira}
+        />
+      )}
     </div>
   );
 }

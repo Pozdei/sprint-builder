@@ -1,12 +1,18 @@
-"""Схемы для эндпоинтов конфига (фаза 2)."""
+"""Схемы для эндпоинтов конфига."""
 
 from pydantic import BaseModel
 
 
 class ConfigSummary(BaseModel):
+    """Краткая запись конфига в списке (is_active — активный ли для текущего пользователя)."""
     id: int
     name: str
-    is_default: bool
+    is_active: bool
+
+
+class ConfigCreateRequest(BaseModel):
+    name: str
+    source_config_id: int | None = None  # если указан — копируем; иначе пустой
 
 
 class RoleOut(BaseModel):
@@ -27,6 +33,13 @@ class RoleStatusDefaultHoursOut(BaseModel):
     role: str
     jira_status: str
     hours: float
+
+
+class DirectionOut(BaseModel):
+    name: str
+    labels: list[str]
+    work_types: list[str]
+    dev_role: str = ""
 
 
 class PseudoTaskOut(BaseModel):
@@ -59,6 +72,7 @@ class ConfigOut(BaseModel):
     default_task_hours: float
     leader_hours: float
     leader_management_enabled: bool
+    developer_field: str
 
     # team приходит как dict {accountId: TeamMemberOut}
     team: dict[str, TeamMemberOut]
@@ -72,6 +86,7 @@ class ConfigOut(BaseModel):
     role_status_default_hours: list[RoleStatusDefaultHoursOut]
     pseudo_tasks: list[PseudoTaskOut]
     terminal_statuses: list[str]
+    directions: list[DirectionOut]
 
 
 # -------------------- Тело PUT --------------------
@@ -92,6 +107,7 @@ class ConfigUpdate(BaseModel):
     default_task_hours: float | None = None
     leader_hours: float | None = None
     leader_management_enabled: bool | None = None
+    developer_field: str | None = None
 
     team: dict[str, TeamMemberIn] | None = None
     boards: dict[str, int] | None = None
@@ -104,3 +120,4 @@ class ConfigUpdate(BaseModel):
     role_status_default_hours: list[dict] | None = None
     pseudo_tasks: list[dict] | None = None
     terminal_statuses: list[str] | None = None
+    directions: list[dict] | None = None

@@ -1,36 +1,50 @@
 import type { ClosedTaskData, SprintOut, TaskOut } from "../types/api";
+import type { IntrusionRecord } from "../types/intrusions";
+import { IntrusionsView } from "./IntrusionsView";
 
 interface Props {
   sprint: SprintOut;
 }
 
-/**
- * Отображение закрытого спринта: метрики выполнения + таблица "Было → Стало".
- *
- * Терминальные статусы берутся из config_snapshot.terminal_statuses.
- * Псевдо-задачи всегда считаются выполненными.
- */
 export function ClosedSprintView({ sprint }: Props) {
   const terminalSet = new Set<string>(
     (sprint.config_snapshot.terminal_statuses as string[] | undefined) ?? [],
   );
 
-  // Связываем задачу с её снапшотом закрытия по индексу
   const rows = sprint.tasks.map((task, i) => ({
     task,
     closed: sprint.closed_tasks[i] ?? null,
     done: isDone(task, sprint.closed_tasks[i] ?? null, terminalSet),
   }));
 
-  // Общие метрики
-  const total = rows.length;
-  const doneCount = rows.filter((r) => r.done).length;
+  // Статистика по уникальным Jira-ключам (не по строкам, чтобы не двоить pipeline-задачи)
+  const keyMap = new Map<string, { expected: string; done: boolean }>();
+  for (const r of rows) {
+    if (r.task.is_pseudo) continue;
+    const k = r.task.key;
+    if (!keyMap.has(k)) {
+      keyMap.set(k, {
+        expected: r.task.sprint_expected_result ?? "",
+        done: r.done,
+      });
+    } else if (r.done) {
+      keyMap.get(k)!.done = true;
+    }
+  }
+  const totalKeys = keyMap.size;
+  const doneKeys = Array.from(keyMap.values()).filter((v) => v.done).length;
+  const metExpectation = Array.from(keyMap.values()).filter(
+    (v) => terminalSet.has(v.expected) && v.done,
+  ).length;
+  const exceeded = Array.from(keyMap.values()).filter(
+    (v) => !terminalSet.has(v.expected) && v.done,
+  ).length;
+
   const totalHours = rows.reduce((sum, r) => sum + r.task.hours, 0);
   const doneHours = rows
     .filter((r) => r.done)
     .reduce((sum, r) => sum + r.task.hours, 0);
 
-  // По людям
   const byOwner = new Map<
     string,
     { file_name: string; total: number; done: number; hours: number; doneHours: number }
@@ -55,16 +69,29 @@ export function ClosedSprintView({ sprint }: Props) {
     }
   }
 
+  const intrusions = (sprint.intrusions ?? []) as IntrusionRecord[];
+  const terminalStatuses =
+    (sprint.config_snapshot.terminal_statuses as string[] | undefined) ?? [];
+
   return (
     <div className="mt-4">
       <h3 className="font-semibold text-gray-700 mb-2">Итоги закрытия</h3>
 
-      {/* Сверху — крупная метрика */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <MetricCard
           title="Задач выполнено"
-          value={`${doneCount} из ${total}`}
-          percent={total ? (doneCount / total) * 100 : 0}
+          value={`${doneKeys} из ${totalKeys}`}
+          percent={totalKeys ? (doneKeys / totalKeys) * 100 : 0}
+        />
+        <MetricCard
+          title="По плану (ожид. → факт: ✓)"
+          value={`${metExpectation} из ${totalKeys}`}
+          percent={totalKeys ? (metExpectation / totalKeys) * 100 : 0}
+        />
+        <MetricCard
+          title="Перевыполнено"
+          value={String(exceeded)}
+          percent={totalKeys ? (exceeded / totalKeys) * 100 : 0}
         />
         <MetricCard
           title="Часов выполнено"
@@ -73,7 +100,6 @@ export function ClosedSprintView({ sprint }: Props) {
         />
       </div>
 
-      {/* По людям */}
       {byOwner.size > 0 && (
         <div className="mb-4">
           <h4 className="text-sm font-semibold text-gray-600 mb-2">По людям</h4>
@@ -110,10 +136,7 @@ export function ClosedSprintView({ sprint }: Props) {
         </div>
       )}
 
-      {/* Таблица "Было → Стало" */}
-      <h4 className="text-sm font-semibold text-gray-600 mb-2">
-        Было → Стало
-      </h4>
+      <h4 className="text-sm font-semibold text-gray-600 mb-2">Было → Стало</h4>
       <div className="border rounded-lg overflow-hidden bg-white">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 border-b">
@@ -122,6 +145,7 @@ export function ClosedSprintView({ sprint }: Props) {
               <th className="text-left px-3 py-1.5 font-semibold w-20">Задача</th>
               <th className="text-left px-3 py-1.5 font-semibold">Название</th>
               <th className="text-left px-3 py-1.5 font-semibold">Консультант</th>
+              <th className="text-left px-3 py-1.5 font-semibold">Ожид. итог</th>
               <th className="text-left px-3 py-1.5 font-semibold">Было</th>
               <th className="text-left px-3 py-1.5 font-semibold">Стало</th>
               <th className="text-right px-3 py-1.5 font-semibold">Часы</th>
@@ -159,6 +183,17 @@ export function ClosedSprintView({ sprint }: Props) {
                 <td className="px-3 py-1.5 text-gray-700">
                   {task.owner_file_name}
                 </td>
+                <td className="px-3 py-1.5">
+                  {task.is_pseudo ? (
+                    <span className="text-gray-400">—</span>
+                  ) : task.sprint_expected_result ? (
+                    <span className="text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                      {task.sprint_expected_result}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                </td>
                 <td className="px-3 py-1.5 text-gray-600">
                   {task.is_pseudo ? "—" : task.status_name}
                 </td>
@@ -179,6 +214,11 @@ export function ClosedSprintView({ sprint }: Props) {
           </tbody>
         </table>
       </div>
+
+      <IntrusionsView
+        intrusions={intrusions}
+        terminalStatuses={terminalStatuses}
+      />
     </div>
   );
 }

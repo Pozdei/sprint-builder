@@ -13,7 +13,6 @@ def _eager() -> list:
 
 
 def list_sprints_for_config(db: Session, config_id: int) -> list[models.Sprint]:
-    """Спринты конкретного конфига — для lead-юзеров."""
     return list(
         db.scalars(
             select(models.Sprint)
@@ -24,7 +23,6 @@ def list_sprints_for_config(db: Session, config_id: int) -> list[models.Sprint]:
 
 
 def list_all_sprints(db: Session) -> list[models.Sprint]:
-    """Все спринты — для admin-эндпоинтов."""
     return list(
         db.scalars(
             select(models.Sprint)
@@ -54,7 +52,6 @@ def get_draft_by_num(db: Session, config_id: int, sprint_num: int) -> models.Spr
 
 
 def get_max_approved_num(db: Session, config_id: int) -> int | None:
-    """Максимальный номер approved-спринта в КОНФИГЕ."""
     return db.scalar(
         select(models.Sprint.sprint_num)
         .where(
@@ -75,7 +72,6 @@ def upsert_draft(
     tasks: list[dict],
     max_sprint_in_jira: int | None,
 ) -> models.Sprint:
-    """Создать draft с указанным номером, или перезаписать существующий."""
     existing = get_draft_by_num(db, config_id, sprint_num)
 
     if existing:
@@ -132,7 +128,8 @@ def replace_tasks(db: Session, sprint: models.Sprint,
 
 def close_sprint(db: Session, sprint: models.Sprint,
                   closed_data_by_position: dict[int, dict],
-                  jira_completed_at) -> models.Sprint:
+                  jira_completed_at,
+                  intrusions: list[dict] | None = None) -> models.Sprint:
     for task in sprint.tasks:
         data = closed_data_by_position.get(task.position)
         if data is not None:
@@ -140,6 +137,8 @@ def close_sprint(db: Session, sprint: models.Sprint,
     sprint.status = "closed"
     sprint.closed_at = datetime.now(timezone.utc)
     sprint.jira_completed_at = jira_completed_at
+    if intrusions is not None:
+        sprint.intrusions = intrusions
     db.commit()
     db.refresh(sprint)
     return sprint

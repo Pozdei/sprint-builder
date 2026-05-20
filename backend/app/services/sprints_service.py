@@ -1,7 +1,4 @@
-"""Сервис истории спринтов: формула номера, утверждение/закрытие.
-
-Все функции принимают user_id или config_id — изоляция между пользователями.
-"""
+"""Сервис истории спринтов: формула номера, утверждение/закрытие/врывы."""
 
 import re
 from datetime import datetime, timezone
@@ -29,7 +26,7 @@ class JiraSprintNotClosedError(Exception):
 
 
 class SprintAccessDeniedError(Exception):
-    """Пользователь пытается работать с чужим спринтом."""
+    pass
 
 
 # -------------------- Проверка доступа --------------------
@@ -44,7 +41,6 @@ def _check_access(sprint: models.Sprint, config_id: int) -> None:
 # -------------------- Формула номера --------------------
 
 def compute_next_sprint_num(db: Session, config_id: int, max_jira: int | None) -> int:
-    """Формула: new = max(max_jira, max_approved_в_БД_конфига + 1)."""
     max_approved = sprints_repository.get_max_approved_num(db, config_id)
     candidate_from_approved = (max_approved + 1) if max_approved is not None else None
 
@@ -153,7 +149,7 @@ def delete_draft(db: Session, sprint_id: int, config_id: int) -> None:
     sprints_repository.delete_sprint(db, sprint)
 
 
-# -------------------- Ручное редактирование состава --------------------
+# -------------------- Ручное редактирование --------------------
 
 def set_sprint_tasks(db: Session, sprint_id: int, config_id: int,
                       tasks: list[dict]) -> models.Sprint:
@@ -202,17 +198,7 @@ def _parse_jira_date(s: str | None) -> datetime | None:
 def _fetch_task_state_from_jira(
     jira: JiraClient, task_key: str, sprint_field: str, target_sprint_num: int,
 ) -> dict | None:
-    """Получить актуальный статус задачи и инфо о КОНКРЕТНОМ спринте target_sprint_num
-    из её sprint-поля. Спринты с другим номером (например, куда задачу переназначили)
-    игнорируем.
-
-    Возвращает:
-      {
-        "status_name": str,
-        "target_sprint": dict | None   # объект спринта именно с номером target_sprint_num
-      }
-    или None если задача не найдена в Jira.
-    """
+    """Получить статус задачи и объект целевого спринта (с тем же номером)."""
     try:
         data = jira.get(
             f"/rest/api/3/issue/{task_key}",
@@ -234,24 +220,189 @@ def _fetch_task_state_from_jira(
             m = re.search(r"(\d+)", name)
             if not m:
                 continue
-            num = int(m.group(1))
-            if num == target_sprint_num:
+            if int(m.group(1)) == target_sprint_num:
                 target_sprint = s
                 break
 
     return {"status_name": status_name, "target_sprint": target_sprint}
 
 
+# ---------- Поиск jira_sprint_id из snapshot задач ----------
+
+def _find_jira_sprint_id(jira: JiraClient, snapshot: dict,
+                         tasks: list[models.SprintTask], target_num: int) -> int | None:
+    """Найти Jira-ID спринта target_num через любую из задач снапшота."""
+    sprint_field = snapshot.get("sprint_field", "")
+    for st in tasks:
+        td = st.task_data or {}
+        if td.get("is_pseudo"):
+            continue
+        key = td.get("key")
+        if not key:
+            continue
+        try:
+            data = jira.get(f"/rest/api/3/issue/{key}",
+                            params={"fields": sprint_field})
+        except Exception:
+            continue
+        sprints = (data.get("fields") or {}).get(sprint_field) or []
+        if not isinstance(sprints, list):
+            continue
+        for s in sprints:
+            if not isinstance(s, dict):
+                continue
+            m = re.search(r"(\d+)", s.get("name") or "")
+            if m and int(m.group(1)) == target_num:
+                sid = s.get("id")
+                if isinstance(sid, int):
+                    return sid
+                try:
+                    return int(sid)
+                except (TypeError, ValueError):
+                    return None
+    return None
+
+
+# ---------- Логика владения и часов для врыва ----------
+
+def _bucket_and_role_for_intrusion(
+    issue: dict, snapshot: dict, role: str,
+) -> str | None:
+    """Если у роли есть бакет под текущий статус — вернёт имя бакета."""
+    status_name = (issue.get("fields", {}).get("status") or {}).get("name", "")
+    for rsb in snapshot.get("role_status_buckets", []):
+        if rsb.get("role") == role and rsb.get("jira_status") == status_name:
+            return rsb.get("bucket")
+    return None
+
+
+def _resolve_owner_in_team_snapshot(
+    issue: dict, role: str, snapshot: dict,
+) -> dict | None:
+    """Найти владельца ТОЛЬКО в team из snapshot. Возвращает запись team или None."""
+    team = snapshot.get("team", {})  # acc_id -> {jira_name, file_name, role}
+    fields = issue.get("fields") or {}
+
+    # Кандидаты в порядке приоритета:
+    candidates: list[str] = []
+    assignee = fields.get("assignee")
+    if isinstance(assignee, dict) and assignee.get("accountId"):
+        candidates.append(assignee["accountId"])
+
+    if role == "analyst":
+        resp_field = snapshot.get("responsible_field")
+        if resp_field:
+            resp = fields.get(resp_field)
+            if isinstance(resp, dict) and resp.get("accountId"):
+                candidates.append(resp["accountId"])
+        reporter = fields.get("reporter")
+        if isinstance(reporter, dict) and reporter.get("accountId"):
+            candidates.append(reporter["accountId"])
+
+    # Берём первого, кто (а) в team, (б) с этой ролью.
+    # NB: в team могут быть несколько записей одного человека с разными ролями —
+    # в нашей модели team — это dict acc_id -> single role. На сегодняшний момент
+    # это ОК: если человек должен быть и аналитиком, и разрабом, он две team_member
+    # записи. Но в snapshot.team (dict) останется только одна — это известная
+    # ограничение модели. Пока живём с этим.
+    for acc_id in candidates:
+        info = team.get(acc_id)
+        if info and info.get("role") == role:
+            return {"account_id": acc_id, **info}
+    return None
+
+
+def _estimate_hours_intrusion(
+    issue: dict, snapshot: dict, role: str, bucket: str,
+) -> float:
+    """Оценка часов врыва — упрощённая (без поля приоритетов как в основной логике).
+
+    1. Поле часов по бакету (если есть customfield).
+    2. timeoriginalestimate в секундах → часы.
+    3. role_status_default_hours для (роль, статус).
+    4. default_task_hours из конфига.
+    """
+    fields = issue.get("fields") or {}
+    role_hours_fields: dict = snapshot.get("role_hours_fields") or {}
+    # Поле часов привязано к роли, не к бакету. Берём напрямую.
+    field_id = role_hours_fields.get(role)
+    if field_id:
+        val = fields.get(field_id)
+        if val and float(val) > 0:
+            return float(val)
+
+    # timeoriginalestimate — секунды
+    teo = fields.get("timeoriginalestimate")
+    if teo:
+        try:
+            return round(float(teo) / 3600.0, 1)
+        except (TypeError, ValueError):
+            pass
+
+    # role_status_default_hours
+    status_name = (fields.get("status") or {}).get("name", "")
+    for rsdh in snapshot.get("role_status_default_hours", []):
+        if rsdh.get("role") == role and rsdh.get("jira_status") == status_name:
+            return float(rsdh.get("hours") or 0)
+
+    return float(snapshot.get("default_task_hours") or 12.0)
+
+
+def _build_intrusion_record(
+    issue: dict, snapshot: dict, terminal_set: set[str],
+) -> dict | None:
+    """Из jira-issue построить запись врыва. Если ни одна роль не подошла — None.
+
+    Учитываем только реальных владельцев из team из snapshot.
+    Если задача релевантна нескольким ролям — берём ПЕРВУЮ, где есть владелец.
+    """
+    fields = issue.get("fields") or {}
+    status_name = (fields.get("status") or {}).get("name", "")
+
+    # Перебираем включённые роли из snapshot
+    roles = [r for r in snapshot.get("roles", []) if r.get("enabled")]
+
+    for role_def in roles:
+        role = role_def.get("name")
+        bucket = _bucket_and_role_for_intrusion(issue, snapshot, role)
+        if not bucket:
+            continue
+        owner = _resolve_owner_in_team_snapshot(issue, role, snapshot)
+        if not owner:
+            continue
+        hours = _estimate_hours_intrusion(issue, snapshot, role, bucket)
+
+        base_url = (snapshot.get("project_key") and
+                     f"https://itlime.atlassian.net/browse/{issue.get('key')}") or ""
+
+        return {
+            "key": issue.get("key"),
+            "summary": fields.get("summary") or "",
+            "status_name": status_name,
+            "is_done": status_name in terminal_set,
+            "owner_id": owner["account_id"],
+            "owner_file_name": owner.get("file_name") or "",
+            "owner_jira_name": owner.get("jira_name") or "",
+            "role": role,
+            "bucket": bucket,
+            "hours": hours,
+            "url": base_url,
+        }
+
+    return None
+
+
+# ---------- Главная функция close ----------
+
 def close_sprint(db: Session, jira: JiraClient,
                   sprint_id: int, config_id: int) -> models.Sprint:
-    """Закрыть спринт: снять снапшот статусов из Jira.
+    """Закрыть approved-спринт.
 
-    Логика проверки state:
-    1. По каждой реальной задаче запрашиваем её sprint-поле.
-    2. В нём ищем объект с номером ТЕКУЩЕГО спринта (не больший!).
-    3. Если хотя бы у одной задачи этот объект имеет state='closed' —
-       считаем спринт в Jira закрытым.
-    4. Если ни у одной — показываем то, что видели как наиболее частый state.
+    1. Снять снапшот статусов всех своих задач (как раньше).
+    2. Найти jira_sprint_id, через JQL собрать ВСЕ задачи Jira-спринта.
+    3. Diff: что есть в Jira, но нет в snapshot.tasks → врывы.
+    4. Для каждого врыва найти владельца из team_snapshot — если нашёлся, добавить.
+    5. Сохранить intrusions в Sprint.
     """
     sprint = sprints_repository.get_sprint(db, sprint_id)
     if not sprint:
@@ -263,13 +414,18 @@ def close_sprint(db: Session, jira: JiraClient,
             f"закрыть можно только approved."
         )
 
-    sprint_field = sprint.config_snapshot.get("sprint_field", "")
+    snapshot = sprint.config_snapshot or {}
+    sprint_field = snapshot.get("sprint_field", "")
+    project_key = snapshot.get("project_key", "")
     target_num = sprint.sprint_num
+    terminal_set = set(snapshot.get("terminal_statuses") or [])
+
+    # ---------- Часть 1: снапшот статусов наших задач ----------
 
     closed_data_by_position: dict[int, dict] = {}
-    seen_states: dict[str, int] = {}  # state -> count, для понятного сообщения об ошибке
     jira_complete_date: datetime | None = None
     found_closed = False
+    seen_states: dict[str, int] = {}
 
     for st in sprint.tasks:
         task = st.task_data or {}
@@ -302,7 +458,6 @@ def close_sprint(db: Session, jira: JiraClient,
         }
 
     if not found_closed:
-        # Соберём понятное сообщение об ошибке
         if seen_states:
             states_summary = ", ".join(
                 f"{state}={count}" for state, count in sorted(seen_states.items())
@@ -315,10 +470,67 @@ def close_sprint(db: Session, jira: JiraClient,
         else:
             msg = (
                 f"В Jira не нашёл Sprint {target_num} ни у одной задачи спринта. "
-                f"Возможно, все задачи переназначены в другой спринт."
+                f"Возможно, все задачи переназначены."
             )
         raise JiraSprintNotClosedError(msg)
 
+    # ---------- Часть 2: поиск врывов ----------
+
+    intrusions: list[dict] = []
+    jira_sprint_id = _find_jira_sprint_id(jira, snapshot, sprint.tasks, target_num)
+    if jira_sprint_id is None:
+        # Не страшно — просто не сможем посчитать врывы. Сохраним пустой список.
+        print(f"[close_sprint] Не удалось определить Jira-ID спринта {target_num}, "
+              f"врывы не считаем.")
+    else:
+        # Какие задачи мы знали при approve
+        known_keys: set[str] = set()
+        for st in sprint.tasks:
+            td = st.task_data or {}
+            if td.get("is_pseudo"):
+                continue
+            k = td.get("key")
+            if k:
+                known_keys.add(k)
+
+        # Поля для JQL — стандартные + customfields для часов и Ответственного
+        fields_list = ["summary", "status", "assignee", "reporter", "timeoriginalestimate"]
+        # Добавим customfields из role_hours_fields
+        for fid in (snapshot.get("role_hours_fields") or {}).values():
+            if fid and fid not in fields_list:
+                fields_list.append(fid)
+        resp_field = snapshot.get("responsible_field")
+        if resp_field and resp_field not in fields_list:
+            fields_list.append(resp_field)
+
+        jql = f'project = {project_key} AND sprint = {jira_sprint_id}'
+        try:
+            data = jira.get(
+                "/rest/api/3/search/jql",
+                params={
+                    "jql": jql,
+                    "fields": ",".join(fields_list),
+                    "maxResults": 200,
+                },
+            )
+            issues = data.get("issues", []) if isinstance(data, dict) else []
+        except Exception as e:
+            print(f"[close_sprint] Не удалось получить задачи Jira-спринта: {e}")
+            issues = []
+
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            key = issue.get("key")
+            if not key or key in known_keys:
+                continue
+            rec = _build_intrusion_record(issue, snapshot, terminal_set)
+            if rec:
+                intrusions.append(rec)
+
+    # ---------- Часть 3: сохранение ----------
+
     return sprints_repository.close_sprint(
         db, sprint, closed_data_by_position, jira_complete_date,
+        intrusions=intrusions,
     )

@@ -9,7 +9,10 @@ from app.db import users_repository
 from app.jira.client import JiraClient
 from app.services import config_service
 from app.sprint.config import from_dict
-from app.sprint.logic import allocate, collect_candidates, compute_priorities
+from app.sprint.logic import (
+    allocate, collect_candidates, compute_priorities,
+    compute_sprint_expected_results, derive_pipeline_tasks,
+)
 
 
 class ConfigNotFoundError(Exception):
@@ -60,6 +63,23 @@ def build_sprint(
         compute_priorities(candidates, cfg)
 
     allocated, overflow, used = allocate([c for c in candidates], cfg, target_sprint_num)
+
+    # Породить задачи тестирования / код-ревью / дизайн-ревью из выполненных задач
+    derived = derive_pipeline_tasks(allocated, cfg)
+    budget = cfg.hours_per_person
+    for task in derived:
+        owner = task["owner_id"]
+        if owner in used and used[owner] + task["hours"] <= budget:
+            used[owner] += task["hours"]
+            allocated.append(task)
+        else:
+            overflow.append(task)
+
+    # Ожидаемый итог спринта по pipeline направлений
+    expected = compute_sprint_expected_results(allocated, cfg)
+    for task in allocated:
+        if not task.get("is_pseudo"):
+            task["sprint_expected_result"] = expected.get(task["key"])
 
     owner_stats = [
         {

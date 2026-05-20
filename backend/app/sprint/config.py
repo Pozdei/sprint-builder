@@ -20,6 +20,8 @@ class SprintConfig:
     default_task_hours: float
     leader_hours: float = 20.0
     leader_management_enabled: bool = True
+    # Customfield Jira «Разработчик» — например "customfield_10200"; пустая строка = не задано
+    developer_field: str = ""
 
     # Команда: {accountId: {jira_name, file_name, role, id}}
     team: dict[str, dict] = field(default_factory=dict)
@@ -36,6 +38,10 @@ class SprintConfig:
     pseudo_tasks: list[dict] = field(default_factory=list)
     # Фаза 2.5: терминальные статусы для подсчёта % выполнения
     terminal_statuses: list[str] = field(default_factory=list)
+
+    # Фаза 2.11: направления задач — pipeline видов работ
+    # [{name, labels: [str], work_types: ["analytics","development","testing",...]}]
+    directions: list[dict] = field(default_factory=list)
 
     # ---- Совместимость с фазой 1 (для старой бизнес-логики) ----
     # Сейчас collect_candidates и allocate работают только для analyst.
@@ -55,6 +61,7 @@ def from_dict(data: dict) -> SprintConfig:
         default_task_hours=data["default_task_hours"],
         leader_hours=data.get("leader_hours", 20.0),
         leader_management_enabled=data.get("leader_management_enabled", True),
+        developer_field=data.get("developer_field", ""),
         team=data.get("team", {}),
         boards=data.get("boards", {}),
         extra_components=data.get("extra_components", []),
@@ -65,6 +72,7 @@ def from_dict(data: dict) -> SprintConfig:
         role_status_default_hours=data.get("role_status_default_hours", []),
         pseudo_tasks=data.get("pseudo_tasks", []),
         terminal_statuses=data.get("terminal_statuses", []),
+        directions=data.get("directions", []),
     )
 
     # Совместимость: собрать status_bucket из role_status_buckets для роли analyst

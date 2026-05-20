@@ -4,13 +4,16 @@ import {
   closeSprint,
   deleteSprint,
   downloadSprintXlsx,
+  fetchGantt,
   getSprint,
   listSprints,
 } from "../api/client";
 import { ClosedSprintView } from "../components/ClosedSprintView";
+import { GanttChart } from "../components/GanttChart";
 import { OwnerStats } from "../components/OwnerStats";
 import { SprintTable } from "../components/SprintTable";
-import type { SprintOut, SprintStatus, SprintSummary } from "../types/api";
+import { StandupModal } from "../components/StandupModal";
+import type { GanttItem, SprintOut, SprintStatus, SprintSummary } from "../types/api";
 
 export function HistoryPage() {
   const [items, setItems] = useState<SprintSummary[] | null>(null);
@@ -119,6 +122,17 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"approve" | "delete" | "download" | "close" | null>(null);
+  const [showStandup, setShowStandup] = useState(false);
+
+  // Гант
+  const [ganttDate, setGanttDate] = useState<string>(() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  });
+  const [hoursPerDay, setHoursPerDay] = useState(8);
+  const [ganttItems, setGanttItems] = useState<GanttItem[] | null>(null);
+  const [ganttLoading, setGanttLoading] = useState(false);
+  const [showGantt, setShowGantt] = useState(false);
 
   useEffect(() => {
     if (!expanded || detail) return;
@@ -155,7 +169,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
     const ok = window.confirm(
       `Закрыть Sprint ${detail.sprint_num}?\n\n` +
       `В Jira спринт уже должен быть закрыт (state=closed). ` +
-      `Будут получены статусы всех задач — это может занять минуту.`
+      `Будут получены статусы задач и список "врывов" — это может занять минуту.`
     );
     if (!ok) return;
     setBusy("close");
@@ -196,18 +210,34 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
         owner_stats: detail.owner_stats,
         max_sprint_num: detail.sprint_num,
       };
-      // Для closed-спринта подкладываем снапшоты и терминальные статусы —
-      // тогда в xlsx появятся вкладки "Закрытие" и "Статистика закрытия".
       if (detail.status === "closed") {
         payload.closed_tasks = detail.closed_tasks;
         payload.terminal_statuses =
           (detail.config_snapshot.terminal_statuses as string[] | undefined) ?? [];
+        if (detail.intrusions && detail.intrusions.length > 0) {
+          payload.intrusions = detail.intrusions;
+        }
       }
       await downloadSprintXlsx(payload);
     } catch (e) {
       setError(extractError(e));
     } finally {
       setBusy(null);
+    }
+  };
+
+  const handleLoadGantt = async () => {
+    if (!detail) return;
+    setGanttLoading(true);
+    setError(null);
+    try {
+      const items = await fetchGantt(detail.id, ganttDate, hoursPerDay);
+      setGanttItems(items);
+      setShowGantt(true);
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setGanttLoading(false);
     }
   };
 
@@ -275,17 +305,86 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                       </>
                     )}
                     {isApproved && (
-                      <button
-                        onClick={handleClose}
-                        disabled={busy !== null}
-                        className="bg-gray-700 hover:bg-gray-800 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
-                      >
-                        {busy === "close" ? "Закрываю…" : "Закрыть спринт"}
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setShowStandup(true)}
+                          disabled={busy !== null}
+                          className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
+                        >
+                          📋 Stand-up
+                        </button>
+                        <button
+                          onClick={handleClose}
+                          disabled={busy !== null}
+                          className="bg-gray-700 hover:bg-gray-800 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
+                        >
+                          {busy === "close" ? "Закрываю…" : "Закрыть спринт"}
+                        </button>
+                      </>
                     )}
                   </div>
 
+                  {showStandup && (
+                    <StandupModal
+                      sprint={detail}
+                      onClose={() => setShowStandup(false)}
+                    />
+                  )}
+
                   <OwnerStats stats={detail.owner_stats} />
+
+                  {/* Секция Гант */}
+                  <div className="mb-4">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        onClick={() => setShowGantt((v) => !v)}
+                        className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                      >
+                        {showGantt ? "▾" : "▸"} Диаграмма Ганта
+                      </button>
+                      {showGantt && (
+                        <>
+                          <label className="text-sm text-gray-600 flex items-center gap-1.5">
+                            Старт:
+                            <input
+                              type="date"
+                              value={ganttDate}
+                              onChange={(e) => { setGanttDate(e.target.value); setGanttItems(null); }}
+                              className="border rounded px-2 py-0.5 text-sm"
+                            />
+                          </label>
+                          <label className="text-sm text-gray-600 flex items-center gap-1.5">
+                            Ч/день:
+                            <input
+                              type="number"
+                              min={1} max={24} step={1}
+                              value={hoursPerDay}
+                              onChange={(e) => { setHoursPerDay(Number(e.target.value)); setGanttItems(null); }}
+                              className="border rounded px-2 py-0.5 text-sm w-16"
+                            />
+                          </label>
+                          <button
+                            onClick={handleLoadGantt}
+                            disabled={ganttLoading}
+                            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white px-3 py-1 rounded text-sm font-semibold"
+                          >
+                            {ganttLoading ? "Считаю…" : "Построить"}
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    {showGantt && ganttItems && ganttItems.length > 0 && (
+                      <div className="mt-3">
+                        <GanttChart
+                          items={ganttItems}
+                          startDate={ganttDate}
+                          hoursPerDay={hoursPerDay}
+                        />
+                      </div>
+                    )}
+                  </div>
+
                   <SprintTable tasks={detail.tasks} />
 
                   {isClosed && <ClosedSprintView sprint={detail} />}

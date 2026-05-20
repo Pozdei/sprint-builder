@@ -4,21 +4,11 @@ import type {
   OwnerStat, SprintBuildResponse, SprintOut, SprintSummary, TaskOut, UserOut,
 } from "../types/api";
 
-// baseURL:
-// - В Docker-проде VITE_API_URL пустой → axios ходит на относительные пути
-//   (browser сам подставит текущий origin, и Caddy прокинет /api/* на backend).
-// - В локальном dev (npm run dev) VITE_API_URL не задан → fallback на :8000.
-//
-// Тонкость: import.meta.env.VITE_API_URL может быть undefined (не задано) или
-// пустой строкой (задано как ""). Различаем явно — пустая строка значит
-// "относительные пути".
 const envUrl = import.meta.env.VITE_API_URL;
 const baseURL =
   envUrl === undefined ? "http://localhost:8000" : envUrl;
 
 const api = axios.create({ baseURL });
-
-// -------------------- Auth helpers --------------------
 
 const TOKEN_KEY = "sb_token";
 
@@ -47,7 +37,7 @@ api.interceptors.response.use(
   },
 );
 
-// -------------------- Auth API --------------------
+// -------------------- Auth --------------------
 
 export async function login(email: string, password: string): Promise<LoginResponse> {
   const r = await api.post("/api/auth/login", { email, password });
@@ -127,12 +117,67 @@ export async function deleteSprint(id: number): Promise<void> {
   await api.delete(`/api/sprints/${id}`);
 }
 
+export async function fetchEpicForecast(
+  key: string,
+  startDate: string,
+  hoursPerDay: number = 8,
+): Promise<import("../types/api").EpicForecastResponse> {
+  const r = await api.get("/api/epic/forecast", {
+    params: { key, start_date: startDate, hours_per_day: hoursPerDay },
+  });
+  return r.data;
+}
+
+export async function fetchStandup(
+  sprintId: number,
+  sprintStart: string,
+  standupDate: string,
+  hoursPerDay: number,
+  roles: string[],
+): Promise<import("../types/api").StandupExecutor[]> {
+  const r = await api.get(`/api/sprints/${sprintId}/standup`, {
+    params: {
+      sprint_start: sprintStart,
+      standup_date: standupDate,
+      hours_per_day: hoursPerDay,
+      roles: roles.join(","),
+    },
+  });
+  return r.data;
+}
+
+export async function submitStandup(payload: {
+  standup_date: string;
+  updates: {
+    key: string;
+    owner_file_name: string;
+    bucket: string;
+    status: string;
+    comment: string;
+    push_to_jira: boolean;
+  }[];
+}): Promise<import("../types/api").StandupSubmitResult[]> {
+  const r = await api.post("/api/jira/standup/submit", payload);
+  return r.data;
+}
+
+export async function fetchGantt(
+  sprintId: number,
+  startDate: string,
+  hoursPerDay: number = 8,
+): Promise<import("../types/api").GanttItem[]> {
+  const r = await api.get(`/api/sprints/${sprintId}/gantt`, {
+    params: { start_date: startDate, hours_per_day: hoursPerDay },
+  });
+  return r.data;
+}
+
 export async function setSprintTasks(id: number, tasks: TaskOut[]): Promise<SprintOut> {
   const r = await api.put(`/api/sprints/${id}/tasks`, { tasks });
   return r.data;
 }
 
-// -------------------- Скачивание xlsx --------------------
+// -------------------- xlsx --------------------
 
 interface SprintExportPayload {
   allocated: TaskOut[];
@@ -140,11 +185,14 @@ interface SprintExportPayload {
   max_sprint_num: number | null;
   closed_tasks?: (ClosedTaskData | null)[];
   terminal_statuses?: string[];
+  // Фаза 2.10
+  intrusions?: unknown[];
 }
 
 interface CandidatesExportPayload {
   candidates: TaskOut[];
   max_sprint_num: number | null;
+  allocated_set?: string[];  // "key|role|bucket" для аллоцированных задач
 }
 
 async function downloadBlob(url: string, payload: object, fallbackName: string) {

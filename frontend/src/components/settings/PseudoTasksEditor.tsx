@@ -7,8 +7,14 @@ interface Props {
 }
 
 export function PseudoTasksEditor({ value, onChange, team }: Props) {
-  const members = Object.entries(team).map(([accId, m]) => ({ accId, ...m }));
+  // Берём только сохранённых (id > 0). У свежедобавленных через "+ Добавить из Jira"
+  // id = 0 — для них псевдо-задачи нельзя завести до сохранения конфига.
+  const members = Object.entries(team)
+    .map(([accId, m]) => ({ accId, ...m }))
+    .filter((m) => m.id > 0);
+
   const memberById = new Map(members.map((m) => [m.id, m]));
+  const hasUnsavedMembers = Object.values(team).some((m) => !m.id || m.id <= 0);
 
   const update = (
     i: number,
@@ -21,10 +27,17 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
   };
 
   const handleAdd = () => {
+    if (members.length === 0) {
+      window.alert(
+        "Нет ни одного сохранённого человека в команде. " +
+        "Сначала добавьте людей через «+ Добавить из Jira» и сохраните конфиг."
+      );
+      return;
+    }
     onChange([
       ...value,
       {
-        member_id: members[0]?.id || 0,
+        member_id: members[0].id,
         name: "Отпуск",
         bucket: "Отсутствие",
         hours: 40,
@@ -38,6 +51,13 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
 
   return (
     <div>
+      {hasUnsavedMembers && (
+        <div className="mb-3 bg-yellow-50 border border-yellow-300 text-yellow-900 rounded p-2 text-sm">
+          В команде есть новые люди, которые ещё не сохранены. После сохранения
+          конфига они появятся в выпадающем списке псевдо-задач.
+        </div>
+      )}
+
       <table className="w-full text-sm border">
         <thead className="bg-gray-100">
           <tr>
@@ -68,7 +88,7 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
                     ) : null}
                     {members.map((mem) => (
                       <option key={mem.id} value={mem.id}>
-                        {mem.file_name} ({mem.role})
+                        {mem.file_name || mem.jira_name} ({mem.role})
                       </option>
                     ))}
                   </select>

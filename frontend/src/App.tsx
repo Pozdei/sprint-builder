@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { checkJira, getMe, getToken, setToken } from "./api/client";
 import { ConfigSwitcher } from "./components/ConfigSwitcher";
 import { AdminPage } from "./pages/AdminPage";
+import { EpicForecastPage } from "./pages/EpicForecastPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -13,7 +14,7 @@ type JiraStatus =
   | { kind: "ok"; name: string }
   | { kind: "error"; message: string };
 
-type LeadPage = "sprint" | "history" | "settings";
+type LeadPage = "sprint" | "history" | "forecast" | "settings";
 type AdminPageKind = "admin";
 type Page = LeadPage | AdminPageKind;
 
@@ -86,6 +87,9 @@ function App() {
                   <NavTab active={page === "history"} onClick={() => setPage("history")}>
                     История
                   </NavTab>
+                  <NavTab active={page === "forecast"} onClick={() => setPage("forecast")}>
+                    Прогноз реализации
+                  </NavTab>
                   <NavTab active={page === "settings"} onClick={() => setPage("settings")}>
                     Настройки
                   </NavTab>
@@ -108,6 +112,7 @@ function App() {
         <SprintPage key={`sprint-${configEpoch}`} jiraReady={jiraStatus.kind === "ok"} />
       )}
       {!isAdmin && page === "history" && <HistoryPage key={`history-${configEpoch}`} />}
+      {!isAdmin && page === "forecast" && <EpicForecastPage key={`forecast-${configEpoch}`} />}
       {!isAdmin && page === "settings" && <SettingsPage key={`settings-${configEpoch}`} />}
     </div>
   );

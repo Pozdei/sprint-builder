@@ -1,4 +1,4 @@
-// Типы зеркалят Pydantic-схемы из backend/app/schemas/
+// Типы для API.
 
 export interface TaskOut {
   key: string;
@@ -7,20 +7,29 @@ export interface TaskOut {
   status_name: string;
   bucket: string;
   role: string;
-  is_pseudo: boolean;
   owner_id: string;
   owner_file_name: string;
   hours: number;
-  board: string;
   sprint_num: number | null;
-  sprint_name: string | null;
-  formal_only: boolean;
   priority: number | null;
-  partial_from: number | null;
-  hours_analyst: number | null;
-  hours_tester: number | null;
-  hours_developer: number | null;
-  hours_original: number | null;
+  is_pseudo: boolean;
+  formal_only?: boolean;
+  partial_from?: number;
+  // Ожидаемый итог спринта по pipeline (бакет последнего шага или терминальный статус)
+  sprint_expected_result?: string | null;
+  // Pipeline-поля (round-trip через candidates)
+  direction?: string | null;
+  labels?: string[];
+  responsible_id?: string | null;
+  assignee_id?: string | null;
+  reporter_id?: string | null;
+  hours_analyst?: number | null;
+  hours_tester?: number | null;
+  hours_developer?: number | null;
+  hours_original?: number | null;
+  hours_is_default?: boolean;
+  overflow_reason?: string | null;
+  developer_name?: string | null;
 }
 
 export interface OwnerStat {
@@ -38,99 +47,6 @@ export interface SprintBuildResponse {
   diagnostics: Record<string, unknown>;
   max_sprint_num: number | null;
 }
-
-// ---------- Config (фаза 2) ----------
-
-export interface TeamMemberOut {
-  id: number;
-  jira_name: string;
-  file_name: string;
-  role: string;  // analyst | designer | designer_lead | developer | developer_lead
-}
-
-export interface RoleOut {
-  name: string;
-  display_name: string;
-  enabled: boolean;
-  is_lead: boolean;
-  sort_order: number;
-}
-
-export interface RoleStatusBucketOut {
-  role: string;
-  jira_status: string;
-  bucket: string;
-}
-
-export interface RoleStatusDefaultHoursOut {
-  role: string;
-  jira_status: string;
-  hours: number;
-}
-
-export interface PseudoTaskOut {
-  member_id: number;
-  name: string;
-  bucket: string;
-  hours: number;
-  recurring: boolean;
-  target_sprint_num: number | null;
-}
-
-export interface ConfigOut {
-  id: number;
-  name: string;
-  is_default: boolean;
-
-  project_key: string;
-  sprint_field: string;
-  responsible_field: string;
-  hours_per_person: number;
-  default_task_hours: number;
-  leader_hours: number;
-  leader_management_enabled: boolean;
-
-  team: Record<string, TeamMemberOut>;
-  boards: Record<string, number>;
-  extra_components: string[];
-  status_priority: Record<string, number>;
-  role_hours_fields: Record<string, string>;
-
-  roles: RoleOut[];
-  role_status_buckets: RoleStatusBucketOut[];
-  role_status_default_hours: RoleStatusDefaultHoursOut[];
-  pseudo_tasks: PseudoTaskOut[];
-  terminal_statuses: string[];
-}
-
-export interface TeamMemberIn {
-  jira_name: string;
-  file_name: string;
-  role: string;
-}
-
-export interface ConfigUpdate {
-  name?: string;
-  project_key?: string;
-  sprint_field?: string;
-  responsible_field?: string;
-  hours_per_person?: number;
-  default_task_hours?: number;
-  leader_hours?: number;
-  leader_management_enabled?: boolean;
-  team?: Record<string, TeamMemberIn>;
-  boards?: Record<string, number>;
-  extra_components?: string[];
-  status_priority?: Record<string, number>;
-  role_hours_fields?: Record<string, string>;
-  roles?: RoleOut[];
-  role_status_buckets?: RoleStatusBucketOut[];
-  role_status_default_hours?: RoleStatusDefaultHoursOut[];
-  pseudo_tasks?: PseudoTaskOut[];
-  terminal_statuses?: string[];
-}
-
-// ---------- Sprint history ----------
 
 export type SprintStatus = "draft" | "approved" | "closed";
 
@@ -162,6 +78,68 @@ export interface SprintOut {
   owner_stats: OwnerStat[];
   tasks: TaskOut[];
   closed_tasks: (ClosedTaskData | null)[];
+  // Фаза 2.10 — список врывов
+  intrusions?: unknown[];
+}
+
+export interface EpicStats {
+  total_issues: number;
+  done_issues: number;
+  remaining_work_items: number;
+  total_planned_hours: number;
+  default_hours_count: number;
+}
+
+export interface EpicForecastResponse {
+  epic_key: string;
+  epic_summary: string;
+  gantt_items: GanttItem[];
+  completion_date: string | null;
+  stats: EpicStats;
+  warnings: string[];
+}
+
+export interface StandupTask {
+  key: string;
+  summary: string;
+  url: string;
+  bucket: string;
+  planned_start: string;
+  planned_end: string;
+  planned_hours: number;
+  is_overdue: boolean;
+}
+
+export interface StandupExecutor {
+  owner_id: string;
+  owner_file_name: string;
+  role: string;
+  tasks: StandupTask[];
+}
+
+export interface StandupSubmitResult {
+  key: string;
+  bucket: string;
+  pushed: boolean;
+  error?: string | null;
+}
+
+export interface GanttItem {
+  key: string;
+  summary: string;
+  bucket: string;
+  role: string;
+  owner_id: string;
+  owner_file_name: string;
+  hours: number;
+  is_pseudo: boolean;
+  url: string;
+  direction: string | null;
+  start: string;
+  end: string;
+  start_hours: number;
+  end_hours: number;
+  hours_is_default?: boolean;
 }
 
 export interface BuildAndSaveResponse extends SprintBuildResponse {
@@ -174,7 +152,7 @@ export interface UserOut {
   id: number;
   email: string;
   display_name: string;
-  role: string;  // 'admin' | 'lead'
+  role: string;
   is_active: boolean;
 }
 
@@ -182,4 +160,102 @@ export interface LoginResponse {
   access_token: string;
   token_type: string;
   user: UserOut;
+}
+
+// ---------- Config ----------
+
+/** Запись в team. accountId — это КЛЮЧ словаря team, не поле этого объекта. */
+export interface TeamMemberOut {
+  /** id строки team_members в БД. У свежедобавленных через UI до сохранения = 0. */
+  id: number;
+  /** id записи в справочнике people. null до сохранения. */
+  person_id: number | null;
+  jira_name: string;
+  file_name: string;
+  role: string;
+}
+
+export interface RoleOut {
+  name: string;
+  display_name: string;
+  enabled: boolean;
+  is_lead: boolean;
+  sort_order: number;
+}
+
+export interface RoleStatusBucketOut {
+  role: string;
+  jira_status: string;
+  bucket: string;
+}
+
+export interface RoleStatusDefaultHoursOut {
+  role: string;
+  jira_status: string;
+  hours: number;
+}
+
+export interface PseudoTaskOut {
+  member_id: number;
+  name: string;
+  bucket: string;
+  hours: number;
+  recurring: boolean;
+  target_sprint_num: number | null;
+}
+
+export interface DirectionOut {
+  name: string;
+  labels: string[];
+  work_types: string[];
+  dev_role: string;
+}
+
+export interface ConfigOut {
+  id: number;
+  name: string;
+  is_default: boolean;
+  project_key: string;
+  sprint_field: string;
+  responsible_field: string;
+  hours_per_person: number;
+  default_task_hours: number;
+  leader_hours: number;
+  leader_management_enabled: boolean;
+  developer_field: string;
+  team: Record<string, TeamMemberOut>;
+  boards: Record<string, number>;
+  extra_components: string[];
+  status_priority: Record<string, number>;
+  role_hours_fields: Record<string, string>;
+  roles: RoleOut[];
+  role_status_buckets: RoleStatusBucketOut[];
+  role_status_default_hours: RoleStatusDefaultHoursOut[];
+  pseudo_tasks: PseudoTaskOut[];
+  terminal_statuses: string[];
+  directions: DirectionOut[];
+}
+
+/** Формат, который шлёт SettingsPage на сервер. team — без id/person_id. */
+export interface ConfigUpdate {
+  name?: string;
+  project_key?: string;
+  sprint_field?: string;
+  responsible_field?: string;
+  hours_per_person?: number;
+  default_task_hours?: number;
+  leader_hours?: number;
+  leader_management_enabled?: boolean;
+  developer_field?: string;
+  team?: Record<string, { jira_name: string; file_name: string; role: string }>;
+  boards?: Record<string, number>;
+  extra_components?: string[];
+  status_priority?: Record<string, number>;
+  role_hours_fields?: Record<string, string>;
+  roles?: RoleOut[];
+  role_status_buckets?: RoleStatusBucketOut[];
+  role_status_default_hours?: RoleStatusDefaultHoursOut[];
+  pseudo_tasks?: PseudoTaskOut[];
+  terminal_statuses?: string[];
+  directions?: DirectionOut[];
 }

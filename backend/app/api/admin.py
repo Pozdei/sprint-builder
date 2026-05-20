@@ -1,12 +1,12 @@
 """Админ-эндпоинты: управление пользователями + обзор конфигов и спринтов."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin
 from app.db import models, sprints_repository, users_repository
 from app.db.session import get_db
+from app.schemas.admin import AdminConfigSummary, AdminSprintSummary
 from app.schemas.auth import (
     ConfigTransferRequest, PasswordResetRequest, UserCreateRequest,
     UserOut, UserUpdateRequest,
@@ -17,23 +17,11 @@ from app.services.admin_service import AdminActionError
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-# -------------------- DTO сводных --------------------
-
-class AdminConfigSummary(BaseModel):
-    id: int
-    name: str
-    owner_user_id: int | None
-    owner_email: str | None
-    owner_display_name: str | None
-    sprints_count: int
-
-
-class AdminSprintSummary(BaseModel):
-    id: int
-    sprint_num: int
-    status: str
-    config_id: int | None
-    owner_email: str | None
+def _get_user_or_404(db: Session, user_id: int) -> models.User:
+    user = users_repository.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"Пользователь {user_id} не найден")
+    return user
 
 
 # -------------------- Обзор --------------------
@@ -47,8 +35,7 @@ def list_configs(
     items = repository.list_configs(db)
     result = []
     for cfg in items:
-        owner_email = None
-        owner_name = None
+        owner_email = owner_name = None
         if cfg.owner_user_id:
             u = db.get(models.User, cfg.owner_user_id)
             if u:
@@ -60,9 +47,7 @@ def list_configs(
             owner_user_id=cfg.owner_user_id,
             owner_email=owner_email,
             owner_display_name=owner_name,
-            sprints_count=len(
-                sprints_repository.list_sprints_for_config(db, cfg.id)
-            ),
+            sprints_count=len(sprints_repository.list_sprints_for_config(db, cfg.id)),
         ))
     return result
 
@@ -102,19 +87,12 @@ def list_sprints(
 
 # -------------------- Пользователи --------------------
 
-def _to_user_out(u: models.User) -> UserOut:
-    return UserOut(
-        id=u.id, email=u.email, display_name=u.display_name,
-        role=u.role, is_active=u.is_active,
-    )
-
-
 @router.get("/users", response_model=list[UserOut])
 def list_users_endpoint(
     _admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return [_to_user_out(u) for u in users_repository.list_users(db)]
+    return [UserOut.model_validate(u) for u in users_repository.list_users(db)]
 
 
 @router.post("/users", response_model=UserOut, status_code=201)
@@ -130,7 +108,7 @@ def create_user_endpoint(
         )
     except AdminActionError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return _to_user_out(u)
+    return UserOut.model_validate(u)
 
 
 @router.patch("/users/{user_id}", response_model=UserOut)
@@ -140,10 +118,7 @@ def update_user_endpoint(
     _admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    target = users_repository.get_user_by_id(db, user_id)
-    if not target:
-        raise HTTPException(status_code=404, detail=f"Пользователь {user_id} не найден")
-
+    target = _get_user_or_404(db, user_id)
     try:
         u = admin_service.update_user(
             db, target=target,
@@ -153,7 +128,7 @@ def update_user_endpoint(
         )
     except AdminActionError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return _to_user_out(u)
+    return UserOut.model_validate(u)
 
 
 @router.post("/users/{user_id}/reset-password", status_code=204)
@@ -163,10 +138,7 @@ def reset_password_endpoint(
     _admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    target = users_repository.get_user_by_id(db, user_id)
-    if not target:
-        raise HTTPException(status_code=404, detail=f"Пользователь {user_id} не найден")
-
+    target = _get_user_or_404(db, user_id)
     try:
         admin_service.reset_password(db, target, body.new_password)
     except AdminActionError as e:
@@ -179,10 +151,7 @@ def delete_user_endpoint(
     admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    target = users_repository.get_user_by_id(db, user_id)
-    if not target:
-        raise HTTPException(status_code=404, detail=f"Пользователь {user_id} не найден")
-
+    target = _get_user_or_404(db, user_id)
     try:
         admin_service.delete_user(db, target, current_admin_id=admin.id)
     except AdminActionError as e:
@@ -202,24 +171,18 @@ def transfer_config_endpoint(
     if not cfg:
         raise HTTPException(status_code=404, detail=f"Конфиг {config_id} не найден")
 
-    new_owner = users_repository.get_user_by_id(db, body.new_owner_user_id)
-    if not new_owner:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Пользователь {body.new_owner_user_id} не найден",
-        )
+    new_owner = _get_user_or_404(db, body.new_owner_user_id)
 
     try:
         cfg = admin_service.transfer_config(db, cfg, new_owner)
     except AdminActionError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    sprints_count = len(sprints_repository.list_sprints_for_config(db, cfg.id))
     return AdminConfigSummary(
         id=cfg.id,
         name=cfg.name,
         owner_user_id=cfg.owner_user_id,
         owner_email=new_owner.email,
         owner_display_name=new_owner.display_name,
-        sprints_count=sprints_count,
+        sprints_count=len(sprints_repository.list_sprints_for_config(db, cfg.id)),
     )

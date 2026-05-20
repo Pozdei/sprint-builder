@@ -20,15 +20,24 @@ class SprintSummary(BaseModel):
 
 
 class ClosedTaskData(BaseModel):
-    """Снапшот состояния задачи в Jira на момент закрытия спринта."""
     status_name: str
     fetched_at: str
 
 
-class SprintTaskOut(BaseModel):
-    """Задача спринта с возможным снапшотом закрытия."""
-    task: TaskOut
-    closed: ClosedTaskData | None = None
+class IntrusionRecord(BaseModel):
+    """Задача, появившаяся в Jira-спринте ПОСЛЕ approve. Считаем только тех,
+    чей владелец — из team на момент approve."""
+    key: str
+    summary: str
+    status_name: str
+    is_done: bool
+    owner_id: str
+    owner_file_name: str
+    owner_jira_name: str
+    role: str
+    bucket: str
+    hours: float
+    url: str | None = None
 
 
 class SprintOut(BaseModel):
@@ -43,8 +52,8 @@ class SprintOut(BaseModel):
     config_snapshot: dict
     owner_stats: list[OwnerStat]
     tasks: list[TaskOut]
-    # Снапшоты закрытия — в том же порядке, что tasks. None если closed_task_data пуст.
     closed_tasks: list[ClosedTaskData | None] = []
+    intrusions: list[IntrusionRecord] = []
 
 
 class SaveDraftRequest(BaseModel):

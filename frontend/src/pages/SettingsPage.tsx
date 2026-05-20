@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getDefaultConfig, updateConfig } from "../api/client";
 import { DictEditor } from "../components/settings/DictEditor";
+import { DirectionsEditor } from "../components/settings/DirectionsEditor";
 import { PseudoTasksEditor } from "../components/settings/PseudoTasksEditor";
 import { RolesEditor } from "../components/settings/RolesEditor";
 import { RoleStatusBucketsEditor } from "../components/settings/RoleStatusBucketsEditor";
@@ -145,6 +146,15 @@ export function SettingsPage() {
               className="w-full px-2 py-1 border rounded font-mono text-sm"
             />
           </Field>
+          <Field label="Поле Разработчик (customfield_)">
+            <input
+              type="text"
+              value={config.developer_field ?? ""}
+              onChange={(e) => update("developer_field", e.target.value)}
+              placeholder="customfield_XXXXX"
+              className="w-full px-2 py-1 border rounded font-mono text-sm"
+            />
+          </Field>
         </div>
       </Section>
 
@@ -238,6 +248,19 @@ export function SettingsPage() {
           onChange={(v) => update("role_hours_fields", v)}
           keyLabel="Категория"
           valueLabel="Customfield"
+        />
+      </Section>
+
+      <Section title="Направления задач">
+        <p className="text-xs text-gray-500 mb-2">
+          Направление определяется по меткам Jira. Для каждого направления задан pipeline видов
+          работ. Задачи разработчика, завершающиеся в спринте, автоматически порождают тестирование
+          (аналитику) и код-ревью (лиду). Задачи дизайнера — дизайн-ревью лиду.
+        </p>
+        <DirectionsEditor
+          value={config.directions ?? []}
+          onChange={(v) => update("directions", v)}
+          roles={config.roles}
         />
       </Section>
 

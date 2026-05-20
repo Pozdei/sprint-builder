@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   approveSprint,
   buildAndSaveSprint,
@@ -7,9 +7,12 @@ import {
   fetchCandidates,
   setSprintTasks,
 } from "../api/client";
+import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
+import { JiraFieldEditor } from "../components/JiraFieldEditor";
 import { OwnerStats } from "../components/OwnerStats";
 import { SprintComposer } from "../components/SprintComposer";
 import { SprintTable } from "../components/SprintTable";
+import type { IssueFieldsUpdate } from "../api/jira-client";
 import type { OwnerStat, SprintOut, TaskOut } from "../types/api";
 
 interface Props {
@@ -25,12 +28,21 @@ export function SprintPage({ jiraReady }: Props) {
   const [overflow, setOverflow] = useState<TaskOut[]>([]);
   const [ownerStats, setOwnerStats] = useState<OwnerStat[]>([]);
 
+  const [diagnostics, setDiagnostics] = useState<Record<string, unknown> | null>(null);
+
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [loadingSprint, setLoadingSprint] = useState(false);
   const [approving, setApproving] = useState(false);
   const [downloadingC, setDownloadingC] = useState(false);
   const [downloadingS, setDownloadingS] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Фильтры таблицы
+  const [filterOwner, setFilterOwner] = useState("");
+  const [filterBucket, setFilterBucket] = useState("");
+
+  // Редактор полей Jira
+  const [editingTask, setEditingTask] = useState<TaskOut | null>(null);
 
   // Режим редактирования состава
   const [editing, setEditing] = useState(false);
@@ -43,6 +55,7 @@ export function SprintPage({ jiraReady }: Props) {
       const r = await fetchCandidates();
       setCandidates(r.candidates);
       setMaxSprint(r.max_sprint_num);
+      setDiagnostics(r.diagnostics);
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -61,6 +74,7 @@ export function SprintPage({ jiraReady }: Props) {
       setAllocated(r.allocated);
       setOverflow(r.overflow);
       setOwnerStats(r.owner_stats);
+      setDiagnostics(r.diagnostics);
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -92,7 +106,16 @@ export function SprintPage({ jiraReady }: Props) {
     setDownloadingC(true);
     setError(null);
     try {
-      await downloadCandidatesXlsx({ candidates, max_sprint_num: maxSprint });
+      const allocatedSet = allocated
+        ? allocated
+            .filter((t) => !t.is_pseudo)
+            .map((t) => `${t.key}|${t.role}|${t.bucket}`)
+        : undefined;
+      await downloadCandidatesXlsx({
+        candidates,
+        max_sprint_num: maxSprint,
+        allocated_set: allocatedSet,
+      });
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -133,7 +156,57 @@ export function SprintPage({ jiraReady }: Props) {
     setOverflow([]);
     setOwnerStats([]);
     setEditing(false);
+    setFilterOwner("");
+    setFilterBucket("");
   };
+
+  // Применяет обновление полей Jira к локальным спискам задач
+  const handleJiraSaved = (
+    key: string,
+    update: IssueFieldsUpdate,
+    devName: string | null,
+  ) => {
+    const patch = (t: TaskOut): TaskOut => {
+      if (t.key !== key) return t;
+      return {
+        ...t,
+        hours_analyst:   update.hours_analyst   ?? t.hours_analyst,
+        hours_tester:    update.hours_tester    ?? t.hours_tester,
+        hours_developer: update.hours_developer ?? t.hours_developer,
+        developer_name:  devName ?? t.developer_name,
+        hours_is_default:
+          update.hours_analyst != null ||
+          update.hours_tester != null ||
+          update.hours_developer != null
+            ? false
+            : t.hours_is_default,
+      };
+    };
+    if (candidates) setCandidates(candidates.map(patch));
+    if (allocated)  setAllocated(allocated.map(patch));
+    setOverflow(overflow.map(patch));
+  };
+
+  // Опции для дропдаунов фильтра (из объединения allocated + overflow)
+  const allTasks = useMemo(
+    () => [...(allocated ?? []), ...overflow],
+    [allocated, overflow],
+  );
+  const ownerOptions = useMemo(
+    () => Array.from(new Set(allTasks.map((t) => t.owner_file_name))).sort(),
+    [allTasks],
+  );
+  const bucketOptions = useMemo(
+    () => Array.from(new Set(allTasks.map((t) => t.bucket))).sort(),
+    [allTasks],
+  );
+
+  const applyFilters = (tasks: TaskOut[]) =>
+    tasks.filter(
+      (t) =>
+        (!filterOwner || t.owner_file_name === filterOwner) &&
+        (!filterBucket || t.bucket === filterBucket),
+    );
 
   const candidatesCount = candidates?.length ?? 0;
   const formalCount = candidates?.filter((c) => c.formal_only).length ?? 0;
@@ -225,8 +298,9 @@ export function SprintPage({ jiraReady }: Props) {
             {sprint && <SprintStatusBadge sprint={sprint} />}
           </div>
 
+          {diagnostics && <DiagnosticsPanel diagnostics={diagnostics} />}
+
           {editing && allocated && candidates ? (
-            // Режим редактирования состава
             <SprintComposer
               candidates={candidates}
               sprintTasks={allocated}
@@ -235,21 +309,65 @@ export function SprintPage({ jiraReady }: Props) {
               onCancel={() => setEditing(false)}
             />
           ) : (
-            // Обычный режим
             <>
               {ownerStats.length > 0 && <OwnerStats stats={ownerStats} />}
+
+              {/* Фильтры — только когда спринт сформирован */}
+              {allocated && sprint && (ownerOptions.length > 1 || bucketOptions.length > 1) && (
+                <div className="flex flex-wrap items-center gap-3 mb-3">
+                  <span className="text-sm text-gray-500">Фильтр:</span>
+                  <select
+                    value={filterOwner}
+                    onChange={(e) => setFilterOwner(e.target.value)}
+                    className="text-sm border rounded px-2 py-1 bg-white"
+                  >
+                    <option value="">Все исполнители</option>
+                    {ownerOptions.map((o) => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={filterBucket}
+                    onChange={(e) => setFilterBucket(e.target.value)}
+                    className="text-sm border rounded px-2 py-1 bg-white"
+                  >
+                    <option value="">Все фазы</option>
+                    {bucketOptions.map((b) => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                  {(filterOwner || filterBucket) && (
+                    <button
+                      onClick={() => { setFilterOwner(""); setFilterBucket(""); }}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      Сбросить
+                    </button>
+                  )}
+                </div>
+              )}
+
               {allocated && sprint ? (
                 <>
                   <h2 className="font-semibold text-gray-700 mb-2">
-                    В спринт ({allocated.length} задач)
+                    В спринт ({applyFilters(allocated).length}
+                    {filterOwner || filterBucket ? ` из ${allocated.length}` : " задач"})
                   </h2>
-                  <SprintTable tasks={allocated} />
+                  <SprintTable
+                    tasks={applyFilters(allocated)}
+                    onEditTask={setEditingTask}
+                  />
                   {overflow.length > 0 && (
                     <>
                       <h2 className="font-semibold text-gray-700 mt-6 mb-2">
-                        Не влезло ({overflow.length})
+                        Не влезло ({applyFilters(overflow).length}
+                        {filterOwner || filterBucket ? ` из ${overflow.length}` : ""})
                       </h2>
-                      <SprintTable tasks={overflow} />
+                      <SprintTable
+                        tasks={applyFilters(overflow)}
+                        isOverflow
+                        onEditTask={setEditingTask}
+                      />
                     </>
                   )}
                 </>
@@ -258,12 +376,23 @@ export function SprintPage({ jiraReady }: Props) {
                   <h2 className="font-semibold text-gray-700 mb-2">
                     Кандидаты ({candidatesCount})
                   </h2>
-                  <SprintTable tasks={candidates} />
+                  <SprintTable
+                    tasks={candidates}
+                    onEditTask={setEditingTask}
+                  />
                 </>
               )}
             </>
           )}
         </>
+      )}
+
+      {editingTask && (
+        <JiraFieldEditor
+          task={editingTask}
+          onClose={() => setEditingTask(null)}
+          onSaved={handleJiraSaved}
+        />
       )}
     </div>
   );

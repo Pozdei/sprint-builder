@@ -1,10 +1,9 @@
-"""Эндпоинты экспорта в xlsx."""
+"""Эндпоинты для xlsx-выгрузки."""
 
-from io import BytesIO
-from urllib.parse import quote
+import urllib.parse
 
 from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 
 from app.schemas.export import CandidatesExportRequest, SprintExportRequest
 from app.sprint.excel import build_candidates_xlsx, build_sprint_xlsx
@@ -12,16 +11,16 @@ from app.sprint.excel import build_candidates_xlsx, build_sprint_xlsx
 router = APIRouter(tags=["export"])
 
 
-def _xlsx_response(content: bytes, filename: str) -> StreamingResponse:
-    """Завернуть байты в HTTP-ответ с правильными заголовками для скачивания.
-
-    Имя файла кодируем по RFC 5987 — чтобы кириллица не ломалась.
-    """
-    encoded = quote(filename)
-    return StreamingResponse(
-        BytesIO(content),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"},
+def _xlsx_response(content: bytes, filename: str) -> Response:
+    encoded = urllib.parse.quote(filename)
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{encoded}",
+    }
+    return Response(
+        content=content,
+        media_type=("application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"),
+        headers=headers,
     )
 
 
@@ -31,9 +30,11 @@ def export_sprint(req: SprintExportRequest):
         allocated=[t.model_dump() for t in req.allocated],
         owner_stats=[s.model_dump() for s in req.owner_stats],
         max_sprint_num=req.max_sprint_num,
-        closed_tasks=[c.model_dump() if c else None for c in req.closed_tasks]
-                      if req.closed_tasks is not None else None,
+        closed_tasks=([c.model_dump() if c else None for c in req.closed_tasks]
+                       if req.closed_tasks is not None else None),
         terminal_statuses=req.terminal_statuses,
+        intrusions=([i.model_dump() for i in req.intrusions]
+                     if req.intrusions else None),
     )
     suffix = f"_{req.max_sprint_num}" if req.max_sprint_num else ""
     return _xlsx_response(content, f"sprint{suffix}.xlsx")
@@ -43,6 +44,7 @@ def export_sprint(req: SprintExportRequest):
 def export_candidates(req: CandidatesExportRequest):
     content = build_candidates_xlsx(
         candidates=[t.model_dump() for t in req.candidates],
+        allocated_set=set(req.allocated_set) if req.allocated_set is not None else None,
     )
     suffix = f"_{req.max_sprint_num}" if req.max_sprint_num else ""
     return _xlsx_response(content, f"candidates{suffix}.xlsx")

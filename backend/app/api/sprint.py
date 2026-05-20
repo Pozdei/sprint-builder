@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_config, require_lead
+from app.api.sprints import _to_out as sprint_to_out
 from app.db import models
 from app.db.session import get_db
 from app.jira.client import JiraError, client
@@ -17,6 +18,16 @@ from app.services.sprint_service import (
 )
 
 router = APIRouter(prefix="/sprint", tags=["sprint"])
+
+
+class BuildAndSaveResponse(SprintBuildResponse):
+    sprint: SprintOut
+
+
+def _parse_candidates_in(body: SprintBuildRequest | None) -> list[dict] | None:
+    if body and body.candidates:
+        return [c.model_dump() for c in body.candidates]
+    return None
 
 
 @router.post("/candidates", response_model=CandidatesResponse)
@@ -39,20 +50,13 @@ def build(
     user: models.User = Depends(require_lead),
     db: Session = Depends(get_db),
 ):
-    candidates_in = None
-    if body and body.candidates:
-        candidates_in = [c.model_dump() for c in body.candidates]
     try:
-        result = build_sprint(db, client, user.id, candidates_in=candidates_in)
+        result = build_sprint(db, client, user.id, candidates_in=_parse_candidates_in(body))
     except ConfigNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except JiraError as e:
         raise HTTPException(status_code=502, detail=str(e))
     return result
-
-
-class BuildAndSaveResponse(SprintBuildResponse):
-    sprint: SprintOut
 
 
 @router.post("/build-and-save", response_model=BuildAndSaveResponse)
@@ -61,11 +65,8 @@ def build_and_save(
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
 ):
-    candidates_in = None
-    if body and body.candidates:
-        candidates_in = [c.model_dump() for c in body.candidates]
+    candidates_in = _parse_candidates_in(body)
 
-    # 1) Собрать кандидатов и узнать max_sprint_num
     if not candidates_in:
         try:
             collected = collect_sprint_candidates(db, client, config.owner_user_id)
@@ -81,7 +82,6 @@ def build_and_save(
             default=None,
         )
 
-    # 2) Номер целевого спринта в контексте этого конфига
     try:
         target_sprint_num = sprints_service.compute_next_sprint_num(
             db, config.id, max_sprint_num,
@@ -89,7 +89,6 @@ def build_and_save(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 3) Allocate с известным номером
     try:
         result = build_sprint(
             db, client, config.owner_user_id,
@@ -101,7 +100,6 @@ def build_and_save(
     except JiraError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    # 4) Сохранение draft в БД
     try:
         sprint = sprints_service.save_draft(
             db,
@@ -114,19 +112,4 @@ def build_and_save(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
-    sprint_out = SprintOut(
-        id=sprint.id,
-        sprint_num=sprint.sprint_num,
-        status=sprint.status,  # type: ignore[arg-type]
-        created_at=sprint.created_at,
-        approved_at=sprint.approved_at,
-        closed_at=sprint.closed_at,
-        jira_completed_at=sprint.jira_completed_at,
-        max_sprint_in_jira=sprint.max_sprint_in_jira,
-        config_snapshot=sprint.config_snapshot,
-        owner_stats=sprint.owner_stats_snapshot,
-        tasks=[t.task_data for t in sprint.tasks],
-        closed_tasks=[None] * len(sprint.tasks),  # свежесозданный — без снапшотов
-    )
-
-    return BuildAndSaveResponse(**result, sprint=sprint_out)
+    return BuildAndSaveResponse(**result, sprint=sprint_to_out(sprint))

@@ -24,3 +24,14 @@ class TaskOut(BaseModel):
     hours_tester: float | None
     hours_developer: float | None
     hours_original: float | None
+    # Ожидаемый итог спринта по pipeline (вычисляется при сборке спринта)
+    sprint_expected_result: str | None = None
+    # Поля для pipeline-логики направлений (round-trip через candidates)
+    direction: str | None = None
+    labels: list[str] = []
+    responsible_id: str | None = None
+    assignee_id: str | None = None
+    reporter_id: str | None = None
+    developer_name: str | None = None
+    hours_is_default: bool = False
+    overflow_reason: str | None = None

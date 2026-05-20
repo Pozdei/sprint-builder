@@ -1,12 +1,7 @@
 """SQLAlchemy-модели.
 
-Фаза 2.8: введён справочник людей (Person) у пользователя.
-- Person — справочник людей конкретного lead-пользователя.
-- TeamMember — связка (config, person, role).
-- PseudoTask — остаётся на team_member (живёт в конфиге).
-- У одного lead может быть несколько Config-ов.
-- Конфиги уникальны в рамках одного пользователя (owner_user_id, name).
-- Пользователь хранит active_config_id — на каком конфиге работает сейчас.
+Фаза 2.10: добавлено поле Sprint.intrusions — JSON со списком "врывов"
+(задач, которые появились в Jira-спринте после approve).
 """
 
 from datetime import datetime
@@ -33,17 +28,14 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
                                                   server_default=func.now())
-
-    # Активный конфиг — на чём работает lead. SET NULL при удалении конфига.
     active_config_id: Mapped[int | None] = mapped_column(
         ForeignKey("configs.id", ondelete="SET NULL"), nullable=True,
     )
 
 
-# -------------------- People (фаза 2.8) --------------------
+# -------------------- People --------------------
 
 class Person(Base):
-    """Справочник людей у lead-пользователя. Используется командой в разных конфигах."""
     __tablename__ = "people"
     __table_args__ = (
         UniqueConstraint("owner_user_id", "jira_account_id",
@@ -83,6 +75,8 @@ class Config(Base):
 
     leader_hours: Mapped[float] = mapped_column(Float, default=20.0)
     leader_management_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Поле Jira «Разработчик» — customfield_XXXXX; пустая строка = не задано
+    developer_field: Mapped[str] = mapped_column(String(50), default="")
 
     team_members: Mapped[list["TeamMember"]] = relationship(
         cascade="all, delete-orphan", back_populates="config"
@@ -114,6 +108,9 @@ class Config(Base):
     terminal_statuses: Mapped[list["TerminalStatus"]] = relationship(
         cascade="all, delete-orphan", back_populates="config"
     )
+    directions: Mapped[list["ConfigDirection"]] = relationship(
+        cascade="all, delete-orphan", back_populates="config"
+    )
 
 
 # -------------------- Team --------------------
@@ -127,12 +124,9 @@ class TeamMember(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     config_id: Mapped[int] = mapped_column(ForeignKey("configs.id", ondelete="CASCADE"))
-    # person_id — новое поле в 2.8. nullable=True для совместимости с миграцией.
     person_id: Mapped[int | None] = mapped_column(
         ForeignKey("people.id", ondelete="CASCADE"), nullable=True,
     )
-    # Старые поля — оставлены ради миграции/обратной совместимости. После 2.8
-    # источник правды для имени/файла — Person. Эти поля больше не редактируются.
     jira_account_id: Mapped[str] = mapped_column(String(100))
     jira_name: Mapped[str] = mapped_column(String(200))
     file_name: Mapped[str] = mapped_column(String(100))
@@ -145,8 +139,6 @@ class TeamMember(Base):
         cascade="all, delete-orphan", back_populates="member"
     )
 
-
-# -------------------- Доски и компоненты --------------------
 
 class ConfigBoard(Base):
     __tablename__ = "config_boards"
@@ -174,8 +166,6 @@ class ConfigComponent(Base):
 
     config: Mapped[Config] = relationship(back_populates="components")
 
-
-# -------------------- Roles --------------------
 
 class Role(Base):
     __tablename__ = "roles"
@@ -255,10 +245,7 @@ class RoleHoursField(Base):
     config: Mapped[Config] = relationship(back_populates="role_hours_fields")
 
 
-# -------------------- Pseudo-задачи --------------------
-
 class PseudoTask(Base):
-    """Псевдо-задача — живёт в конфиге, привязана к team_member."""
     __tablename__ = "pseudo_tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -274,7 +261,24 @@ class PseudoTask(Base):
     member: Mapped[TeamMember] = relationship(back_populates="pseudo_tasks")
 
 
-# -------------------- Терминальные статусы --------------------
+class ConfigDirection(Base):
+    """Направление — группа задач с общим pipeline работ (аналитика → разработка → тест)."""
+
+    __tablename__ = "config_directions"
+    __table_args__ = (
+        UniqueConstraint("config_id", "name", name="uq_direction_config_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    config_id: Mapped[int] = mapped_column(ForeignKey("configs.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(100))
+    labels: Mapped[list] = mapped_column(JSON)       # список Jira-меток, например ["Backend"]
+    work_types: Mapped[list] = mapped_column(JSON)   # упорядоченный список: ["analytics","development","testing"]
+    # Роль разработчика для этого направления; пусто = "developer"
+    dev_role: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+
+    config: Mapped["Config"] = relationship(back_populates="directions")
+
 
 class TerminalStatus(Base):
     __tablename__ = "terminal_statuses"
@@ -319,6 +323,11 @@ class Sprint(Base):
                                                         nullable=True)
     jira_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
                                                                 nullable=True)
+
+    # Фаза 2.10: задачи, которые появились в Jira-спринте ПОСЛЕ approve.
+    # Список dict с теми же полями, что обычная TaskOut (key, summary, status_name,
+    # owner_file_name, role, hours и т.д.). Заполняется при close.
+    intrusions: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
 
     tasks: Mapped[list["SprintTask"]] = relationship(
         cascade="all, delete-orphan",

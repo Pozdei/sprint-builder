@@ -8,6 +8,8 @@ import type { TaskOut } from "../types/api";
 
 interface Props {
   tasks: TaskOut[];
+  isOverflow?: boolean;
+  onEditTask?: (task: TaskOut) => void;
 }
 
 function bucketColor(bucket: string): string {
@@ -22,8 +24,8 @@ function bucketColor(bucket: string): string {
   return "";
 }
 
-export function SprintTable({ tasks }: Props) {
-  const columns: ColumnDef<TaskOut>[] = [
+export function SprintTable({ tasks, isOverflow = false, onEditTask }: Props) {
+  const baseColumns: ColumnDef<TaskOut>[] = [
     {
       accessorKey: "priority",
       header: "№",
@@ -58,7 +60,7 @@ export function SprintTable({ tasks }: Props) {
         </span>
       ),
     },
-    { accessorKey: "owner_file_name", header: "Консультант" },
+    { accessorKey: "owner_file_name", header: "Исполнитель" },
     {
       accessorKey: "role",
       header: "Роль",
@@ -78,9 +80,105 @@ export function SprintTable({ tasks }: Props) {
     },
     { accessorKey: "status_name", header: "Статус Jira" },
     {
+      accessorKey: "sprint_expected_result",
+      header: "Ожид. итог",
+      cell: (info) => {
+        const t = info.row.original;
+        if (t.is_pseudo) return null;
+        const v = t.sprint_expected_result;
+        if (!v) return <span className="text-gray-300">—</span>;
+        const isTerminal = !bucketColor(v);
+        return (
+          <span
+            className={`px-2 py-0.5 rounded text-xs font-medium ${
+              isTerminal
+                ? "bg-emerald-100 text-emerald-800"
+                : bucketColor(v) || "bg-gray-100 text-gray-700"
+            }`}
+          >
+            {v}
+          </span>
+        );
+      },
+    },
+    {
       accessorKey: "hours",
       header: "Часы",
-      cell: (info) => Number(info.getValue()).toFixed(1),
+      cell: (info) => {
+        const t = info.row.original;
+        const hours = Number(info.getValue());
+
+        // Частичная задача: показываем "2.0 из 16 ч"
+        if (t.partial_from) {
+          return (
+            <span className="text-orange-600 font-medium" title="Задача урезана до остатка бюджета">
+              {hours.toFixed(1)}{" "}
+              <span className="text-orange-400 font-normal">из {t.partial_from} ч</span>
+            </span>
+          );
+        }
+
+        // Дефолтные часы: курсив + серый
+        if (t.hours_is_default && !t.is_pseudo) {
+          return (
+            <span
+              className="text-gray-400 italic"
+              title="Оценка не задана в Jira — используется дефолт"
+            >
+              {hours.toFixed(1)}
+            </span>
+          );
+        }
+
+        return <span>{hours.toFixed(1)}</span>;
+      },
+    },
+    {
+      id: "hours_analyst",
+      header: "Ч. аналит.",
+      cell: (info) => {
+        const t = info.row.original;
+        if (t.is_pseudo) return null;
+        const v = t.hours_analyst;
+        return v != null
+          ? <span className="text-xs">{Number(v).toFixed(1)}</span>
+          : <span className="text-xs text-red-300">—</span>;
+      },
+    },
+    {
+      id: "hours_tester",
+      header: "Ч. тестера",
+      cell: (info) => {
+        const t = info.row.original;
+        if (t.is_pseudo) return null;
+        const v = t.hours_tester;
+        return v != null
+          ? <span className="text-xs">{Number(v).toFixed(1)}</span>
+          : <span className="text-xs text-red-300">—</span>;
+      },
+    },
+    {
+      id: "hours_developer",
+      header: "Ч. разраб.",
+      cell: (info) => {
+        const t = info.row.original;
+        if (t.is_pseudo) return null;
+        const v = t.hours_developer;
+        return v != null
+          ? <span className="text-xs">{Number(v).toFixed(1)}</span>
+          : <span className="text-xs text-red-300">—</span>;
+      },
+    },
+    {
+      id: "developer_name",
+      header: "Разработчик",
+      cell: (info) => {
+        const t = info.row.original;
+        if (t.is_pseudo) return null;
+        return t.developer_name
+          ? <span className="text-xs">{t.developer_name}</span>
+          : <span className="text-xs text-amber-400">—</span>;
+      },
     },
     {
       accessorKey: "sprint_name",
@@ -88,6 +186,46 @@ export function SprintTable({ tasks }: Props) {
       cell: (info) => info.getValue() || "—",
     },
     { accessorKey: "board", header: "Источник" },
+  ];
+
+  const editColumn: ColumnDef<TaskOut> = {
+    id: "edit",
+    header: "",
+    cell: (info) => {
+      const t = info.row.original;
+      if (t.is_pseudo || !onEditTask) return null;
+      return (
+        <button
+          onClick={() => onEditTask(t)}
+          className="text-gray-400 hover:text-blue-600 text-base px-1"
+          title="Редактировать в Jira"
+        >
+          ✎
+        </button>
+      );
+    },
+  };
+
+  const overflowColumn: ColumnDef<TaskOut> = {
+    accessorKey: "overflow_reason",
+    header: "Причина",
+    cell: (info) => {
+      const v = info.getValue() as string | null | undefined;
+      if (!v) return <span className="text-gray-300">—</span>;
+      const color =
+        v === "Бюджет исчерпан"
+          ? "text-red-600"
+          : v === "Низкий приоритет"
+          ? "text-yellow-600"
+          : "text-orange-600";
+      return <span className={`text-xs ${color}`}>{v}</span>;
+    },
+  };
+
+  const columns = [
+    ...(onEditTask ? [editColumn] : []),
+    ...baseColumns,
+    ...(isOverflow ? [overflowColumn] : []),
   ];
 
   const table = useReactTable({
@@ -125,8 +263,7 @@ export function SprintTable({ tasks }: Props) {
               return (
                 <tr
                   key={row.id}
-                  className={`border-b hover:bg-gray-100 ${rowClass}`}
-                  title={t.partial_from ? `Переходящая, в Jira ${t.partial_from} ч` : ""}
+                  className={`border-b hover:bg-gray-50 ${rowClass}`}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-3 py-2">

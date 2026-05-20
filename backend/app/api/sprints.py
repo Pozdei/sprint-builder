@@ -1,22 +1,35 @@
-"""Эндпоинты истории спринтов (lead-only). Фильтрация по config_id текущего пользователя."""
+"""Эндпоинты истории спринтов (lead-only)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_config
 from app.db import models, sprints_repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
+from app.schemas.gantt import GanttItem, StandupExecutor
 from app.schemas.sprints import (
-    ClosedTaskData, SaveDraftRequest, SetTasksRequest, SprintOut, SprintSummary,
+    ClosedTaskData, IntrusionRecord, SaveDraftRequest, SetTasksRequest,
+    SprintOut, SprintSummary,
 )
 from app.services import sprints_service
 from app.services.sprints_service import (
     JiraSprintNotClosedError, JiraSprintNotFoundError, SprintAccessDeniedError,
     SprintNotADraftError, SprintNotApprovedError,
 )
+from app.sprint.gantt import compute_gantt_schedule
+from app.sprint.standup import build_standup
 
 router = APIRouter(prefix="/sprints", tags=["sprints"])
+
+
+def _get_sprint_or_404(db: Session, sprint_id: int, config_id: int) -> models.Sprint:
+    sprint = sprints_repository.get_sprint(db, sprint_id)
+    if not sprint or sprint.config_id != config_id:
+        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
+    return sprint
 
 
 def _to_summary(sprint: models.Sprint) -> SprintSummary:
@@ -42,6 +55,15 @@ def _to_out(sprint: models.Sprint) -> SprintOut:
         else:
             closed_list.append(None)
 
+    intrusions = []
+    for it in (sprint.intrusions or []):
+        if not isinstance(it, dict):
+            continue
+        try:
+            intrusions.append(IntrusionRecord(**it))
+        except Exception:
+            continue
+
     return SprintOut(
         id=sprint.id,
         sprint_num=sprint.sprint_num,
@@ -55,19 +77,16 @@ def _to_out(sprint: models.Sprint) -> SprintOut:
         owner_stats=sprint.owner_stats_snapshot,
         tasks=[t.task_data for t in sprint.tasks],
         closed_tasks=closed_list,
+        intrusions=intrusions,
     )
 
-
-# -------------------- Просмотр --------------------
 
 @router.get("", response_model=list[SprintSummary])
 def list_all(
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
 ):
-    """Все спринты текущего пользователя."""
-    items = sprints_repository.list_sprints_for_config(db, config.id)
-    return [_to_summary(s) for s in items]
+    return [_to_summary(s) for s in sprints_repository.list_sprints_for_config(db, config.id)]
 
 
 @router.get("/{sprint_id}", response_model=SprintOut)
@@ -76,15 +95,8 @@ def get_one(
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
 ):
-    sprint = sprints_repository.get_sprint(db, sprint_id)
-    if not sprint:
-        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
-    if sprint.config_id != config.id:
-        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
-    return _to_out(sprint)
+    return _to_out(_get_sprint_or_404(db, sprint_id, config.id))
 
-
-# -------------------- Создание draft --------------------
 
 @router.post("/draft", response_model=SprintOut)
 def save_draft(
@@ -114,8 +126,6 @@ def save_draft(
     return _to_out(sprint)
 
 
-# -------------------- Утверждение --------------------
-
 @router.post("/{sprint_id}/approve", response_model=SprintOut)
 def approve(
     sprint_id: int,
@@ -136,8 +146,6 @@ def approve(
         raise HTTPException(status_code=502, detail=str(e))
     return _to_out(sprint)
 
-
-# -------------------- Закрытие --------------------
 
 @router.post("/{sprint_id}/close", response_model=SprintOut)
 def close(
@@ -160,7 +168,43 @@ def close(
     return _to_out(sprint)
 
 
-# -------------------- Удаление --------------------
+@router.get("/{sprint_id}/standup", response_model=list[StandupExecutor])
+def get_standup(
+    sprint_id: int,
+    sprint_start: date = Query(..., description="Дата начала спринта"),
+    standup_date: date = Query(..., description="Дата стендапа (обычно сегодня)"),
+    hours_per_day: float = Query(8.0, ge=1, le=24),
+    roles: str = Query("", description="Роли через запятую; пусто = все"),
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+
+    role_filter: set[str] | None = None
+    if roles.strip():
+        role_filter = {r.strip() for r in roles.split(",") if r.strip()}
+
+    return build_standup(
+        [t.task_data for t in sprint.tasks],
+        sprint.config_snapshot,
+        sprint_start, standup_date, hours_per_day, role_filter,
+    )
+
+
+@router.get("/{sprint_id}/gantt", response_model=list[GanttItem])
+def get_gantt(
+    sprint_id: int,
+    start_date: date = Query(..., description="Дата начала спринта, напр. 2025-01-20"),
+    hours_per_day: float = Query(8.0, ge=1, le=24),
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    return compute_gantt_schedule(
+        [t.task_data for t in sprint.tasks],
+        sprint.config_snapshot, start_date, hours_per_day,
+    )
+
 
 @router.delete("/{sprint_id}", status_code=204)
 def delete_one(
@@ -177,8 +221,6 @@ def delete_one(
     except SprintNotADraftError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
-
-# -------------------- Ручное редактирование --------------------
 
 @router.put("/{sprint_id}/tasks", response_model=SprintOut)
 def set_tasks(

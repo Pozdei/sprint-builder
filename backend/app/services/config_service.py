@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.db import models, repository, users_repository
 from app.db.repository import (
-    upsert_role_status_buckets, upsert_role_status_default_hours, upsert_roles,
-    upsert_terminal_statuses,
+    upsert_directions, upsert_role_status_buckets, upsert_role_status_default_hours,
+    upsert_roles, upsert_terminal_statuses,
 )
 
 
@@ -124,6 +124,7 @@ def create_empty_config(db: Session, user: models.User, *, name: str) -> models.
         default_task_hours=12.0,
         leader_hours=20.0,
         leader_management_enabled=True,
+        developer_field="",
     )
     db.add(cfg)
     db.flush()
@@ -173,6 +174,7 @@ def create_config_from(db: Session, user: models.User, *,
         default_task_hours=src_dict["default_task_hours"],
         leader_hours=src_dict["leader_hours"],
         leader_management_enabled=src_dict["leader_management_enabled"],
+        developer_field=src_dict.get("developer_field", ""),
     )
     db.add(cfg)
     db.flush()
@@ -197,6 +199,7 @@ def create_config_from(db: Session, user: models.User, *,
     upsert_role_status_buckets(db, cfg, src_dict["role_status_buckets"])
     upsert_role_status_default_hours(db, cfg, src_dict["role_status_default_hours"])
     upsert_terminal_statuses(db, cfg, src_dict["terminal_statuses"])
+    upsert_directions(db, cfg, src_dict.get("directions", []))
     # ВНИМАНИЕ: pseudo_tasks НЕ копируем (договорённость).
 
     db.commit()

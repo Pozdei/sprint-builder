@@ -1,13 +1,12 @@
 """Главный API-роутер.
 
 Открытые: /health, /auth.
-Защищённые JWT: /sprint, /sprints, /configs, /export, /admin.
-Проверка ролей — внутри роутеров (require_lead / require_admin).
+Защищённые JWT: /sprint, /sprints, /configs, /export, /admin, /jira.
 """
 
 from fastapi import APIRouter, Depends
 
-from app.api import admin, auth, configs, export, health, sprint, sprints
+from app.api import admin, auth, configs, epic, export, health, jira, sprint, sprints
 from app.api.deps import get_current_user
 
 router = APIRouter()
@@ -21,3 +20,5 @@ router.include_router(sprints.router, dependencies=_protected)
 router.include_router(configs.router, dependencies=_protected)
 router.include_router(export.router, dependencies=_protected)
 router.include_router(admin.router, dependencies=_protected)
+router.include_router(jira.router, dependencies=_protected)
+router.include_router(epic.router, dependencies=_protected)

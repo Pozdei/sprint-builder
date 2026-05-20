@@ -25,6 +25,7 @@ _eager_config = [
     selectinload(models.Config.role_status_default_hours),
     selectinload(models.Config.pseudo_tasks),
     selectinload(models.Config.terminal_statuses),
+    selectinload(models.Config.directions),
 ]
 
 
@@ -183,6 +184,21 @@ def upsert_pseudo_tasks(db: Session, config: models.Config,
         )
 
 
+def upsert_directions(db: Session, config: models.Config,
+                      items: list[dict]) -> None:
+    config.directions.clear()
+    db.flush()
+    for item in items:
+        config.directions.append(
+            models.ConfigDirection(
+                name=item["name"],
+                labels=item.get("labels", []),
+                work_types=item.get("work_types", []),
+                dev_role=item.get("dev_role") or None,
+            )
+        )
+
+
 def upsert_terminal_statuses(db: Session, config: models.Config,
                               items: list[str]) -> None:
     config.terminal_statuses.clear()
@@ -202,7 +218,7 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
 
     for field in ("name", "project_key", "sprint_field", "responsible_field",
                   "hours_per_person", "default_task_hours",
-                  "leader_hours", "leader_management_enabled"):
+                  "leader_hours", "leader_management_enabled", "developer_field"):
         if field in data:
             setattr(config, field, data[field])
 
@@ -240,6 +256,8 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
         upsert_pseudo_tasks(db, config, data["pseudo_tasks"])
     if "terminal_statuses" in data:
         upsert_terminal_statuses(db, config, data["terminal_statuses"])
+    if "directions" in data:
+        upsert_directions(db, config, data["directions"])
 
     db.commit()
     db.refresh(config)
@@ -280,6 +298,7 @@ def model_to_sprint_config_dict(config: models.Config) -> dict:
         "default_task_hours": config.default_task_hours,
         "leader_hours": config.leader_hours,
         "leader_management_enabled": config.leader_management_enabled,
+        "developer_field": config.developer_field or "",
         "team": team,
         "boards": {b.name: b.jira_board_id for b in config.boards},
         "extra_components": [c.name for c in config.components],
@@ -315,5 +334,14 @@ def model_to_sprint_config_dict(config: models.Config) -> dict:
         "terminal_statuses": [
             ts.jira_status
             for ts in sorted(config.terminal_statuses, key=lambda x: x.sort_order)
+        ],
+        "directions": [
+            {
+                "name": d.name,
+                "labels": d.labels,
+                "work_types": d.work_types,
+                "dev_role": d.dev_role or "",
+            }
+            for d in config.directions
         ],
     }

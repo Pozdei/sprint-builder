@@ -1,4 +1,4 @@
-"""Бизнес-логика формирования спринта — фаза 2 (мультироли).
+"""Бизнес-логика формирования спринта — фаза 2.11 (направления задач).
 
 Чистые функции: принимают конфиг и Jira-клиент, возвращают данные.
 Никакого print/sys.exit/глобального состояния.
@@ -15,12 +15,14 @@ from app.sprint.config import SprintConfig
 
 def _build_fields_param(cfg: SprintConfig, sp_field: str | None) -> str:
     fields = ["summary", "status", "assignee", "reporter",
-              "timeoriginalestimate", "issuetype"]
+              "timeoriginalestimate", "issuetype", "labels"]
     if sp_field:
         fields.append(sp_field)
     fields.extend(cfg.role_hours_fields.values())
     fields.append(cfg.sprint_field)
     fields.append(cfg.responsible_field)
+    if cfg.developer_field:
+        fields.append(cfg.developer_field)
     return ",".join(fields)
 
 
@@ -87,32 +89,42 @@ def extract_max_sprint_number(sprints_value: list | None) -> tuple[int | None, s
 
 # -------------------- Оценка часов --------------------
 
-# Маппинг роли → поле часов в Jira.
-# Для аналитика и тестировщика часы зависят от бакета:
-#   - бакет "Анализ"        → роль "analyst"  (поле customfield_X)
-#   - бакет "Тестирование"  → роль "tester"   (поле customfield_Y)
-# Эта связь сейчас захардкожена. В фазе 2 явно расширяем для других ролей:
-#   - бакет "Дизайн" / "Дизайн-ревью" → роль "designer"
-#   - бакет "Разработка" / "Код-ревью" → роль "developer"
+# Маппинг бакета → категория поля часов в Jira.
 _BUCKET_TO_ROLE_HOURS_FIELD = {
-    "Анализ":        "analyst",
-    "Тестирование":  "tester",
-    "Дизайн":        "designer",
-    "Дизайн-ревью":  "designer",
-    "Разработка":    "developer",
-    "Код-ревью":     "developer",
+    "Анализ":       "analyst",
+    "Тестирование": "tester",
+    "Дизайн":       "designer",
+    "Разработка":   "developer",
 }
+
+# Бакеты ревью: время определяется только настроенным дефолтом (role_status_default_hours),
+# никакие поля задачи (timeoriginalestimate, sp, hours_developer) не учитываются.
+_REVIEW_BUCKETS = {"Код-ревью", "Дизайн-ревью"}
+
+# Маппинг вида работы → роль + бакет
+_WORK_TYPE_INFO: dict[str, dict[str, str]] = {
+    "analytics":     {"role": "analyst",        "bucket": "Анализ"},
+    "development":   {"role": "developer",       "bucket": "Разработка"},
+    "testing":       {"role": "analyst",         "bucket": "Тестирование"},
+    "design":        {"role": "designer",        "bucket": "Дизайн"},
+    "code_review":   {"role": "developer_lead",  "bucket": "Код-ревью"},
+    "design_review": {"role": "designer_lead",   "bucket": "Дизайн-ревью"},
+}
+
+# Виды работ, которые порождаются ПОСЛЕ аллокации (когда знаем, что задача выполнится)
+_POST_ALLOC_WORK_TYPES = {"testing", "code_review", "design_review"}
 
 
 def _default_hours_for(cfg: SprintConfig, role: str, status_name: str) -> float:
-    """Если поля часов нет в Jira — вернуть дефолт для пары (роль, статус).
-
-    Сначала ищем точное совпадение в role_status_default_hours.
-    Если нет — общий default_task_hours.
-    """
+    """Дефолтные часы для пары (роль, статус). Fallback — global default."""
     for item in cfg.role_status_default_hours:
         if item["role"] == role and item["jira_status"] == status_name:
             return item["hours"]
+    # Для developer_frontend / developer_backend — fallback на developer
+    if "_" in role and role.startswith("developer"):
+        for item in cfg.role_status_default_hours:
+            if item["role"] == "developer" and item["jira_status"] == status_name:
+                return item["hours"]
     return cfg.default_task_hours
 
 
@@ -122,12 +134,19 @@ def estimate_hours_for_role(fields: dict, role: str, bucket: str,
     """Оценка часов задачи в контексте конкретной роли и бакета.
 
     Приоритет:
-    1) Поле часов соответствующей "категории" в Jira (analyst/tester/designer/developer).
+    1) Поле часов соответствующей «категории» в Jira (analyst/tester/designer/developer).
     2) timeoriginalestimate.
     3) Story Points × 4.
     4) Дефолт для пары (роль, статус) либо общий default_task_hours.
+
+    Для ревью-бакетов (Код-ревью, Дизайн-ревью) шаги 1–3 пропускаются:
+    время ревью не зависит от оценки разработки — только дефолт из настроек.
     """
-    # 1) Поле часов из соответствующей роли (analyst/tester/designer/developer)
+    if bucket in _REVIEW_BUCKETS:
+        # Ищем дефолт по имени бакета (= Jira-статус ревью в настройках),
+        # а не по текущему статусу задачи — он не релевантен для генерируемых шагов
+        return _default_hours_for(cfg, role, bucket)
+
     hours_role = _BUCKET_TO_ROLE_HOURS_FIELD.get(bucket)
     if hours_role:
         field_id = cfg.role_hours_fields.get(hours_role)
@@ -141,12 +160,10 @@ def estimate_hours_for_role(fields: dict, role: str, bucket: str,
                 except (TypeError, ValueError):
                     pass
 
-    # 2) Общее timeoriginalestimate
     sec = fields.get("timeoriginalestimate")
     if sec:
         return round(sec / 3600, 1)
 
-    # 3) Story Points × 4
     if sp_field:
         sp = fields.get(sp_field)
         if sp:
@@ -155,14 +172,62 @@ def estimate_hours_for_role(fields: dict, role: str, bucket: str,
             except (TypeError, ValueError):
                 pass
 
-    # 4) Дефолт для пары (роль, статус) или общий
     return _default_hours_for(cfg, role, status_name)
+
+
+# -------------------- Направления задач --------------------
+
+def _find_direction(labels: list[str], cfg: SprintConfig) -> dict | None:
+    """Найти первое направление, чьи метки пересекаются с метками задачи."""
+    if not cfg.directions or not labels:
+        return None
+    label_set = set(labels)
+    for direction in cfg.directions:
+        dir_labels = set(direction.get("labels", []))
+        if dir_labels & label_set:
+            return direction
+    return None
+
+
+def _find_pipeline_position(status_name: str, work_types: list[str],
+                             cfg: SprintConfig) -> int:
+    """Позиция текущего статуса в pipeline направления (0-based).
+
+    Ищем первый work_type, чей бакет содержит данный статус в role_status_buckets.
+    Если не нашли — возвращаем -1 (позиция неизвестна, дополнительные кандидаты
+    не генерируем).
+    """
+    bucket_statuses: dict[str, set] = {}
+    for item in cfg.role_status_buckets:
+        bucket_statuses.setdefault(item["bucket"], set()).add(item["jira_status"])
+
+    for pos, wt in enumerate(work_types):
+        info = _WORK_TYPE_INFO.get(wt)
+        if not info:
+            continue
+        if status_name in bucket_statuses.get(info["bucket"], set()):
+            return pos
+    return -1
+
+
+def _find_lead_owner(cfg: SprintConfig,
+                     lead_role: str) -> tuple[str, dict] | None:
+    """Первый включённый лид заданной роли. Возвращает (account_id, info) или None."""
+    lead_names = {
+        r["name"] for r in cfg.roles
+        if r.get("is_lead") and r.get("enabled") and r["name"] == lead_role
+    }
+    if not lead_names:
+        return None
+    for acc_id, info in cfg.team.items():
+        if info.get("role") in lead_names:
+            return acc_id, info
+    return None
 
 
 # -------------------- Сборка кандидатов --------------------
 
 def _team_with_role(cfg: SprintConfig, role: str) -> dict[str, dict]:
-    """Отфильтровать team по конкретной роли. Возвращает {account_id: member_dict}."""
     return {
         acc_id: info
         for acc_id, info in cfg.team.items()
@@ -171,11 +236,7 @@ def _team_with_role(cfg: SprintConfig, role: str) -> dict[str, dict]:
 
 
 def _enabled_roles_by_status(cfg: SprintConfig) -> dict[str, list[tuple[str, str]]]:
-    """Построить индекс: status -> [(role, bucket), ...] только для enabled-ролей.
-
-    Используется в process_issue: для каждой задачи быстро находим, для каких
-    ролей она актуальна.
-    """
+    """Индекс: status → [(role, bucket), ...] только для enabled-ролей."""
     enabled = {r["name"] for r in cfg.roles if r["enabled"]}
     index: dict[str, list[tuple[str, str]]] = {}
     for item in cfg.role_status_buckets:
@@ -188,10 +249,10 @@ def _enabled_roles_by_status(cfg: SprintConfig) -> dict[str, list[tuple[str, str
 def _resolve_owner(role: str, assignee_id: str | None,
                     responsible_id: str | None, reporter_id: str | None,
                     role_team: dict[str, dict]) -> str | None:
-    """Вернуть accountId владельца задачи для роли — или None если задача не для нашей команды.
+    """Владелец задачи для роли.
 
-    - role == analyst: assignee → responsible → reporter (как раньше).
-    - другие роли: только assignee.
+    - analyst: assignee → responsible → reporter.
+    - остальные: только assignee.
     """
     if role == "analyst":
         if assignee_id and assignee_id in role_team:
@@ -207,42 +268,76 @@ def _resolve_owner(role: str, assignee_id: str | None,
     return None
 
 
-def _is_formal_only(role: str, assignee_id: str | None, h_analyst, h_tester) -> bool:
-    """formal_only — задача без реальной работы аналитика.
+def _extract_owners(f: dict, cfg: SprintConfig) -> tuple[str | None, str | None, str | None]:
+    """(assignee_id, reporter_id, responsible_id) из полей Jira-задачи."""
+    assignee_id = (f.get("assignee") or {}).get("accountId")
+    reporter_id = (f.get("reporter") or {}).get("accountId")
+    responsible = f.get(cfg.responsible_field) or {}
+    responsible_id = responsible.get("accountId") if isinstance(responsible, dict) else None
+    return assignee_id, reporter_id, responsible_id
 
-    Применяется ТОЛЬКО для роли analyst: задача попала к нему через Ответственного
-    или reporter, при этом в Jira не заполнены ни Время аналитика, ни Время тестировщика.
-    Такие задачи остаются в кандидатах, но не идут в спринт.
 
-    Для других ролей формальности нет — владелец только assignee, фильтр строже.
+def _extract_role_hours(f: dict, cfg: SprintConfig) -> tuple:
+    """(hours_analyst, hours_tester, hours_developer, hours_original) из полей Jira-задачи."""
+    h_analyst = f.get(cfg.role_hours_fields.get("analyst", ""))
+    h_tester = f.get(cfg.role_hours_fields.get("tester", ""))
+    h_developer = f.get(cfg.role_hours_fields.get("developer", ""))
+    orig_sec = f.get("timeoriginalestimate")
+    orig_hours = round(orig_sec / 3600, 1) if orig_sec else None
+    return h_analyst, h_tester, h_developer, orig_hours
+
+
+def _has_real_estimate(f: dict, bucket: str, cfg: SprintConfig,
+                        sp_field: str | None) -> bool:
+    """True если у задачи есть хоть одна явная оценка (не дефолт).
+
+    Для ревью-бакетов всегда True: их часы задаются настроенным дефолтом,
+    а не «заглушкой» — подсвечивать нечего.
     """
-    if role != "analyst":
-        return False
-    role_team_dummy = None  # неиспользуемо; флаг считается только когда не assignee
-    if not h_analyst and not h_tester:
-        # Если assignee — наш аналитик, всё ок. Если нет — formal_only.
-        # Здесь мы уже знаем, что владелец нашёлся; формальность — когда assignee != наш.
-        # Простое условие: нет часов аналитика/тестировщика — флаг True.
-        # Но если assignee — наш аналитик, мы считаем что часы будут (просто не заполнены).
-        # Поэтому проверяем именно по assignee.
-        return not (assignee_id and assignee_id == _owner_was_assignee_marker(assignee_id))
+    if bucket in _REVIEW_BUCKETS:
+        return True
+
+    hours_role = _BUCKET_TO_ROLE_HOURS_FIELD.get(bucket)
+    if hours_role:
+        field_id = cfg.role_hours_fields.get(hours_role)
+        if field_id:
+            v = f.get(field_id)
+            try:
+                if v and float(v) > 0:
+                    return True
+            except (TypeError, ValueError):
+                pass
+    if f.get("timeoriginalestimate"):
+        return True
+    if sp_field and f.get(sp_field):
+        return True
     return False
 
 
-def _owner_was_assignee_marker(x):
-    """Заглушка: формальность считается в process_issue напрямую, без этой функции."""
-    return x
+def _extract_developer_name(f: dict, cfg: SprintConfig) -> str | None:
+    """Имя разработчика из поля developer_field: сначала file_name из команды, потом displayName из Jira."""
+    if not cfg.developer_field:
+        return None
+    dev_val = f.get(cfg.developer_field) or {}
+    if not isinstance(dev_val, dict):
+        return None
+    acc_id = dev_val.get("accountId")
+    if acc_id and acc_id in cfg.team:
+        return cfg.team[acc_id]["file_name"]
+    return dev_val.get("displayName") or None
 
 
 def _process_issue_for_role(
     issue: dict, role: str, bucket: str, role_team: dict[str, dict],
     source_label: str, by_key_role: dict, counters: dict,
     cfg: SprintConfig, base_url: str, sp_field: str | None,
+    direction_name: str | None = None,
+    labels: list | None = None,
 ) -> None:
     """Обработать одну задачу в контексте одной роли.
 
-    by_key_role: ключ — кортеж (jira_key, role). Так одна задача может породить
-    несколько кандидатов для разных ролей, и они не пересекутся.
+    Ключ by_key_role — (jira_key, role, bucket), чтобы один аналитик мог иметь
+    одновременно «Анализ» и «Тестирование» по одной задаче.
     """
     f = issue["fields"]
 
@@ -252,33 +347,20 @@ def _process_issue_for_role(
         return
 
     status_name = f["status"]["name"]
-
-    assignee = f.get("assignee") or {}
-    reporter = f.get("reporter") or {}
-    responsible = f.get(cfg.responsible_field) or {}
-    assignee_id = assignee.get("accountId")
-    reporter_id = reporter.get("accountId")
-    responsible_id = responsible.get("accountId") if isinstance(responsible, dict) else None
+    assignee_id, reporter_id, responsible_id = _extract_owners(f, cfg)
 
     owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
     if owner_id is None:
         return
 
     key = issue["key"]
-    cand_key = (key, role)
+    cand_key = (key, role, bucket)
     if cand_key in by_key_role:
         return
 
     sprint_num, sprint_name = extract_max_sprint_number(f.get(cfg.sprint_field))
+    h_analyst, h_tester, h_developer, orig_hours = _extract_role_hours(f, cfg)
 
-    orig_sec = f.get("timeoriginalestimate")
-    orig_hours = round(orig_sec / 3600, 1) if orig_sec else None
-
-    h_analyst = f.get(cfg.role_hours_fields.get("analyst", ""))
-    h_tester = f.get(cfg.role_hours_fields.get("tester", ""))
-    h_developer = f.get(cfg.role_hours_fields.get("developer", ""))
-
-    # formal_only — только для аналитика и только когда не assignee
     formal_only = False
     if role == "analyst" and assignee_id not in role_team:
         formal_only = not h_analyst and not h_tester
@@ -295,6 +377,7 @@ def _process_issue_for_role(
         "owner_id": owner_id,
         "owner_file_name": role_team[owner_id]["file_name"],
         "hours": hours,
+        "hours_is_default": not _has_real_estimate(f, bucket, cfg, sp_field),
         "board": source_label,
         "sprint_num": sprint_num,
         "sprint_name": sprint_name,
@@ -304,35 +387,162 @@ def _process_issue_for_role(
         "hours_tester": h_tester,
         "hours_developer": h_developer,
         "hours_original": orig_hours,
+        "direction": direction_name,
+        "labels": labels or [],
+        "responsible_id": responsible_id,
+        "assignee_id": assignee_id,
+        "reporter_id": reporter_id,
+        "developer_name": _extract_developer_name(f, cfg),
     }
     counters["matched"] += 1
 
 
-def _add_pseudo_tasks(cfg: SprintConfig, target_sprint_num: int | None) -> list[dict]:
-    """Сформировать список псевдо-задач для конкретного целевого спринта.
+def _resolve_developer_for_direction(
+    f: dict, direction: dict, cfg: SprintConfig,
+    team_by_role: dict[str, dict[str, dict]],
+    assignee_id: str | None,
+) -> tuple[str | None, str | None, dict[str, dict]]:
+    """Определить владельца шага разработки для задачи из направления.
 
-    Правила попадания:
-      target_sprint_num задачи == target_sprint_num спринта  → попадает (разовая)
-      target_sprint_num задачи is None и recurring=True       → попадает (постоянная)
-      иначе → не попадает
+    Порядок:
+    1. Поле «Разработчик» (developer_field) — ищем среди ВСЕЙ команды, берём с его фактической ролью.
+    2. Assignee, если он в команде нужной dev_role.
+    3. Автовыбор первого из dev_role.
 
-    Плюс — авто-добавление "Руководство" для лидов (всегда recurring).
+    Возвращает (owner_id, actual_role, role_team).
     """
+    dev_role = direction.get("dev_role") or "developer"
+    role_team = team_by_role.get(dev_role) or _team_with_role(cfg, dev_role)
+
+    # 1. Поле «Разработчик» из Jira — приоритет, смотрим среди всей команды,
+    #    но только если роль человека совместима с dev_role направления.
+    if cfg.developer_field:
+        dev_field_val = f.get(cfg.developer_field) or {}
+        dev_field_id = dev_field_val.get("accountId") if isinstance(dev_field_val, dict) else None
+        if dev_field_id and dev_field_id in cfg.team:
+            person_role = cfg.team[dev_field_id].get("role", dev_role)
+            expected_dev_role = direction.get("dev_role") or ""
+            # Берём если у направления нет конкретного dev_role ИЛИ роль совпадает
+            if not expected_dev_role or person_role == expected_dev_role:
+                actual_team = team_by_role.get(person_role) or _team_with_role(cfg, person_role)
+                return dev_field_id, person_role, actual_team
+
+    # 2. Assignee в команде нужной dev_role
+    if assignee_id and assignee_id in role_team:
+        return assignee_id, dev_role, role_team
+
+    # 3. Автовыбор из команды
+    if role_team:
+        first_id = next(iter(role_team))
+        return first_id, dev_role, role_team
+
+    return None, dev_role, role_team
+
+
+def _generate_direction_pre_candidates(
+    issue: dict, status_name: str, direction: dict,
+    labels: list, by_key_role: dict, cfg: SprintConfig,
+    base_url: str, sp_field: str | None, counters: dict,
+    team_by_role: dict[str, dict[str, dict]],
+) -> None:
+    """Для задачи направления создать кандидатов по будущим шагам pipeline.
+
+    Генерируем только шаги ПОСЛЕ текущей позиции статуса в pipeline,
+    и только те, что НЕ являются post-allocation (testing/code_review/design_review).
+    Последние порождаются уже после аллокации.
+
+    Для шага «development» разработчик определяется через _resolve_developer_for_direction:
+      - Поле Jira «Разработчик» (developer_field) → приоритет
+      - Иначе: единственный/первый разработчик направления (dev_role)
+    Если задача уже В разработке — этот путь не вызывается (обрабатывается role_status_buckets).
+    """
+    f = issue["fields"]
+    key = issue["key"]
+    work_types = direction.get("work_types", [])
+
+    current_pos = _find_pipeline_position(status_name, work_types, cfg)
+    if current_pos < 0:
+        return  # Статус не распознан в pipeline — не генерируем
+
+    assignee_id, reporter_id, responsible_id = _extract_owners(f, cfg)
+    sprint_num, sprint_name = extract_max_sprint_number(f.get(cfg.sprint_field))
+    h_analyst, h_tester, h_developer, orig_hours = _extract_role_hours(f, cfg)
+
+    for pos, wt in enumerate(work_types):
+        if pos <= current_pos:
+            continue  # уже в этой или более ранней стадии — пропускаем
+        if wt in _POST_ALLOC_WORK_TYPES:
+            continue  # генерируется post-allocation
+
+        info = _WORK_TYPE_INFO.get(wt)
+        if not info:
+            continue
+
+        bucket = info["bucket"]
+
+        # Для шага разработки — специальная логика резолюции владельца
+        if wt == "development":
+            owner_id, role, role_team = _resolve_developer_for_direction(
+                f, direction, cfg, team_by_role, assignee_id,
+            )
+        else:
+            role = info["role"]
+            role_team = team_by_role.get(role) or _team_with_role(cfg, role)
+            owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
+
+        if owner_id is None:
+            continue
+
+        cand_key = (key, role, bucket)
+        if cand_key in by_key_role:
+            continue
+
+        hours = estimate_hours_for_role(f, role, bucket, status_name, cfg, sp_field)
+
+        by_key_role[cand_key] = {
+            "key": key,
+            "url": f"{base_url}/browse/{key}",
+            "summary": f.get("summary") or "",
+            "status_name": status_name,
+            "bucket": bucket,
+            "role": role,
+            "owner_id": owner_id,
+            "owner_file_name": role_team[owner_id]["file_name"],
+            "hours": hours,
+            "board": f"[{direction['name']}]",
+            "sprint_num": sprint_num,
+            "sprint_name": sprint_name,
+            "formal_only": False,
+            "is_pseudo": False,
+            "hours_analyst": h_analyst,
+            "hours_tester": h_tester,
+            "hours_developer": h_developer,
+            "hours_original": orig_hours,
+            "hours_is_default": not _has_real_estimate(f, bucket, cfg, sp_field),
+            "direction": direction["name"],
+            "labels": labels,
+            "responsible_id": responsible_id,
+            "assignee_id": assignee_id,
+            "reporter_id": reporter_id,
+            "developer_name": _extract_developer_name(f, cfg),
+        }
+        counters["matched"] += 1
+
+
+def _add_pseudo_tasks(cfg: SprintConfig, target_sprint_num: int | None) -> list[dict]:
+    """Сформировать список псевдо-задач для конкретного целевого спринта."""
     items = []
 
-    # Карта member_id → member info
     members_by_id: dict[int, dict] = {}
     for acc_id, info in cfg.team.items():
         mid = info.get("id")
         if mid is not None:
             members_by_id[mid] = {"account_id": acc_id, **info}
 
-    # 1) Явные псевдо-задачи из конфига — с учётом target_sprint_num и recurring
     for pt in cfg.pseudo_tasks:
         target = pt.get("target_sprint_num")
         recurring = pt.get("recurring", False)
 
-        # Решаем — попадает ли в этот спринт
         applies = False
         if target is not None and target == target_sprint_num:
             applies = True
@@ -365,9 +575,13 @@ def _add_pseudo_tasks(cfg: SprintConfig, target_sprint_num: int | None) -> list[
             "hours_tester": None,
             "hours_developer": None,
             "hours_original": None,
+            "direction": None,
+            "labels": [],
+            "responsible_id": None,
+            "assignee_id": None,
+            "reporter_id": None,
         })
 
-    # 2) "Руководство" — для каждого лида среди enabled-ролей
     if cfg.leader_management_enabled and cfg.leader_hours > 0:
         lead_role_names = {r["name"] for r in cfg.roles if r["is_lead"] and r["enabled"]}
         for acc_id, info in cfg.team.items():
@@ -392,32 +606,34 @@ def _add_pseudo_tasks(cfg: SprintConfig, target_sprint_num: int | None) -> list[
                 "hours_tester": None,
                 "hours_developer": None,
                 "hours_original": None,
+                "direction": None,
+                "labels": [],
+                "responsible_id": None,
+                "assignee_id": None,
+                "reporter_id": None,
             })
 
     return items
 
 
 def collect_candidates(client: JiraClient, cfg: SprintConfig) -> tuple[list[dict], dict]:
-    """Собрать кандидатов для всех включённых ролей.
+    """Собрать кандидатов для всех включённых ролей + direction-pipeline кандидатов.
 
-    Возвращает (список_кандидатов, диагностика).
-    Одна Jira-задача может породить несколько кандидатов (по одному на каждую
-    подходящую роль).
-    Псевдо-задачи НЕ включаются — они добавляются в allocate.
+    Одна Jira-задача может породить несколько кандидатов:
+    - По одному на каждую (роль, бакет) из role_status_buckets.
+    - Дополнительно: по каждому «будущему» шагу pipeline, если у задачи есть направление.
     """
     sp_field = find_story_points_field(client)
     fields_param = _build_fields_param(cfg, sp_field)
     base_url = client.base_url
 
-    # Индекс: status → [(role, bucket), ...] только для enabled
     status_to_roles = _enabled_roles_by_status(cfg)
-    # Кэш: role → team членов этой роли
     team_by_role: dict[str, dict[str, dict]] = {}
     for r in cfg.roles:
         if r["enabled"]:
             team_by_role[r["name"]] = _team_with_role(cfg, r["name"])
 
-    by_key_role: dict[tuple[str, str], dict] = {}
+    by_key_role: dict[tuple[str, str, str], dict] = {}
     diagnostics: dict[str, Any] = {
         "sp_field": sp_field,
         "by_source": [],
@@ -427,16 +643,43 @@ def collect_candidates(client: JiraClient, cfg: SprintConfig) -> tuple[list[dict
     def process_issues(issues: list[dict], source_label: str, source_kind: str):
         counters = {"matched": 0, "skipped_epic": 0}
         for it in issues:
-            status_name = it["fields"]["status"]["name"]
-            role_buckets = status_to_roles.get(status_name, [])
-            if not role_buckets:
+            f = it["fields"]
+            issuetype = (f.get("issuetype") or {}).get("name", "")
+            if issuetype.lower() in ("эпик", "epic"):
+                counters["skipped_epic"] += 1
                 continue
+
+            status_name = f["status"]["name"]
+            labels = f.get("labels") or []
+            direction = _find_direction(labels, cfg)
+            direction_name = direction["name"] if direction else None
+
+            # Стандартные кандидаты по role_status_buckets
+            role_buckets = status_to_roles.get(status_name, [])
+            direction_dev_role = (direction.get("dev_role") or "developer") if direction else None
             for role, bucket in role_buckets:
+                # Для бакета «Разработка»: если у задачи есть направление с dev_role,
+                # пропускаем роли разработчика, не совпадающие с dev_role направления.
+                if direction and bucket == "Разработка" and direction_dev_role and role != direction_dev_role:
+                    continue
                 _process_issue_for_role(
                     it, role, bucket, team_by_role.get(role, {}),
                     source_label, by_key_role, counters,
                     cfg, base_url, sp_field,
+                    direction_name=direction_name,
+                    labels=labels,
                 )
+
+            # Дополнительные pre-allocation кандидаты по pipeline направления.
+            # Вызываем НЕЗАВИСИМО от role_buckets — position check внутри вернёт -1
+            # если статус не в role_status_buckets и тогда ничего не генерируем.
+            if direction:
+                _generate_direction_pre_candidates(
+                    it, status_name, direction, labels,
+                    by_key_role, cfg, base_url, sp_field, counters,
+                    team_by_role,
+                )
+
         diagnostics["by_source"].append({
             "source": source_label, "kind": source_kind,
             "fetched": len(issues), **counters,
@@ -468,12 +711,8 @@ def collect_candidates(client: JiraClient, cfg: SprintConfig) -> tuple[list[dict
 # -------------------- Сортировка и приоритеты --------------------
 
 def _is_estimated(task: dict, cfg: SprintConfig) -> bool:
-    """Оцененная — заполнено поле часов для роли по бакету.
-
-    Используется как один из ключей сортировки.
-    """
     if task.get("is_pseudo"):
-        return True  # псевдо у нас всегда "оценены"
+        return True
     bucket = task["bucket"]
     role_for_field = _BUCKET_TO_ROLE_HOURS_FIELD.get(bucket)
     if role_for_field == "analyst":
@@ -481,7 +720,6 @@ def _is_estimated(task: dict, cfg: SprintConfig) -> bool:
     if role_for_field == "tester":
         return bool(task.get("hours_tester"))
     if role_for_field == "designer":
-        # У дизайнера нет своего поля сейчас — fallback на любую заполненную
         return bool(task.get("hours_original"))
     if role_for_field == "developer":
         return bool(task.get("hours_developer"))
@@ -489,27 +727,18 @@ def _is_estimated(task: dict, cfg: SprintConfig) -> bool:
 
 
 def _sort_key(task: dict, cfg: SprintConfig):
-    """Ключ сортировки кандидатов внутри владельца."""
     return (
-        # Псевдо-задачи всегда первыми
         0 if task.get("is_pseudo") else 1,
-        # Дальше — есть ли спринт
         0 if task.get("sprint_num") is not None else 1,
         -(task.get("sprint_num") or 0),
-        # Оценённые раньше
         0 if _is_estimated(task, cfg) else 1,
-        # Приоритет статуса (псевдо — пусто, идёт в конец)
         cfg.status_priority.get(task["status_name"], 99),
-        # Крупные раньше
         -task["hours"],
     )
 
 
 def compute_priorities(candidates: list[dict], cfg: SprintConfig) -> None:
-    """Проставить task['priority'] = 1..N в разрезе (владелец, роль).
-
-    formal_only задачи приоритет не получают.
-    """
+    """Проставить task['priority'] = 1..N в разрезе (владелец, роль)."""
     by_owner_role: dict[tuple[str, str], list[dict]] = {}
     for t in candidates:
         key = (t["owner_id"], t["role"])
@@ -529,23 +758,10 @@ def compute_priorities(candidates: list[dict], cfg: SprintConfig) -> None:
 
 def allocate(candidates: list[dict], cfg: SprintConfig,
               target_sprint_num: int | None = None) -> tuple[list[dict], list[dict], dict]:
-    """Распределение задач до бюджета на каждого человека.
-
-    target_sprint_num — номер целевого спринта; нужен, чтобы фильтровать
-    разовые псевдо-задачи (с target_sprint_num) от постоянных (recurring).
-    Если не передан — берутся только recurring + автодобавление "Руководство".
-
-    Псевдо-задачи (отпуска, руководство) кладутся в спринт первыми
-    и уменьшают остаток бюджета.
-
-    formal_only задачи в спринт не идут.
-
-    Возвращает (allocated, overflow, used_by_owner).
-    """
+    """Распределение задач до бюджета на каждого человека."""
     pseudo = _add_pseudo_tasks(cfg, target_sprint_num)
     real = [c for c in candidates if not c.get("formal_only")]
 
-    # Сортируем — псевдо уже наверху благодаря _sort_key
     everything = pseudo + real
     everything.sort(key=lambda x: _sort_key(x, cfg))
 
@@ -555,11 +771,9 @@ def allocate(candidates: list[dict], cfg: SprintConfig,
 
     budget = cfg.hours_per_person
 
-    # Проход 1: целые задачи (включая псевдо — они идут первыми по сортировке)
     for task in everything:
         owner = task["owner_id"]
         if owner not in used:
-            # Владельца нет в текущем team (странно, но возможно при ручных правках)
             continue
         if used[owner] + task["hours"] <= budget:
             used[owner] += task["hours"]
@@ -567,7 +781,6 @@ def allocate(candidates: list[dict], cfg: SprintConfig,
         else:
             remaining.append(task)
 
-    # Проход 2: добор мелкими целиком
     remaining.sort(key=lambda t: t["hours"])
     rest2 = []
     for task in remaining:
@@ -578,7 +791,6 @@ def allocate(candidates: list[dict], cfg: SprintConfig,
         else:
             rest2.append(task)
 
-    # Проход 3: режем последнюю задачу до точного остатка
     overflow = []
     sliced_owners: set[str] = set()
     for task in rest2:
@@ -594,4 +806,265 @@ def allocate(candidates: list[dict], cfg: SprintConfig,
         else:
             overflow.append(task)
 
+    for task in overflow:
+        owner = task["owner_id"]
+        remaining = round(budget - used.get(owner, 0), 1)
+        task_hours = task.get("hours", 0)
+        if remaining <= 0:
+            task["overflow_reason"] = "Бюджет исчерпан"
+        elif task_hours > remaining:
+            task["overflow_reason"] = f"Нужно {task_hours} ч, доступно {remaining} ч"
+        else:
+            task["overflow_reason"] = "Низкий приоритет"
+
     return allocated, overflow, used
+
+
+# -------------------- Ожидаемый итог спринта --------------------
+
+def compute_sprint_expected_results(
+    allocated: list[dict], cfg: SprintConfig,
+) -> dict[str, str]:
+    """Вычислить ожидаемый итог спринта для каждого уникального ключа задачи.
+
+    Алгоритм:
+    - Группируем все аллоцированные не-псевдо строки по ключу Jira.
+    - Для каждого ключа сортируем бакеты по порядку pipeline направления
+      (или дефолтному порядку если направления нет).
+    - Последний бакет = на каком этапе окажется задача к концу спринта.
+    - Если последний шаг — финальный в pipeline И не урезан (partial_from=None)
+      → возвращаем терминальный статус (первый из cfg.terminal_statuses).
+    """
+    direction_by_name = {d["name"]: d for d in cfg.directions}
+    terminal = cfg.terminal_statuses[0] if cfg.terminal_statuses else "Выполнено"
+
+    # Дефолтный порядок бакетов (без явного направления)
+    _DEFAULT_BUCKET_ORDER = [
+        "Анализ", "Дизайн", "Разработка", "Код-ревью", "Дизайн-ревью", "Тестирование",
+    ]
+
+    # Группируем: key → список (bucket, is_partial)
+    by_key: dict[str, list[tuple[str, bool]]] = {}
+    key_direction: dict[str, str | None] = {}
+
+    for task in allocated:
+        if task.get("is_pseudo"):
+            continue
+        key = task["key"]
+        by_key.setdefault(key, []).append(
+            (task["bucket"], task.get("partial_from") is not None)
+        )
+        key_direction.setdefault(key, task.get("direction"))
+
+    result: dict[str, str] = {}
+
+    for key, steps in by_key.items():
+        direction_name = key_direction.get(key)
+        direction = direction_by_name.get(direction_name) if direction_name else None
+
+        if direction:
+            ordered_buckets = [
+                _WORK_TYPE_INFO.get(wt, {}).get("bucket", wt)
+                for wt in direction.get("work_types", [])
+                if wt in _WORK_TYPE_INFO
+            ]
+        else:
+            ordered_buckets = _DEFAULT_BUCKET_ORDER
+
+        def _rank(bp: tuple[str, bool]) -> int:
+            b, _ = bp
+            try:
+                return ordered_buckets.index(b)
+            except ValueError:
+                return len(ordered_buckets)
+
+        sorted_steps = sorted(steps, key=_rank)
+        if not sorted_steps:
+            continue
+
+        last_bucket, last_partial = sorted_steps[-1]
+        is_final = bool(ordered_buckets) and last_bucket == ordered_buckets[-1]
+
+        if is_final and not last_partial:
+            result[key] = terminal
+        elif not last_partial and ordered_buckets:
+            # Шаг завершён, но не финальный — ожидаемый итог: следующий шаг
+            try:
+                idx = ordered_buckets.index(last_bucket)
+                result[key] = ordered_buckets[idx + 1] if idx + 1 < len(ordered_buckets) else terminal
+            except ValueError:
+                result[key] = last_bucket
+        else:
+            result[key] = last_bucket
+
+    return result
+
+
+# -------------------- Post-allocation: pipeline-derived tasks --------------------
+
+def derive_pipeline_tasks(
+    allocated: list[dict], cfg: SprintConfig,
+) -> list[dict]:
+    """Породить задачи тестирования, код-ревью и дизайн-ревью из выполненных задач.
+
+    Для каждой non-partial задачи разработчика (bucket=Разработка):
+      - Если направление включает «testing» → добавить задачу тестирования аналитику.
+      - Всегда → добавить задачу код-ревью лиду разработки.
+
+    Для каждой non-partial задачи дизайнера (bucket=Дизайн):
+      - Всегда → добавить задачу дизайн-ревью лиду дизайна.
+    """
+    derived: list[dict] = []
+    direction_by_name = {d["name"]: d for d in cfg.directions}
+
+    # Множество уже существующих (key, role, bucket) в allocated — чтобы не дублировать
+    allocated_keys: set[tuple] = {
+        (t["key"], t["role"], t["bucket"])
+        for t in allocated
+        if not t.get("is_pseudo")
+    }
+
+    dev_lead = _find_lead_owner(cfg, "developer_lead")
+    design_lead = _find_lead_owner(cfg, "designer_lead")
+    analyst_team = _team_with_role(cfg, "analyst")
+
+    # Все роли разработчика из конфига направлений (developer, developer_frontend, ...)
+    all_dev_roles: set[str] = {"developer"}
+    for _d in cfg.directions:
+        _dr = (_d.get("dev_role") or "").strip()
+        if _dr:
+            all_dev_roles.add(_dr)
+
+    def _make_derived(base: dict, role: str, bucket: str,
+                       owner_id: str, owner_file_name: str, hours: float) -> dict:
+        t = base.copy()
+        t.update({
+            "bucket": bucket,
+            "role": role,
+            "owner_id": owner_id,
+            "owner_file_name": owner_file_name,
+            "hours": hours,
+            "is_pseudo": False,
+            "formal_only": False,
+            "partial_from": None,
+            "priority": None,
+        })
+        return t
+
+    for task in allocated:
+        if task.get("is_pseudo"):
+            continue
+        if task.get("partial_from") is not None:
+            # Задача урезана — разработчик не закончит, тест/ревью не нужны
+            continue
+
+        key = task["key"]
+        bucket = task["bucket"]
+        direction_name = task.get("direction")
+        direction = direction_by_name.get(direction_name) if direction_name else None
+        work_types = direction.get("work_types", []) if direction else []
+
+        # ---- Задача разработчика ----
+        # Роль может быть "developer", "developer_frontend", "developer_backend" и т.д.
+        # Проверяем по множеству ALL dev-ролей из конфига (не только из текущего direction),
+        # чтобы ловить задачи без совпавшего direction.
+        is_dev_task = bucket == "Разработка" and task.get("role") in all_dev_roles
+        if is_dev_task:
+            # Обходим post-allocation шаги в порядке pipeline направления.
+            # Если направление не указано — дефолтный порядок: code_review → testing.
+            post_alloc_order = [
+                wt for wt in work_types if wt in _POST_ALLOC_WORK_TYPES
+            ] or ["code_review", "testing"]
+
+            for wt in post_alloc_order:
+                if wt == "testing":
+                    test_cand_key = (key, "analyst", "Тестирование")
+                    if test_cand_key not in allocated_keys:
+                        owner_id = _resolve_owner(
+                            "analyst",
+                            task.get("assignee_id"),
+                            task.get("responsible_id"),
+                            task.get("reporter_id"),
+                            analyst_team,
+                        )
+                        if owner_id:
+                            h = task.get("hours_tester")
+                            try:
+                                hours = float(h) if h else 0.0
+                            except (TypeError, ValueError):
+                                hours = 0.0
+                            if hours <= 0:
+                                hours = _default_hours_for(cfg, "tester", task["status_name"])
+                            d = _make_derived(
+                                task, "analyst", "Тестирование",
+                                owner_id, analyst_team[owner_id]["file_name"], hours,
+                            )
+                            derived.append(d)
+                            allocated_keys.add(test_cand_key)
+
+                elif wt == "code_review":
+                    if dev_lead:
+                        dev_lead_id, dev_lead_info = dev_lead
+                        cr_cand_key = (key, "developer_lead", "Код-ревью")
+                        if cr_cand_key not in allocated_keys:
+                            hours = _default_hours_for(cfg, "developer_lead", "Код-ревью")
+                            d = _make_derived(
+                                task, "developer_lead", "Код-ревью",
+                                dev_lead_id, dev_lead_info["file_name"], hours,
+                            )
+                            derived.append(d)
+                            allocated_keys.add(cr_cand_key)
+
+        # ---- Код-ревью завершено → тестирование ----
+        elif bucket == "Код-ревью":
+            if direction:
+                cr_idx = next((i for i, wt in enumerate(work_types) if wt == "code_review"), -1)
+                has_testing = cr_idx >= 0 and any(wt == "testing" for wt in work_types[cr_idx + 1:])
+            else:
+                has_testing = True
+
+            if has_testing:
+                test_cand_key = (key, "analyst", "Тестирование")
+                if test_cand_key not in allocated_keys:
+                    owner_id = _resolve_owner(
+                        "analyst",
+                        task.get("assignee_id"),
+                        task.get("responsible_id"),
+                        task.get("reporter_id"),
+                        analyst_team,
+                    )
+                    if owner_id:
+                        h = task.get("hours_tester")
+                        try:
+                            hours = float(h) if h else 0.0
+                        except (TypeError, ValueError):
+                            hours = 0.0
+                        if hours <= 0:
+                            hours = _default_hours_for(cfg, "tester", task["status_name"])
+                        d = _make_derived(
+                            task, "analyst", "Тестирование",
+                            owner_id, analyst_team[owner_id]["file_name"], hours,
+                        )
+                        derived.append(d)
+                        allocated_keys.add(test_cand_key)
+
+        # ---- Задача дизайнера ----
+        elif bucket == "Дизайн" and task.get("role") == "designer":
+            post_alloc_order = [
+                wt for wt in work_types if wt in _POST_ALLOC_WORK_TYPES
+            ] or ["design_review"]
+
+            for wt in post_alloc_order:
+                if wt == "design_review" and design_lead:
+                    design_lead_id, design_lead_info = design_lead
+                    dr_cand_key = (key, "designer_lead", "Дизайн-ревью")
+                    if dr_cand_key not in allocated_keys:
+                        hours = _default_hours_for(cfg, "designer_lead", "Дизайн-ревью")
+                        d = _make_derived(
+                            task, "designer_lead", "Дизайн-ревью",
+                            design_lead_id, design_lead_info["file_name"], hours,
+                        )
+                        derived.append(d)
+                        allocated_keys.add(dr_cand_key)
+
+    return derived
