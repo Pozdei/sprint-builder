@@ -274,8 +274,10 @@ class ConfigDirection(Base):
     name: Mapped[str] = mapped_column(String(100))
     labels: Mapped[list] = mapped_column(JSON)       # список Jira-меток, например ["Backend"]
     work_types: Mapped[list] = mapped_column(JSON)   # упорядоченный список: ["analytics","development","testing"]
-    # Роль разработчика для этого направления; пусто = "developer"
-    dev_role: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    # Роли для этого направления; пусто = системный дефолт ("developer"/"analyst")
+    dev_role:     Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    tester_role:  Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    analyst_role: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
 
     config: Mapped["Config"] = relationship(back_populates="directions")
 

@@ -246,25 +246,33 @@ def _enabled_roles_by_status(cfg: SprintConfig) -> dict[str, list[tuple[str, str
     return index
 
 
+def _is_content_role(role: str) -> bool:
+    """True для «аналитических» ролей (аналитик, тестер, QA и т.д.).
+
+    Такие роли используют цепочку assignee → responsible → reporter
+    при поиске владельца задачи. Технические роли (developer*, designer*)
+    берут только assignee.
+    """
+    return not (role.startswith("developer") or role.startswith("designer"))
+
+
 def _resolve_owner(role: str, assignee_id: str | None,
                     responsible_id: str | None, reporter_id: str | None,
                     role_team: dict[str, dict]) -> str | None:
     """Владелец задачи для роли.
 
-    - analyst: assignee → responsible → reporter.
-    - остальные: только assignee.
+    - Аналитические роли (analyst, qa, tester и кастомные):
+      assignee → responsible → reporter.
+    - Технические роли (developer*, designer*): только assignee.
     """
-    if role == "analyst":
-        if assignee_id and assignee_id in role_team:
-            return assignee_id
+    if assignee_id and assignee_id in role_team:
+        return assignee_id
+
+    if _is_content_role(role):
         if responsible_id and responsible_id in role_team:
             return responsible_id
         if reporter_id and reporter_id in role_team:
             return reporter_id
-        return None
-
-    if assignee_id and assignee_id in role_team:
-        return assignee_id
     return None
 
 
@@ -480,11 +488,18 @@ def _generate_direction_pre_candidates(
 
         bucket = info["bucket"]
 
-        # Для шага разработки — специальная логика резолюции владельца
         if wt == "development":
             owner_id, role, role_team = _resolve_developer_for_direction(
                 f, direction, cfg, team_by_role, assignee_id,
             )
+        elif wt == "testing":
+            role = direction.get("tester_role") or "analyst"
+            role_team = team_by_role.get(role) or _team_with_role(cfg, role)
+            owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
+        elif wt == "analytics":
+            role = direction.get("analyst_role") or "analyst"
+            role_team = team_by_role.get(role) or _team_with_role(cfg, role)
+            owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
         else:
             role = info["role"]
             role_team = team_by_role.get(role) or _team_with_role(cfg, role)
@@ -924,9 +939,8 @@ def derive_pipeline_tasks(
         if not t.get("is_pseudo")
     }
 
-    dev_lead = _find_lead_owner(cfg, "developer_lead")
+    dev_lead    = _find_lead_owner(cfg, "developer_lead")
     design_lead = _find_lead_owner(cfg, "designer_lead")
-    analyst_team = _team_with_role(cfg, "analyst")
 
     # Все роли разработчика из конфига направлений (developer, developer_frontend, ...)
     all_dev_roles: set[str] = {"developer"}
@@ -978,14 +992,16 @@ def derive_pipeline_tasks(
 
             for wt in post_alloc_order:
                 if wt == "testing":
-                    test_cand_key = (key, "analyst", "Тестирование")
+                    tester_role = (direction.get("tester_role") or "analyst") if direction else "analyst"
+                    tester_team = _team_with_role(cfg, tester_role)
+                    test_cand_key = (key, tester_role, "Тестирование")
                     if test_cand_key not in allocated_keys:
                         owner_id = _resolve_owner(
-                            "analyst",
+                            tester_role,
                             task.get("assignee_id"),
                             task.get("responsible_id"),
                             task.get("reporter_id"),
-                            analyst_team,
+                            tester_team,
                         )
                         if owner_id:
                             h = task.get("hours_tester")
@@ -994,10 +1010,10 @@ def derive_pipeline_tasks(
                             except (TypeError, ValueError):
                                 hours = 0.0
                             if hours <= 0:
-                                hours = _default_hours_for(cfg, "tester", task["status_name"])
+                                hours = _default_hours_for(cfg, tester_role, task["status_name"])
                             d = _make_derived(
-                                task, "analyst", "Тестирование",
-                                owner_id, analyst_team[owner_id]["file_name"], hours,
+                                task, tester_role, "Тестирование",
+                                owner_id, tester_team[owner_id]["file_name"], hours,
                             )
                             derived.append(d)
                             allocated_keys.add(test_cand_key)
@@ -1024,14 +1040,16 @@ def derive_pipeline_tasks(
                 has_testing = True
 
             if has_testing:
-                test_cand_key = (key, "analyst", "Тестирование")
+                tester_role = (direction.get("tester_role") or "analyst") if direction else "analyst"
+                tester_team = _team_with_role(cfg, tester_role)
+                test_cand_key = (key, tester_role, "Тестирование")
                 if test_cand_key not in allocated_keys:
                     owner_id = _resolve_owner(
-                        "analyst",
+                        tester_role,
                         task.get("assignee_id"),
                         task.get("responsible_id"),
                         task.get("reporter_id"),
-                        analyst_team,
+                        tester_team,
                     )
                     if owner_id:
                         h = task.get("hours_tester")
@@ -1040,10 +1058,10 @@ def derive_pipeline_tasks(
                         except (TypeError, ValueError):
                             hours = 0.0
                         if hours <= 0:
-                            hours = _default_hours_for(cfg, "tester", task["status_name"])
+                            hours = _default_hours_for(cfg, tester_role, task["status_name"])
                         d = _make_derived(
-                            task, "analyst", "Тестирование",
-                            owner_id, analyst_team[owner_id]["file_name"], hours,
+                            task, tester_role, "Тестирование",
+                            owner_id, tester_team[owner_id]["file_name"], hours,
                         )
                         derived.append(d)
                         allocated_keys.add(test_cand_key)

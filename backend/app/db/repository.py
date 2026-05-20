@@ -195,6 +195,8 @@ def upsert_directions(db: Session, config: models.Config,
                 labels=item.get("labels", []),
                 work_types=item.get("work_types", []),
                 dev_role=item.get("dev_role") or None,
+                tester_role=item.get("tester_role") or None,
+                analyst_role=item.get("analyst_role") or None,
             )
         )
 
@@ -340,7 +342,9 @@ def model_to_sprint_config_dict(config: models.Config) -> dict:
                 "name": d.name,
                 "labels": d.labels,
                 "work_types": d.work_types,
-                "dev_role": d.dev_role or "",
+                "dev_role":     d.dev_role or "",
+                "tester_role":  d.tester_role or "",
+                "analyst_role": d.analyst_role or "",
             }
             for d in config.directions
         ],

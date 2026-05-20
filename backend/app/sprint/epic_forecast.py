@@ -80,6 +80,14 @@ def _generate_all_remaining_stages(
             owner_id, role, role_team = _resolve_developer_for_direction(
                 f, direction, cfg, team_by_role, assignee_id,
             )
+        elif wt == "testing":
+            role = direction.get("tester_role") or "analyst"
+            role_team = team_by_role.get(role) or _team_with_role(cfg, role)
+            owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
+        elif wt == "analytics":
+            role = direction.get("analyst_role") or "analyst"
+            role_team = team_by_role.get(role) or _team_with_role(cfg, role)
+            owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
         elif wt == "code_review":
             if not dev_lead:
                 continue
@@ -95,9 +103,7 @@ def _generate_all_remaining_stages(
         else:
             role = info["role"]
             role_team = team_by_role.get(role) or _team_with_role(cfg, role)
-            owner_id = _resolve_owner(
-                role, assignee_id, responsible_id, reporter_id, role_team,
-            )
+            owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
 
         if owner_id is None:
             continue

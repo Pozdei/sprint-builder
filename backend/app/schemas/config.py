@@ -39,7 +39,9 @@ class DirectionOut(BaseModel):
     name: str
     labels: list[str]
     work_types: list[str]
-    dev_role: str = ""
+    dev_role:     str = ""
+    tester_role:  str = ""   # роль тестера; пусто = "analyst"
+    analyst_role: str = ""   # роль аналитика; пусто = "analyst"
 
 
 class PseudoTaskOut(BaseModel):

@@ -18,9 +18,8 @@ interface Props {
 }
 
 export function DirectionsEditor({ value, onChange, roles = [] }: Props) {
-  const devRoleOptions = roles.filter(
-    (r) => !r.is_lead && r.name !== "analyst" && r.name !== "designer",
-  );
+  const devRoleOptions     = roles.filter((r) => !r.is_lead && r.name !== "analyst" && r.name !== "designer");
+  const contentRoleOptions = roles.filter((r) => !r.is_lead && r.name !== "designer" && !r.name.startsWith("developer"));
 
   const updateField = (i: number, field: keyof DirectionOut, val: unknown) => {
     const next = [...value];
@@ -61,7 +60,9 @@ export function DirectionsEditor({ value, onChange, roles = [] }: Props) {
         name: "",
         labels: [],
         work_types: ["analytics", "development", "code_review", "testing"],
-        dev_role: "",
+        dev_role:     "",
+        tester_role:  "",
+        analyst_role: "",
       },
     ]);
   };
@@ -100,33 +101,64 @@ export function DirectionsEditor({ value, onChange, roles = [] }: Props) {
               </button>
             </div>
 
-            {/* dev_role */}
-            <div>
-              <label className="block text-xs text-gray-500 mb-0.5">
-                Роль разработчика (dev_role)
-              </label>
-              {devRoleOptions.length > 0 ? (
+            {/* Роли направления */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {/* dev_role */}
+              <div>
+                <label className="block text-xs text-gray-500 mb-0.5">
+                  Роль разработчика
+                </label>
                 <select
                   value={dir.dev_role}
                   onChange={(e) => updateField(i, "dev_role", e.target.value)}
                   className="w-full px-2 py-1 border rounded text-sm"
                 >
-                  <option value="">developer (по умолчанию)</option>
+                  <option value="">developer (дефолт)</option>
                   {devRoleOptions.map((r) => (
                     <option key={r.name} value={r.name}>
-                      {r.display_name} ({r.name})
+                      {r.display_name}
                     </option>
                   ))}
                 </select>
-              ) : (
-                <input
-                  type="text"
-                  value={dir.dev_role}
-                  onChange={(e) => updateField(i, "dev_role", e.target.value)}
-                  placeholder="developer"
-                  className="w-full px-2 py-1 border rounded text-sm font-mono"
-                />
-              )}
+              </div>
+
+              {/* tester_role */}
+              <div>
+                <label className="block text-xs text-gray-500 mb-0.5">
+                  Роль тестера
+                </label>
+                <select
+                  value={dir.tester_role}
+                  onChange={(e) => updateField(i, "tester_role", e.target.value)}
+                  className="w-full px-2 py-1 border rounded text-sm"
+                >
+                  <option value="">analyst (дефолт)</option>
+                  {contentRoleOptions.map((r) => (
+                    <option key={r.name} value={r.name}>
+                      {r.display_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* analyst_role */}
+              <div>
+                <label className="block text-xs text-gray-500 mb-0.5">
+                  Роль аналитика
+                </label>
+                <select
+                  value={dir.analyst_role}
+                  onChange={(e) => updateField(i, "analyst_role", e.target.value)}
+                  className="w-full px-2 py-1 border rounded text-sm"
+                >
+                  <option value="">analyst (дефолт)</option>
+                  {contentRoleOptions.map((r) => (
+                    <option key={r.name} value={r.name}>
+                      {r.display_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Метки Jira */}

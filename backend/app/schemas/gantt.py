@@ -13,7 +13,7 @@ class GanttItem(BaseModel):
     hours: float
     is_pseudo: bool
     url: str
-    direction: str | None
+    direction: str | None = None
     start: str        # ISO datetime
     end: str          # ISO datetime
     start_hours: float

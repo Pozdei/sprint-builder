@@ -208,7 +208,9 @@ export interface DirectionOut {
   name: string;
   labels: string[];
   work_types: string[];
-  dev_role: string;
+  dev_role:     string;
+  tester_role:  string;
+  analyst_role: string;
 }
 
 export interface ConfigOut {
