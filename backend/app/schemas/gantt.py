@@ -3,6 +3,26 @@
 from pydantic import BaseModel
 
 
+class TaskDependency(BaseModel):
+    from_key: str
+    to_key: str
+
+
+class EmployeeVacationIn(BaseModel):
+    jira_account_id: str
+    display_name: str
+    start_date: str   # "YYYY-MM-DD"
+    end_date: str     # "YYYY-MM-DD"
+
+
+class EmployeeVacationOut(BaseModel):
+    id: int
+    jira_account_id: str
+    display_name: str
+    start_date: str
+    end_date: str
+
+
 class GanttItem(BaseModel):
     key: str
     summary: str

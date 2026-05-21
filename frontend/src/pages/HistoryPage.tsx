@@ -5,6 +5,7 @@ import {
   deleteSprint,
   downloadSprintXlsx,
   fetchGantt,
+  fetchSprintDependencies,
   getSprint,
   listSprints,
 } from "../api/client";
@@ -146,9 +147,19 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
 
   const handleApprove = async () => {
     if (!detail) return;
+    let depWarning = "";
+    try {
+      const deps = await fetchSprintDependencies(detail.id);
+      if (deps.length > 0) {
+        depWarning = `\n\n⚠ В спринте ${deps.length} FS-завис${deps.length === 1 ? "имость" : "имостей"} между задачами — убедитесь, что расписание корректно.`;
+      }
+    } catch {
+      // не критично
+    }
     const ok = window.confirm(
       `Утвердить Sprint ${detail.sprint_num}?\n\n` +
-      `В Jira уже должен существовать Sprint ${detail.sprint_num}.`
+      `В Jira уже должен существовать Sprint ${detail.sprint_num}.` +
+      depWarning
     );
     if (!ok) return;
     setBusy("approve");
@@ -383,6 +394,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                         />
                       </div>
                     )}
+
                   </div>
 
                   <SprintTable tasks={detail.tasks} />
@@ -398,12 +410,13 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   );
 }
 
+const _dtFmt = new Intl.DateTimeFormat("ru-RU", {
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit",
+});
+
 function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString("ru-RU", {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit",
-  });
+  return _dtFmt.format(new Date(iso));
 }
 
 function extractError(e: unknown): string {

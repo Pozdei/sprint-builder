@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_config
-from app.db import models, sprints_repository
+from app.db import models, repository, sprints_repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
-from app.schemas.gantt import GanttItem, StandupExecutor
+from app.schemas.gantt import GanttItem, StandupExecutor, TaskDependency
 from app.schemas.sprints import (
     ClosedTaskData, IntrusionRecord, SaveDraftRequest, SetTasksRequest,
     SprintOut, SprintSummary,
@@ -200,10 +200,56 @@ def get_gantt(
     db: Session = Depends(get_db),
 ):
     sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    vac_dicts = repository.vacations_to_dicts(repository.list_vacations(db, config.id))
     return compute_gantt_schedule(
         [t.task_data for t in sprint.tasks],
         sprint.config_snapshot, start_date, hours_per_day,
+        dependencies=sprint.task_dependencies or [],
+        vacations=vac_dicts,
     )
+
+
+# -------------------- Dependencies CRUD --------------------
+
+@router.get("/{sprint_id}/dependencies", response_model=list[TaskDependency])
+def get_dependencies(
+    sprint_id: int,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    return [TaskDependency(**d) for d in (sprint.task_dependencies or [])]
+
+
+@router.post("/{sprint_id}/dependencies", response_model=list[TaskDependency], status_code=201)
+def add_dependency(
+    sprint_id: int,
+    body: TaskDependency,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    deps = list(sprint.task_dependencies or [])
+    new_dep = body.model_dump()
+    if new_dep not in deps:
+        deps.append(new_dep)
+        sprint.task_dependencies = deps
+        db.commit()
+    return [TaskDependency(**d) for d in sprint.task_dependencies]
+
+
+@router.delete("/{sprint_id}/dependencies", status_code=204)
+def remove_dependency(
+    sprint_id: int,
+    body: TaskDependency,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    deps = list(sprint.task_dependencies or [])
+    rm = body.model_dump()
+    sprint.task_dependencies = [d for d in deps if d != rm]
+    db.commit()
 
 
 @router.delete("/{sprint_id}", status_code=204)

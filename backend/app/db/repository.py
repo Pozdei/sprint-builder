@@ -26,6 +26,7 @@ _eager_config = [
     selectinload(models.Config.pseudo_tasks),
     selectinload(models.Config.terminal_statuses),
     selectinload(models.Config.directions),
+    selectinload(models.Config.vacations),
 ]
 
 
@@ -348,4 +349,219 @@ def model_to_sprint_config_dict(config: models.Config) -> dict:
             }
             for d in config.directions
         ],
+        "vacations": [
+            {
+                "owner_id": v.jira_account_id,
+                "display_name": v.display_name,
+                "start_date": v.start_date,
+                "end_date": v.end_date,
+            }
+            for v in config.vacations
+        ],
     }
+
+
+# -------------------- Vacation CRUD --------------------
+
+def vacations_to_dicts(vacations) -> list[dict]:
+    """Преобразовать список EmployeeVacation → формат для compute_gantt_schedule."""
+    return [
+        {
+            "owner_id": v.jira_account_id,
+            "display_name": v.display_name,
+            "start_date": v.start_date,
+            "end_date": v.end_date,
+        }
+        for v in vacations
+    ]
+
+
+def list_vacations(db: Session, config_id: int) -> list[models.EmployeeVacation]:
+    return list(db.scalars(
+        select(models.EmployeeVacation)
+        .where(models.EmployeeVacation.config_id == config_id)
+        .order_by(models.EmployeeVacation.jira_account_id, models.EmployeeVacation.start_date)
+    ).all())
+
+
+def add_vacation(
+    db: Session,
+    config_id: int,
+    jira_account_id: str,
+    display_name: str,
+    start_date: str,
+    end_date: str,
+) -> models.EmployeeVacation:
+    vac = models.EmployeeVacation(
+        config_id=config_id,
+        jira_account_id=jira_account_id,
+        display_name=display_name,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    db.add(vac)
+    db.flush()
+    return vac
+
+
+def delete_vacation(db: Session, vacation_id: int, config_id: int) -> bool:
+    vac = db.scalar(
+        select(models.EmployeeVacation)
+        .where(models.EmployeeVacation.id == vacation_id,
+               models.EmployeeVacation.config_id == config_id)
+    )
+    if not vac:
+        return False
+    db.delete(vac)
+    db.flush()
+    return True
+
+
+# -------------------- Epic dependencies --------------------
+
+def list_epic_dependencies(
+    db: Session, config_id: int, epic_key: str,
+) -> list[models.EpicTaskDependency]:
+    return list(db.scalars(
+        select(models.EpicTaskDependency)
+        .where(
+            models.EpicTaskDependency.config_id == config_id,
+            models.EpicTaskDependency.epic_key == epic_key,
+        )
+    ).all())
+
+
+def add_epic_dependency(
+    db: Session, config_id: int, epic_key: str, from_key: str, to_key: str,
+) -> list[models.EpicTaskDependency]:
+    existing = db.scalar(
+        select(models.EpicTaskDependency)
+        .where(
+            models.EpicTaskDependency.config_id == config_id,
+            models.EpicTaskDependency.epic_key == epic_key,
+            models.EpicTaskDependency.from_key == from_key,
+            models.EpicTaskDependency.to_key == to_key,
+        )
+    )
+    if not existing:
+        dep = models.EpicTaskDependency(
+            config_id=config_id, epic_key=epic_key, from_key=from_key, to_key=to_key,
+        )
+        db.add(dep)
+        db.flush()
+    return list_epic_dependencies(db, config_id, epic_key)
+
+
+def remove_epic_dependency(
+    db: Session, config_id: int, epic_key: str, from_key: str, to_key: str,
+) -> None:
+    dep = db.scalar(
+        select(models.EpicTaskDependency)
+        .where(
+            models.EpicTaskDependency.config_id == config_id,
+            models.EpicTaskDependency.epic_key == epic_key,
+            models.EpicTaskDependency.from_key == from_key,
+            models.EpicTaskDependency.to_key == to_key,
+        )
+    )
+    if dep:
+        db.delete(dep)
+        db.flush()
+
+
+# -------------------- Epic forecast snapshots --------------------
+
+def upsert_epic_snapshot(
+    db: Session,
+    config_id: int,
+    epic_key: str,
+    captured_date: str,
+    start_date: str,
+    hours_per_day: float,
+    completion_date: str | None,
+    total_issues: int,
+    done_issues: int,
+    remaining_work_items: int,
+    total_planned_hours: float,
+) -> models.EpicForecastSnapshot:
+    snap = db.scalar(
+        select(models.EpicForecastSnapshot)
+        .where(
+            models.EpicForecastSnapshot.config_id == config_id,
+            models.EpicForecastSnapshot.epic_key == epic_key,
+            models.EpicForecastSnapshot.captured_date == captured_date,
+        )
+    )
+    if snap:
+        if snap.is_pinned:
+            return snap
+        snap.start_date = start_date
+        snap.hours_per_day = hours_per_day
+        snap.completion_date = completion_date
+        snap.total_issues = total_issues
+        snap.done_issues = done_issues
+        snap.remaining_work_items = remaining_work_items
+        snap.total_planned_hours = total_planned_hours
+    else:
+        snap = models.EpicForecastSnapshot(
+            config_id=config_id,
+            epic_key=epic_key,
+            captured_date=captured_date,
+            start_date=start_date,
+            hours_per_day=hours_per_day,
+            completion_date=completion_date,
+            total_issues=total_issues,
+            done_issues=done_issues,
+            remaining_work_items=remaining_work_items,
+            total_planned_hours=total_planned_hours,
+        )
+        db.add(snap)
+    db.flush()
+    return snap
+
+
+def pin_epic_snapshot(
+    db: Session, snapshot_id: int, config_id: int, pinned: bool,
+) -> models.EpicForecastSnapshot | None:
+    snap = db.scalar(
+        select(models.EpicForecastSnapshot)
+        .where(
+            models.EpicForecastSnapshot.id == snapshot_id,
+            models.EpicForecastSnapshot.config_id == config_id,
+        )
+    )
+    if not snap:
+        return None
+    snap.is_pinned = pinned
+    db.flush()
+    return snap
+
+
+def list_epic_snapshots(
+    db: Session, config_id: int, epic_key: str,
+) -> list[models.EpicForecastSnapshot]:
+    return list(db.scalars(
+        select(models.EpicForecastSnapshot)
+        .where(
+            models.EpicForecastSnapshot.config_id == config_id,
+            models.EpicForecastSnapshot.epic_key == epic_key,
+        )
+        .order_by(models.EpicForecastSnapshot.captured_date)
+    ).all())
+
+
+def delete_epic_snapshot(
+    db: Session, snapshot_id: int, config_id: int,
+) -> bool:
+    snap = db.scalar(
+        select(models.EpicForecastSnapshot)
+        .where(
+            models.EpicForecastSnapshot.id == snapshot_id,
+            models.EpicForecastSnapshot.config_id == config_id,
+        )
+    )
+    if not snap:
+        return False
+    db.delete(snap)
+    db.flush()
+    return True

@@ -1,7 +1,8 @@
 import axios from "axios";
 import type {
-  BuildAndSaveResponse, ClosedTaskData, ConfigOut, ConfigUpdate, LoginResponse,
-  OwnerStat, SprintBuildResponse, SprintOut, SprintSummary, TaskOut, UserOut,
+  BuildAndSaveResponse, ClosedTaskData, ConfigOut, ConfigUpdate, EmployeeVacation,
+  LoginResponse, OwnerStat, SprintBuildResponse, SprintOut, SprintSummary,
+  TaskDependency, TaskOut, UserOut,
 } from "../types/api";
 
 const envUrl = import.meta.env.VITE_API_URL;
@@ -121,9 +122,15 @@ export async function fetchEpicForecast(
   key: string,
   startDate: string,
   hoursPerDay: number = 8,
+  useHistory: boolean = false,
 ): Promise<import("../types/api").EpicForecastResponse> {
   const r = await api.get("/api/epic/forecast", {
-    params: { key, start_date: startDate, hours_per_day: hoursPerDay },
+    params: {
+      key,
+      start_date: startDate,
+      hours_per_day: hoursPerDay,
+      use_history: useHistory || undefined,
+    },
   });
   return r.data;
 }
@@ -170,6 +177,66 @@ export async function fetchGantt(
     params: { start_date: startDate, hours_per_day: hoursPerDay },
   });
   return r.data;
+}
+
+// -------------------- Epic Snapshots --------------------
+
+export async function fetchEpicSnapshots(
+  epicKey: string,
+): Promise<import("../types/api").EpicForecastSnapshot[]> {
+  const r = await api.get("/api/epic/snapshots", { params: { epic_key: epicKey } });
+  return r.data;
+}
+
+export async function deleteEpicSnapshot(id: number): Promise<void> {
+  await api.delete(`/api/epic/snapshots/${id}`);
+}
+
+export async function pinEpicSnapshot(
+  id: number,
+  pinned: boolean,
+): Promise<import("../types/api").EpicForecastSnapshot> {
+  const r = await api.patch(`/api/epic/snapshots/${id}/pin`, null, { params: { pinned } });
+  return r.data;
+}
+
+// -------------------- Epic Dependencies --------------------
+
+export async function fetchSprintDependencies(sprintId: number): Promise<TaskDependency[]> {
+  const r = await api.get(`/api/sprints/${sprintId}/dependencies`);
+  return r.data;
+}
+
+export async function fetchEpicDependencies(epicKey: string): Promise<TaskDependency[]> {
+  const r = await api.get("/api/epic/dependencies", { params: { epic_key: epicKey } });
+  return r.data;
+}
+
+export async function addEpicDependency(epicKey: string, dep: TaskDependency): Promise<TaskDependency[]> {
+  const r = await api.post("/api/epic/dependencies", dep, { params: { epic_key: epicKey } });
+  return r.data;
+}
+
+export async function removeEpicDependency(epicKey: string, dep: TaskDependency): Promise<void> {
+  await api.delete("/api/epic/dependencies", { data: dep, params: { epic_key: epicKey } });
+}
+
+// -------------------- Vacations --------------------
+
+export async function fetchVacations(): Promise<EmployeeVacation[]> {
+  const r = await api.get("/api/configs/vacations");
+  return r.data;
+}
+
+export async function addVacation(
+  data: Omit<EmployeeVacation, "id">
+): Promise<EmployeeVacation> {
+  const r = await api.post("/api/configs/vacations", data);
+  return r.data;
+}
+
+export async function deleteVacation(id: number): Promise<void> {
+  await api.delete(`/api/configs/vacations/${id}`);
 }
 
 export async function setSprintTasks(id: number, tasks: TaskOut[]): Promise<SprintOut> {

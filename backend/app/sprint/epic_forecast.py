@@ -29,6 +29,42 @@ from app.sprint.logic import (
 )
 
 
+def _max_pipeline_pos_from_history(
+    issue: dict,
+    work_types: list[str],
+    cfg: SprintConfig,
+) -> int:
+    """Найти максимальную позицию в pipeline по истории статусов задачи.
+
+    Возвращает индекс в work_types или -1 если история пуста / не содержит известных статусов.
+    Используется в hybrid-режиме: позволяет не добавлять повторно этапы, которые задача
+    уже прошла (даже если сейчас откатилась по статусу).
+    """
+    from app.sprint.logic import _enabled_roles_by_status, _WORK_TYPE_INFO
+    histories = issue.get("changelog", {}).get("histories", [])
+    if not histories:
+        return -1
+
+    status_to_roles = _enabled_roles_by_status(cfg)
+    bucket_to_pos: dict[str, int] = {
+        _WORK_TYPE_INFO[wt]["bucket"]: pos
+        for pos, wt in enumerate(work_types)
+        if wt in _WORK_TYPE_INFO
+    }
+
+    max_pos = -1
+    for entry in histories:
+        for item in entry.get("items", []):
+            if item.get("field") != "status":
+                continue
+            to_status = item.get("toString", "")
+            for _role, bucket in status_to_roles.get(to_status, []):
+                pos = bucket_to_pos.get(bucket, -1)
+                if pos > max_pos:
+                    max_pos = pos
+    return max_pos
+
+
 def _generate_all_remaining_stages(
     issue: dict,
     status_name: str,
@@ -41,21 +77,24 @@ def _generate_all_remaining_stages(
     team_by_role: dict[str, dict[str, dict]],
     current_stage_included: bool,
     counters: dict,
+    min_start_from: int = -1,
 ) -> None:
     """Сгенерировать оставшиеся шаги pipeline для задачи эпика.
 
     current_stage_included=True → текущий шаг уже добавлен через role_status_buckets,
     генерируем начиная со следующего.
     current_stage_included=False → статус не распознан, генерируем всё с начала.
+    min_start_from — минимальная позиция start_from (из истории статусов в hybrid-режиме).
     """
     f = issue["fields"]
     key = issue["key"]
     work_types = direction.get("work_types", [])
 
     current_pos = _find_pipeline_position(status_name, work_types, cfg)
-    # Если current_stage_included=True и current_pos>=0 → начинаем со следующего (pos > current_pos)
-    # Если current_stage_included=False или current_pos<0 → начинаем с pos 0 (start_from = -1)
     start_from = current_pos if (current_stage_included and current_pos >= 0) else -1
+    # Hybrid-режим: не откатываемся назад по этапам, которые история уже зафиксировала
+    if min_start_from > start_from:
+        start_from = min_start_from
 
     assignee_id, reporter_id, responsible_id = _extract_owners(f, cfg)
     sprint_num, sprint_name = extract_max_sprint_number(f.get(cfg.sprint_field))
@@ -150,6 +189,7 @@ def collect_epic_remaining_work(
     cfg: SprintConfig,
     sp_field: str | None,
     base_url: str,
+    use_history: bool = False,
 ) -> tuple[list[dict], dict]:
     """Собрать оставшиеся рабочие единицы для задач эпика.
 
@@ -222,10 +262,15 @@ def collect_epic_remaining_work(
 
         # Будущие шаги pipeline (включая code_review, testing)
         if direction:
+            history_pos = (
+                _max_pipeline_pos_from_history(issue, direction.get("work_types", []), cfg)
+                if use_history else -1
+            )
             _generate_all_remaining_stages(
                 issue, status_name, direction, labels,
                 by_key_role, cfg, base_url, sp_field,
                 team_by_role, current_stage_included, counters,
+                min_start_from=history_pos,
             )
 
     return list(by_key_role.values()), counters
@@ -238,6 +283,9 @@ def build_epic_forecast(
     base_url: str,
     start_date,
     hours_per_day: float = 8.0,
+    dependencies: list[dict] | None = None,
+    vacations: list[dict] | None = None,
+    use_history: bool = False,
 ) -> dict:
     """Рассчитать прогноз реализации эпика.
 
@@ -263,7 +311,7 @@ def build_epic_forecast(
     }
 
     work_items, counters = collect_epic_remaining_work(
-        issues, cfg, sp_field, base_url,
+        issues, cfg, sp_field, base_url, use_history=use_history,
     )
 
     if not work_items:
@@ -282,6 +330,8 @@ def build_epic_forecast(
 
     gantt_items = compute_gantt_schedule(
         work_items, config_snapshot, start_date, hours_per_day,
+        dependencies=dependencies or [],
+        vacations=vacations or [],
     )
 
     # Предиктная дата = максимальный end из всех элементов

@@ -1,10 +1,11 @@
 """Алгоритм планирования задач спринта на временну́ю шкалу (Гант).
 
 Два прохода:
-1. Event-driven scheduling для реальных задач — учитывает занятость исполнителя
-   и pipeline-зависимости (шаг B по ключу K начинается не раньше шага A).
+1. Event-driven scheduling для реальных задач — учитывает занятость исполнителя,
+   pipeline-зависимости (шаг B по ключу K начинается не раньше шага A) и
+   кросс-задачные FS-зависимости (задача B стартует после окончания всех этапов A).
 2. Псевдо-задачи (Руководство, Отсутствие, ...) заполняют пробелы в расписании.
-   Одна псевдо-задача может быть разбита на несколько сегментов между реальными.
+   Отпуска исполнителей исключаются из пробелов и отображаются отдельными барами.
 """
 
 import heapq
@@ -50,6 +51,87 @@ def _working_hours_to_dt(sprint_start: date, hours: float, hours_per_day: float)
     return current
 
 
+def _date_to_work_hour(d: date, sprint_start: date, hours_per_day: float) -> float | None:
+    """Календарная дата → рабочий час относительно старта спринта.
+
+    Возвращает None, если дата является выходным.
+    """
+    if d.weekday() >= 5:
+        return None
+    work_day = 0
+    cur = sprint_start
+    while cur < d:
+        if cur.weekday() < 5:
+            work_day += 1
+        cur += timedelta(days=1)
+    return work_day * hours_per_day
+
+
+def _compute_vacation_blocks(
+    vacations: list[dict],
+    sprint_start: date,
+    hours_per_day: float,
+) -> dict[str, list[tuple[float, float]]]:
+    """Отпуска → заблокированные рабочие часы на человека.
+
+    vacations: список dict с полями owner_id, start_date, end_date (YYYY-MM-DD).
+    Возвращает: owner_id → отсортированный список (start_h, end_h).
+    """
+    raw: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for vac in vacations:
+        owner_id = vac["owner_id"]
+        start_d = date.fromisoformat(vac["start_date"])
+        end_d = date.fromisoformat(vac["end_date"])
+        cur = start_d
+        while cur <= end_d:
+            h = _date_to_work_hour(cur, sprint_start, hours_per_day)
+            if h is not None:
+                raw[owner_id].append((h, h + hours_per_day))
+            cur += timedelta(days=1)
+
+    result: dict[str, list[tuple[float, float]]] = {}
+    for pid, blocks in raw.items():
+        blocks.sort()
+        merged: list[list[float]] = []
+        for s, e in blocks:
+            if merged and s <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], e)
+            else:
+                merged.append([s, e])
+        result[pid] = [(s, e) for s, e in merged]
+    return result
+
+
+def _skip_blocks(h: float, blocks: list[tuple[float, float]]) -> float:
+    """Сдвинуть h вперёд за все перекрывающиеся блоки отпуска."""
+    changed = True
+    while changed:
+        changed = False
+        for s, e in blocks:
+            if s <= h < e:
+                h = e
+                changed = True
+    return h
+
+
+def _work_end(start: float, duration: float, blocks: list[tuple[float, float]]) -> float:
+    """Вычислить end_h задачи с учётом блоков отпуска внутри интервала работы."""
+    remaining = duration
+    cur = start
+    for s, e in sorted(blocks):
+        if e <= cur:
+            continue
+        if s >= cur + remaining:
+            break
+        if s > cur:
+            consumed = s - cur
+            if consumed >= remaining:
+                return cur + remaining
+            remaining -= consumed
+        cur = e
+    return cur + remaining
+
+
 # -------------------- Pipeline --------------------
 
 def _build_direction_pipelines(config_snapshot: dict) -> dict[str, list[str]]:
@@ -70,14 +152,21 @@ def _schedule_real_tasks(
     real_tasks: list[dict],
     config_snapshot: dict,
     hours_per_day: float,
+    cross_task_deps: dict[str, list[str]] | None = None,
+    vacation_blocks: dict[str, list[tuple[float, float]]] | None = None,
 ) -> tuple[dict[tuple, tuple[float, float]], dict[str, float]]:
     """Event-driven scheduling для реальных задач.
+
+    cross_task_deps: from_key → [to_key, ...] — FS-зависимости между задачами.
+    vacation_blocks: owner_id → [(start_h, end_h), ...] — заблокированное время.
 
     Возвращает:
     - scheduled: (key, bucket) → (start_h, end_h)
     - person_cursor: person_id → end_h последней задачи
     """
     dir_pipelines = _build_direction_pipelines(config_snapshot)
+    cross_deps = cross_task_deps or {}
+    vac = vacation_blocks or {}
 
     task_by_id: dict[tuple, dict] = {(t["key"], t["bucket"]): t for t in real_tasks}
 
@@ -85,7 +174,7 @@ def _schedule_real_tasks(
         d = task.get("direction")
         return dir_pipelines.get(d, _DEFAULT_BUCKET_PIPELINE) if d else _DEFAULT_BUCKET_PIPELINE
 
-    def predecessor_id(task: dict) -> tuple | None:
+    def pipeline_predecessor(task: dict) -> tuple | None:
         pl = pipeline_for(task)
         bucket = task["bucket"]
         if bucket not in pl:
@@ -97,13 +186,66 @@ def _schedule_real_tasks(
         pred = (task["key"], pred_bucket)
         return pred if pred in task_by_id else None
 
-    deps: dict[tuple, tuple | None] = {
-        (t["key"], t["bucket"]): predecessor_id(t) for t in real_tasks
-    }
-    dependents: dict[tuple, list[tuple]] = defaultdict(list)
-    for tid, pred in deps.items():
+    def key_pipeline(key: str, task: dict) -> list[str]:
+        return pipeline_for(task)
+
+    def last_stage_of_key(key: str) -> tuple | None:
+        """Последний bucket ключа key в его pipeline."""
+        stages = [(k, b) for k, b in task_by_id if k == key]
+        if not stages:
+            return None
+        sample_task = task_by_id[stages[0]]
+        pl = pipeline_for(sample_task)
+        for bucket in reversed(pl):
+            if (key, bucket) in task_by_id:
+                return (key, bucket)
+        return stages[-1]
+
+    def first_stage_of_key(key: str) -> tuple | None:
+        """Первый bucket ключа key в его pipeline."""
+        stages = [(k, b) for k, b in task_by_id if k == key]
+        if not stages:
+            return None
+        sample_task = task_by_id[stages[0]]
+        pl = pipeline_for(sample_task)
+        for bucket in pl:
+            if (key, bucket) in task_by_id:
+                return (key, bucket)
+        return stages[0]
+
+    # Строим all_preds: каждая задача → список всех её predecessors
+    all_preds: dict[tuple, list[tuple]] = defaultdict(list)
+    for t in real_tasks:
+        tid = (t["key"], t["bucket"])
+        pred = pipeline_predecessor(t)
         if pred:
-            dependents[pred].append(tid)
+            all_preds[tid].append(pred)
+
+    # Добавляем кросс-задачные FS-зависимости
+    for from_key, to_keys in cross_deps.items():
+        from_last = last_stage_of_key(from_key)
+        if not from_last:
+            continue
+        for to_key in to_keys:
+            to_first = first_stage_of_key(to_key)
+            if to_first and from_last not in all_preds[to_first]:
+                all_preds[to_first].append(from_last)
+
+    # Обратная карта: задача → кто на неё ждёт
+    dependents: dict[tuple, list[tuple]] = defaultdict(list)
+    for tid, preds in all_preds.items():
+        for pred in preds:
+            if tid not in dependents[pred]:
+                dependents[pred].append(tid)
+
+    def all_preds_done(tid: tuple) -> bool:
+        return all(p in finish_times for p in all_preds.get(tid, []))
+
+    def dep_end_h(tid: tuple) -> float:
+        preds = all_preds.get(tid, [])
+        if not preds:
+            return 0.0
+        return max(finish_times.get(p, 0.0) for p in preds)
 
     # Очереди задач по исполнителям (сортировка по приоритету)
     person_tasks: dict[str, list[dict]] = defaultdict(list)
@@ -119,15 +261,15 @@ def _schedule_real_tasks(
     event_q: list = []
 
     def enqueue_next(person_id: str, after_h: float) -> None:
+        person_vac = vac.get(person_id, [])
         for t in person_tasks[person_id]:
             tid = (t["key"], t["bucket"])
             if tid in scheduled:
                 continue
-            pred = deps.get(tid)
-            if pred and pred not in finish_times:
-                continue  # заблокирована — ищем следующую незаблокированную
-            dep_end = finish_times.get(pred, 0.0) if pred else 0.0
-            earliest = max(after_h, dep_end)
+            if not all_preds_done(tid):
+                continue
+            de = dep_end_h(tid)
+            earliest = _skip_blocks(max(after_h, de), person_vac)
             heapq.heappush(event_q, (
                 earliest,
                 t.get("priority") or 9999,
@@ -148,13 +290,14 @@ def _schedule_real_tasks(
         t = task_by_id.get(tid)
         if not t:
             continue
-        pred = deps.get(tid)
-        if pred and pred not in finish_times:
+        if not all_preds_done(tid):
             continue
 
-        dep_end = finish_times.get(pred, 0.0) if pred else 0.0
-        start_h = max(person_cursor[person_id], dep_end)
-        end_h = start_h + max(t.get("hours") or 0.0, 0.0)
+        person_vac = vac.get(person_id, [])
+        de = dep_end_h(tid)
+        start_h = _skip_blocks(max(person_cursor[person_id], de), person_vac)
+        hours = max(t.get("hours") or 0.0, 0.0)
+        end_h = _work_end(start_h, hours, person_vac)
 
         scheduled[tid] = (start_h, end_h)
         finish_times[tid] = end_h
@@ -165,9 +308,14 @@ def _schedule_real_tasks(
         for dep_tid in dependents.get(tid, []):
             dep_t = task_by_id.get(dep_tid)
             if dep_t and dep_tid not in scheduled:
+                if not all_preds_done(dep_tid):
+                    continue
                 other = dep_t["owner_id"]
+                other_vac = vac.get(other, [])
+                other_de = dep_end_h(dep_tid)
+                other_start = _skip_blocks(max(person_cursor[other], other_de), other_vac)
                 heapq.heappush(event_q, (
-                    max(person_cursor[other], end_h),
+                    other_start,
                     dep_t.get("priority") or 9999,
                     dep_t.get("key", ""),
                     dep_t["bucket"],
@@ -180,20 +328,30 @@ def _schedule_real_tasks(
 
 def _fill_pseudo_gaps(
     pseudo_tasks: list[dict],
-    real_items: list[dict],           # уже расписанные реальные задачи с start/end_hours
+    real_items: list[dict],
     budget_hours: float,
+    vacation_blocks: dict[str, list[tuple[float, float]]] | None = None,
 ) -> list[dict]:
     """Заполнить пробелы псевдо-задачами.
 
+    Отпуска (vacation_blocks) исключаются из пробелов — они отображаются отдельно.
     Каждая псевдо-задача может быть разбита на несколько сегментов.
-    Возвращает список сегментов (каждый — копия исходной задачи с новыми start/end_hours).
     """
+    vac = vacation_blocks or {}
+
     # Реальные задачи по исполнителям
     real_by_person: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for item in real_items:
         real_by_person[item["owner_id"]].append(
             (item["start_hours"], item["end_hours"])
         )
+
+    # Добавляем блоки отпуска в «занятое» время
+    for pid, blocks in vac.items():
+        for s, e in blocks:
+            if s < budget_hours:
+                real_by_person[pid].append((s, min(e, budget_hours)))
+
     for pid in real_by_person:
         real_by_person[pid].sort()
 
@@ -210,19 +368,15 @@ def _fill_pseudo_gaps(
         person_pseudo = pseudo_by_person[person_id]
         person_real = real_by_person.get(person_id, [])
 
-        # Вычисляем список пробелов: [(gap_start, gap_end), ...]
-        # Пробел = промежуток между реальными задачами + остаток до budget
         gaps: list[tuple[float, float]] = []
         prev_end = 0.0
         for start, end in person_real:
             if start > prev_end + 1e-9:
                 gaps.append((prev_end, start))
             prev_end = max(prev_end, end)
-        # Хвостовой пробел до бюджета
         if prev_end < budget_hours - 1e-9:
             gaps.append((prev_end, budget_hours))
 
-        # Заполняем пробелы псевдо-задачами по очереди
         gap_iter = iter(gaps)
         current_gap = next(gap_iter, None)
         gap_remaining = (current_gap[1] - current_gap[0]) if current_gap else 0.0
@@ -256,6 +410,48 @@ def _fill_pseudo_gaps(
     return result
 
 
+def _make_vacation_items(
+    vacations: list[dict],
+    vacation_blocks: dict[str, list[tuple[float, float]]],
+    budget_hours: float,
+    sprint_start: date,
+    hours_per_day: float,
+) -> list[dict]:
+    """Создать GanttItem'ы для периодов отпуска."""
+    # Собираем display_name по owner_id из vacations
+    display_by_owner: dict[str, str] = {}
+    for v in vacations:
+        display_by_owner[v["owner_id"]] = v.get("display_name", v["owner_id"])
+
+    items: list[dict] = []
+    for owner_id, blocks in vacation_blocks.items():
+        display = display_by_owner.get(owner_id, owner_id)
+        for s, e in blocks:
+            # Показываем только в пределах бюджета спринта
+            seg_s = s
+            seg_e = min(e, budget_hours + hours_per_day * 5)  # небольшой запас за бюджет
+            if seg_s >= seg_e:
+                continue
+            items.append({
+                "key": f"__vacation__{owner_id}",
+                "summary": "Отпуск",
+                "bucket": "Отпуск",
+                "role": "",
+                "owner_id": owner_id,
+                "owner_file_name": display,
+                "hours": round(seg_e - seg_s, 3),
+                "is_pseudo": True,
+                "url": "",
+                "direction": None,
+                "start_hours": round(seg_s, 3),
+                "end_hours": round(seg_e, 3),
+                "hours_is_default": False,
+                "start": _working_hours_to_dt(sprint_start, seg_s, hours_per_day).isoformat(),
+                "end": _working_hours_to_dt(sprint_start, seg_e, hours_per_day).isoformat(),
+            })
+    return items
+
+
 # -------------------- Главная функция --------------------
 
 def compute_gantt_schedule(
@@ -263,8 +459,13 @@ def compute_gantt_schedule(
     config_snapshot: dict,
     sprint_start: date,
     hours_per_day: float = 8.0,
+    dependencies: list[dict] | None = None,
+    vacations: list[dict] | None = None,
 ) -> list[dict]:
-    """Рассчитать расписание Ганта с разбивкой псевдо-задач по пробелам.
+    """Рассчитать расписание Ганта.
+
+    dependencies: список {from_key, to_key} — FS-зависимости.
+    vacations: список {owner_id, start_date, end_date} — отпуска сотрудников.
 
     Каждый элемент результата:
       start / end — ISO datetime
@@ -275,10 +476,25 @@ def compute_gantt_schedule(
 
     budget = float(config_snapshot.get("hours_per_person", hours_per_day * 10))
 
-    # Шаг 1: расставляем реальные задачи
-    scheduled, person_cursor = _schedule_real_tasks(real_tasks, config_snapshot, hours_per_day)
+    # Строим карту кросс-задачных FS-зависимостей: from_key → [to_key, ...]
+    cross_task_deps: dict[str, list[str]] = defaultdict(list)
+    for dep in (dependencies or []):
+        fk = dep.get("from_key", "")
+        tk = dep.get("to_key", "")
+        if fk and tk and fk != tk:
+            cross_task_deps[fk].append(tk)
 
-    task_by_id = {(t["key"], t["bucket"]): t for t in real_tasks}
+    # Блоки отпуска per person
+    vac_blocks = _compute_vacation_blocks(
+        vacations or [], sprint_start, hours_per_day
+    )
+
+    # Шаг 1: расставляем реальные задачи
+    scheduled, person_cursor = _schedule_real_tasks(
+        real_tasks, config_snapshot, hours_per_day,
+        cross_task_deps=dict(cross_task_deps),
+        vacation_blocks=vac_blocks,
+    )
 
     real_items: list[dict] = []
     for t in real_tasks:
@@ -294,12 +510,22 @@ def compute_gantt_schedule(
             "end": _working_hours_to_dt(sprint_start, end_h, hours_per_day).isoformat(),
         })
 
-    # Шаг 2: заполняем пробелы псевдо-задачами
-    pseudo_items = _fill_pseudo_gaps(pseudo_tasks, real_items, budget)
+    # Шаг 2: заполняем пробелы псевдо-задачами (исключая отпуска)
+    pseudo_items = _fill_pseudo_gaps(
+        pseudo_tasks, real_items, budget, vacation_blocks=vac_blocks
+    )
     for seg in pseudo_items:
         seg["start"] = _working_hours_to_dt(sprint_start, seg["start_hours"], hours_per_day).isoformat()
         seg["end"] = _working_hours_to_dt(sprint_start, seg["end_hours"], hours_per_day).isoformat()
 
-    all_items = real_items + pseudo_items
+    # Шаг 3: добавляем бары отпусков — только для исполнителей с реальными задачами
+    active_owners = {t["owner_id"] for t in real_items}
+    active_vac_blocks = {k: v for k, v in vac_blocks.items() if k in active_owners}
+    vacation_items = _make_vacation_items(
+        [v for v in (vacations or []) if v.get("owner_id") in active_owners],
+        active_vac_blocks, budget, sprint_start, hours_per_day
+    )
+
+    all_items = real_items + pseudo_items + vacation_items
     all_items.sort(key=lambda x: (x["start_hours"], x.get("owner_file_name", "")))
     return all_items

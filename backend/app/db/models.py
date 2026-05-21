@@ -111,6 +111,15 @@ class Config(Base):
     directions: Mapped[list["ConfigDirection"]] = relationship(
         cascade="all, delete-orphan", back_populates="config"
     )
+    vacations: Mapped[list["EmployeeVacation"]] = relationship(
+        cascade="all, delete-orphan", back_populates="config"
+    )
+    epic_dependencies: Mapped[list["EpicTaskDependency"]] = relationship(
+        cascade="all, delete-orphan", back_populates="config"
+    )
+    epic_snapshots: Mapped[list["EpicForecastSnapshot"]] = relationship(
+        cascade="all, delete-orphan", back_populates="config"
+    )
 
 
 # -------------------- Team --------------------
@@ -296,6 +305,68 @@ class TerminalStatus(Base):
     config: Mapped[Config] = relationship(back_populates="terminal_statuses")
 
 
+class EmployeeVacation(Base):
+    """Отпуск сотрудника — уровень конфига, применяется ко всем спринтам."""
+
+    __tablename__ = "employee_vacations"
+    __table_args__ = (
+        Index("ix_emp_vac_config_owner", "config_id", "jira_account_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    config_id: Mapped[int] = mapped_column(ForeignKey("configs.id", ondelete="CASCADE"))
+    jira_account_id: Mapped[str] = mapped_column(String(100))
+    display_name: Mapped[str] = mapped_column(String(200), default="")
+    start_date: Mapped[str] = mapped_column(String(10))  # "YYYY-MM-DD"
+    end_date: Mapped[str] = mapped_column(String(10))    # "YYYY-MM-DD"
+
+    config: Mapped["Config"] = relationship(back_populates="vacations")
+
+
+class EpicTaskDependency(Base):
+    """FS-зависимость задач в рамках эпика — уровень конфига, per epic key."""
+
+    __tablename__ = "epic_task_dependencies"
+    __table_args__ = (
+        UniqueConstraint("config_id", "epic_key", "from_key", "to_key",
+                         name="uq_epic_dep_unique"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    config_id: Mapped[int] = mapped_column(ForeignKey("configs.id", ondelete="CASCADE"))
+    epic_key: Mapped[str] = mapped_column(String(50))
+    from_key: Mapped[str] = mapped_column(String(50))
+    to_key: Mapped[str] = mapped_column(String(50))
+
+    config: Mapped["Config"] = relationship(back_populates="epic_dependencies")
+
+
+class EpicForecastSnapshot(Base):
+    """Снапшот прогноза эпика — один в день, перезаписывается при повторном построении."""
+
+    __tablename__ = "epic_forecast_snapshots"
+    __table_args__ = (
+        UniqueConstraint("config_id", "epic_key", "captured_date",
+                         name="uq_epic_snapshot_day"),
+        Index("ix_epic_snapshot_config_epic", "config_id", "epic_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    config_id: Mapped[int] = mapped_column(ForeignKey("configs.id", ondelete="CASCADE"))
+    epic_key: Mapped[str] = mapped_column(String(50))
+    captured_date: Mapped[str] = mapped_column(String(10))   # "YYYY-MM-DD"
+    start_date: Mapped[str] = mapped_column(String(10))
+    hours_per_day: Mapped[float] = mapped_column(Float)
+    completion_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    total_issues: Mapped[int] = mapped_column(Integer)
+    done_issues: Mapped[int] = mapped_column(Integer)
+    remaining_work_items: Mapped[int] = mapped_column(Integer)
+    total_planned_hours: Mapped[float] = mapped_column(Float)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    config: Mapped["Config"] = relationship(back_populates="epic_snapshots")
+
+
 # -------------------- Sprints --------------------
 
 class Sprint(Base):
@@ -327,9 +398,10 @@ class Sprint(Base):
                                                                 nullable=True)
 
     # Фаза 2.10: задачи, которые появились в Jira-спринте ПОСЛЕ approve.
-    # Список dict с теми же полями, что обычная TaskOut (key, summary, status_name,
-    # owner_file_name, role, hours и т.д.). Заполняется при close.
     intrusions: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+
+    # Фаза 2.12: FS-зависимости задач [{from_key, to_key}, ...]
+    task_dependencies: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
 
     tasks: Mapped[list["SprintTask"]] = relationship(
         cascade="all, delete-orphan",

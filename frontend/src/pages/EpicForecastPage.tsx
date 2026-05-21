@@ -1,9 +1,15 @@
 import { useState } from "react";
-import { fetchEpicForecast } from "../api/client";
+import {
+  addEpicDependency, fetchEpicDependencies,
+  fetchEpicForecast, fetchEpicSnapshots, removeEpicDependency,
+} from "../api/client";
+import { DependencyPanel } from "../components/DependencyPanel";
 import { EstimateModal } from "../components/EstimateModal";
+import { ForecastTrendChart } from "../components/ForecastTrendChart";
 import { GanttChart } from "../components/GanttChart";
 import { TaskPipelineModal } from "../components/TaskPipelineModal";
-import type { EpicForecastResponse } from "../types/api";
+import { VacationPanel } from "../components/VacationPanel";
+import type { EpicForecastResponse, EpicForecastSnapshot, TaskDependency } from "../types/api";
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -32,6 +38,12 @@ export function EpicForecastPage() {
   const [selectedKey,    setSelectedKey]    = useState<string | null>(null);
   const [showEstimates,  setShowEstimates]  = useState(false);
 
+  const [showDeps,      setShowDeps]      = useState(false);
+  const [showVacations, setShowVacations] = useState(false);
+  const [epicDeps,      setEpicDeps]      = useState<TaskDependency[]>([]);
+  const [snapshots,     setSnapshots]     = useState<EpicForecastSnapshot[]>([]);
+  const [useHistory,    setUseHistory]    = useState(false);
+
   const handleForecast = async () => {
     const key = epicKey.trim().toUpperCase();
     if (!key) return;
@@ -39,8 +51,14 @@ export function EpicForecastPage() {
     setError(null);
     setResult(null);
     try {
-      const data = await fetchEpicForecast(key, startDate, hoursPerDay);
+      const [data, deps] = await Promise.all([
+        fetchEpicForecast(key, startDate, hoursPerDay, useHistory),
+        fetchEpicDependencies(key),
+      ]);
       setResult(data);
+      setEpicDeps(deps);
+      // Снапшоты загружаем после forecast (бэкенд уже сохранил новый)
+      fetchEpicSnapshots(key).then(setSnapshots).catch(() => {});
     } catch (e: unknown) {
       if (e && typeof e === "object" && "response" in e) {
         const r = (e as { response?: { data?: { detail?: string } } }).response;
@@ -106,6 +124,15 @@ export function EpicForecastPage() {
           >
             {loading ? "Считаю…" : "Построить прогноз"}
           </button>
+          <label className="flex items-center gap-2 cursor-pointer select-none ml-1" title="Учитывать историю смен статусов при определении пройденных этапов">
+            <div
+              onClick={() => setUseHistory(v => !v)}
+              className={`relative w-9 h-5 rounded-full transition-colors ${useHistory ? "bg-indigo-500" : "bg-gray-300"}`}
+            >
+              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${useHistory ? "translate-x-4" : "translate-x-0.5"}`} />
+            </div>
+            <span className="text-sm text-gray-600">По истории статусов</span>
+          </label>
         </div>
 
         {error && (
@@ -204,29 +231,52 @@ export function EpicForecastPage() {
           {/* Гант */}
           {result.gantt_items.length > 0 ? (
             <>
-              {/* Шапка с кнопкой */}
-              <div className="flex items-center justify-between mb-2">
+              {/* Шапка с кнопками */}
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                 <p className="text-xs text-gray-400">
                   Клик — все этапы · двойной — Jira
                 </p>
-                {result.stats.default_hours_count > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
-                    onClick={() => setShowEstimates(true)}
-                    className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5
-                               bg-amber-50 border border-amber-300 text-amber-700
-                               hover:bg-amber-100 rounded-lg transition"
+                    onClick={() => { setShowDeps((v) => !v); setShowVacations(false); }}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
+                      showDeps
+                        ? "bg-red-50 border-red-300 text-red-700"
+                        : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                    }`}
                   >
-                    <span className="w-5 h-5 bg-amber-400 text-white rounded-full text-xs flex items-center justify-center font-bold">
-                      {result.stats.default_hours_count}
-                    </span>
-                    Без оценок
+                    Зависимости{epicDeps.length > 0 ? ` (${epicDeps.length})` : ""}
                   </button>
-                )}
+                  <button
+                    onClick={() => { setShowVacations((v) => !v); setShowDeps(false); }}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
+                      showVacations
+                        ? "bg-orange-50 border-orange-300 text-orange-700"
+                        : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    Отпуска
+                  </button>
+                  {result.stats.default_hours_count > 0 && (
+                    <button
+                      onClick={() => setShowEstimates(true)}
+                      className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5
+                                 bg-amber-50 border border-amber-300 text-amber-700
+                                 hover:bg-amber-100 rounded-lg transition"
+                    >
+                      <span className="w-5 h-5 bg-amber-400 text-white rounded-full text-xs flex items-center justify-center font-bold">
+                        {result.stats.default_hours_count}
+                      </span>
+                      Без оценок
+                    </button>
+                  )}
+                </div>
               </div>
               <GanttChart
                 items={result.gantt_items}
                 startDate={startDate}
                 hoursPerDay={hoursPerDay}
+                dependencies={epicDeps}
                 onTaskClick={setSelectedKey}
               />
             </>
@@ -244,15 +294,44 @@ export function EpicForecastPage() {
             />
           )}
 
+          <ForecastTrendChart
+            snapshots={snapshots}
+            onDeleted={(id) => setSnapshots((prev) => prev.filter((s) => s.id !== id))}
+            onPinToggled={(updated) =>
+              setSnapshots((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+            }
+          />
+
           {showEstimates && result && (
             <EstimateModal
               items={result.gantt_items}
               onClose={() => setShowEstimates(false)}
               onSaved={() => {
                 setShowEstimates(false);
-                // Пересчитываем прогноз с теми же параметрами
                 handleForecast();
               }}
+            />
+          )}
+
+          {showDeps && result && (
+            <DependencyPanel
+              ganttItems={result.gantt_items}
+              onFetchDeps={() => fetchEpicDependencies(epicKey.trim().toUpperCase())}
+              onAddDep={(dep) => addEpicDependency(epicKey.trim().toUpperCase(), dep)}
+              onRemoveDep={(dep) => removeEpicDependency(epicKey.trim().toUpperCase(), dep)}
+              onClose={() => setShowDeps(false)}
+              onChanged={() => {
+                fetchEpicDependencies(epicKey.trim().toUpperCase()).then(setEpicDeps);
+                handleForecast();
+              }}
+            />
+          )}
+
+          {showVacations && result && (
+            <VacationPanel
+              ganttItems={result.gantt_items}
+              onClose={() => setShowVacations(false)}
+              onChanged={handleForecast}
             />
           )}
         </>

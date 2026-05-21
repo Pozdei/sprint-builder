@@ -142,6 +142,33 @@ export interface GanttItem {
   hours_is_default?: boolean;
 }
 
+export interface TaskDependency {
+  from_key: string;
+  to_key: string;
+}
+
+export interface EmployeeVacation {
+  id: number;
+  jira_account_id: string;
+  display_name: string;
+  start_date: string;
+  end_date: string;
+}
+
+export interface EpicForecastSnapshot {
+  id: number;
+  epic_key: string;
+  captured_date: string;
+  start_date: string;
+  hours_per_day: number;
+  completion_date: string | null;
+  total_issues: number;
+  done_issues: number;
+  remaining_work_items: number;
+  total_planned_hours: number;
+  is_pinned: boolean;
+}
+
 export interface BuildAndSaveResponse extends SprintBuildResponse {
   sprint: SprintOut;
 }
