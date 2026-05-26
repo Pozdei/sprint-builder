@@ -405,6 +405,33 @@ def _process_issue_for_role(
     counters["matched"] += 1
 
 
+def _resolve_designer_for_direction(
+    direction: dict, cfg: SprintConfig,
+    team_by_role: dict[str, dict[str, dict]],
+    assignee_id: str | None,
+) -> tuple[str | None, dict[str, dict]]:
+    """Определить владельца шага дизайна для задачи из направления.
+
+    Порядок:
+    1. Assignee, если он в команде с ролью designer.
+    2. direction["designer_id"] — явно выбранный в настройках направления.
+    3. Единственный/первый в команде с ролью designer.
+    """
+    role_team = team_by_role.get("designer") or _team_with_role(cfg, "designer")
+
+    if assignee_id and assignee_id in role_team:
+        return assignee_id, role_team
+
+    designer_id = (direction.get("designer_id") or "").strip()
+    if designer_id and designer_id in role_team:
+        return designer_id, role_team
+
+    if role_team:
+        return next(iter(role_team)), role_team
+
+    return None, role_team
+
+
 def _resolve_developer_for_direction(
     f: dict, direction: dict, cfg: SprintConfig,
     team_by_role: dict[str, dict[str, dict]],
@@ -491,6 +518,11 @@ def _generate_direction_pre_candidates(
         if wt == "development":
             owner_id, role, role_team = _resolve_developer_for_direction(
                 f, direction, cfg, team_by_role, assignee_id,
+            )
+        elif wt == "design":
+            role = "designer"
+            owner_id, role_team = _resolve_designer_for_direction(
+                direction, cfg, team_by_role, assignee_id,
             )
         elif wt == "testing":
             role = direction.get("tester_role") or "analyst"

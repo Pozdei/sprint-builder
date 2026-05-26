@@ -141,6 +141,7 @@ class TeamMember(Base):
     file_name: Mapped[str] = mapped_column(String(100))
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     role: Mapped[str] = mapped_column(String(50), default="analyst")
+    salary: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
 
     config: Mapped[Config] = relationship(back_populates="team_members")
     person: Mapped[Person | None] = relationship()
@@ -287,6 +288,7 @@ class ConfigDirection(Base):
     dev_role:     Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
     tester_role:  Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
     analyst_role: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    designer_id:  Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
 
     config: Mapped["Config"] = relationship(back_populates="directions")
 

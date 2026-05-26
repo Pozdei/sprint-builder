@@ -29,3 +29,11 @@ export interface AdminSprintSummary {
   config_id: number | null;
   owner_email: string | null;
 }
+
+export interface AdminTeamMember {
+  account_id: string;
+  jira_name: string;
+  file_name: string;
+  role: string;
+  salary: number;
+}

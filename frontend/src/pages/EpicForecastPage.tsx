@@ -9,7 +9,7 @@ import { ForecastTrendChart } from "../components/ForecastTrendChart";
 import { GanttChart } from "../components/GanttChart";
 import { TaskPipelineModal } from "../components/TaskPipelineModal";
 import { VacationPanel } from "../components/VacationPanel";
-import type { EpicForecastResponse, EpicForecastSnapshot, TaskDependency } from "../types/api";
+import type { CostBreakdownItem, EpicForecastResponse, EpicForecastSnapshot, TaskDependency } from "../types/api";
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -27,7 +27,7 @@ function daysUntil(isoDate: string): number {
   return Math.ceil((target.getTime() - today.getTime()) / 86400000);
 }
 
-export function EpicForecastPage() {
+export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const [epicKey,    setEpicKey]    = useState("");
   const [startDate,  setStartDate]  = useState(todayISO());
   const [hoursPerDay, setHoursPerDay] = useState(8);
@@ -38,6 +38,7 @@ export function EpicForecastPage() {
   const [selectedKey,    setSelectedKey]    = useState<string | null>(null);
   const [showEstimates,  setShowEstimates]  = useState(false);
 
+  const [showCostBreakdown, setShowCostBreakdown] = useState(false);
   const [showDeps,      setShowDeps]      = useState(false);
   const [showVacations, setShowVacations] = useState(false);
   const [epicDeps,      setEpicDeps]      = useState<TaskDependency[]>([]);
@@ -210,6 +211,23 @@ export function EpicForecastPage() {
                   </div>
                 ))}
               </div>
+              {result.stats.total_cost > 0 && (
+                <div className="mt-3 bg-blue-50 rounded-xl px-4 py-2.5 flex items-center gap-3 flex-wrap">
+                  <span className="text-xs text-blue-500">Стоимость проекта</span>
+                  <span className="text-2xl font-bold text-blue-700">
+                    {result.stats.total_cost.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽
+                  </span>
+                  <span className="text-xs text-blue-400">по окладам команды</span>
+                  {isAdmin && (
+                    <button
+                      onClick={() => setShowCostBreakdown(true)}
+                      className="ml-auto text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2"
+                    >
+                      Подробный расчёт
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -334,8 +352,82 @@ export function EpicForecastPage() {
               onChanged={handleForecast}
             />
           )}
+
+          {showCostBreakdown && result && (
+            <CostBreakdownModal
+              breakdown={result.cost_breakdown ?? []}
+              totalCost={result.stats.total_cost}
+              onClose={() => setShowCostBreakdown(false)}
+            />
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+function CostBreakdownModal({
+  breakdown, totalCost, onClose,
+}: {
+  breakdown: CostBreakdownItem[];
+  totalCost: number;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-xl border w-full max-w-lg p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-800">Подробный расчёт стоимости</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+
+        {breakdown.length === 0 ? (
+          <p className="text-gray-400 text-sm text-center py-4">Оклады не настроены</p>
+        ) : (
+          <table className="w-full text-sm mb-4">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="text-left px-3 py-1.5">Исполнитель</th>
+                <th className="text-right px-3 py-1.5">Часов</th>
+                <th className="text-right px-3 py-1.5">Оклад, ₽</th>
+                <th className="text-right px-3 py-1.5">Стоимость, ₽</th>
+              </tr>
+            </thead>
+            <tbody>
+              {breakdown.map((row) => (
+                <tr key={row.name} className="border-b">
+                  <td className="px-3 py-1.5">{row.name}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{row.hours}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">
+                    {row.salary > 0 ? row.salary.toLocaleString("ru-RU") : "—"}
+                  </td>
+                  <td className="px-3 py-1.5 text-right tabular-nums font-medium">
+                    {row.cost > 0 ? row.cost.toLocaleString("ru-RU", { maximumFractionDigits: 0 }) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="border-t-2 border-gray-300 bg-gray-50">
+              <tr>
+                <td colSpan={3} className="px-3 py-1.5 font-semibold text-right">Итого</td>
+                <td className="px-3 py-1.5 text-right font-bold text-blue-700 tabular-nums">
+                  {totalCost.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        )}
+
+        <p className="text-xs text-gray-400">
+          Расчёт: оклад ÷ 160 ч/мес × плановые часы в прогнозе
+        </p>
+      </div>
     </div>
   );
 }

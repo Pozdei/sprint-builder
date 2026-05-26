@@ -33,10 +33,7 @@ function App() {
       return;
     }
     getMe()
-      .then((u) => {
-        setUser(u);
-        if (u.role === "admin") setPage("admin");
-      })
+      .then((u) => setUser(u))
       .catch(() => {
         setToken(null);
         setUser(undefined);
@@ -44,7 +41,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!user || user.role !== "lead") return;
+    if (!user) return;
     checkJira()
       .then((r) => setJiraStatus({ kind: "ok", name: r.display_name }))
       .catch((e) => setJiraStatus({ kind: "error", message: extractError(e) }));
@@ -60,10 +57,7 @@ function App() {
     return <div className="min-h-screen flex items-center justify-center text-gray-500">Загрузка…</div>;
   }
   if (user === undefined) {
-    return <LoginPage onLogin={(u) => {
-      setUser(u);
-      if (u.role === "admin") setPage("admin");
-    }} />;
+    return <LoginPage onLogin={(u) => setUser(u)} />;
   }
 
   const isAdmin = user.role === "admin";
@@ -75,45 +69,40 @@ function App() {
           <div className="flex items-center gap-6">
             <h1 className="text-xl font-bold text-gray-800">Sprint Builder</h1>
             <nav className="flex gap-1">
-              {isAdmin ? (
+              <NavTab active={page === "sprint"} onClick={() => setPage("sprint")}>
+                Спринт
+              </NavTab>
+              <NavTab active={page === "history"} onClick={() => setPage("history")}>
+                История
+              </NavTab>
+              <NavTab active={page === "forecast"} onClick={() => setPage("forecast")}>
+                Прогноз реализации
+              </NavTab>
+              <NavTab active={page === "settings"} onClick={() => setPage("settings")}>
+                Настройки
+              </NavTab>
+              {isAdmin && (
                 <NavTab active={page === "admin"} onClick={() => setPage("admin")}>
                   Админка
                 </NavTab>
-              ) : (
-                <>
-                  <NavTab active={page === "sprint"} onClick={() => setPage("sprint")}>
-                    Спринт
-                  </NavTab>
-                  <NavTab active={page === "history"} onClick={() => setPage("history")}>
-                    История
-                  </NavTab>
-                  <NavTab active={page === "forecast"} onClick={() => setPage("forecast")}>
-                    Прогноз реализации
-                  </NavTab>
-                  <NavTab active={page === "settings"} onClick={() => setPage("settings")}>
-                    Настройки
-                  </NavTab>
-                </>
               )}
             </nav>
           </div>
           <div className="flex items-center gap-4">
-            {!isAdmin && (
-              <ConfigSwitcher onChange={() => setConfigEpoch((e) => e + 1)} />
-            )}
-            {!isAdmin && <JiraStatusLine status={jiraStatus} />}
+            <ConfigSwitcher onChange={() => setConfigEpoch((e) => e + 1)} />
+            <JiraStatusLine status={jiraStatus} />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
         </div>
       </header>
 
-      {isAdmin && page === "admin" && <AdminPage />}
-      {!isAdmin && page === "sprint" && (
+      {page === "sprint" && (
         <SprintPage key={`sprint-${configEpoch}`} jiraReady={jiraStatus.kind === "ok"} />
       )}
-      {!isAdmin && page === "history" && <HistoryPage key={`history-${configEpoch}`} />}
-      {!isAdmin && page === "forecast" && <EpicForecastPage key={`forecast-${configEpoch}`} />}
-      {!isAdmin && page === "settings" && <SettingsPage key={`settings-${configEpoch}`} />}
+      {page === "history" && <HistoryPage key={`history-${configEpoch}`} />}
+      {page === "forecast" && <EpicForecastPage key={`forecast-${configEpoch}`} isAdmin={isAdmin} />}
+      {page === "settings" && <SettingsPage key={`settings-${configEpoch}`} />}
+      {isAdmin && page === "admin" && <AdminPage />}
     </div>
   );
 }

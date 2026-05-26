@@ -55,11 +55,8 @@ def require_admin(user: models.User = Depends(get_current_user)) -> models.User:
 
 
 def require_lead(user: models.User = Depends(get_current_user)) -> models.User:
-    if user.role != "lead":
-        raise HTTPException(
-            status_code=403,
-            detail="Только для lead-пользователей. Админу — в админку.",
-        )
+    if user.role not in ("lead", "admin"):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
     return user
 
 

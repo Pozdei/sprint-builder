@@ -10,3 +10,8 @@ export interface ConfigCreateRequest {
   name: string;
   source_config_id: number | null;
 }
+
+export interface ConfigTemplate {
+  id: number;
+  name: string;
+}

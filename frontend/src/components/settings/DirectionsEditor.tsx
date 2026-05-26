@@ -1,4 +1,4 @@
-import type { DirectionOut, RoleOut } from "../../types/api";
+import type { DirectionOut, RoleOut, TeamMemberOut } from "../../types/api";
 
 export const WORK_TYPE_LABELS: Record<string, string> = {
   analytics:     "Аналитика",
@@ -15,11 +15,13 @@ interface Props {
   value: DirectionOut[];
   onChange: (next: DirectionOut[]) => void;
   roles?: RoleOut[];
+  team?: Record<string, TeamMemberOut>;
 }
 
-export function DirectionsEditor({ value, onChange, roles = [] }: Props) {
+export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Props) {
   const devRoleOptions     = roles.filter((r) => !r.is_lead && r.name !== "analyst" && r.name !== "designer");
   const contentRoleOptions = roles.filter((r) => !r.is_lead && r.name !== "designer" && !r.name.startsWith("developer"));
+  const designerMembers    = Object.entries(team).filter(([, m]) => m.role === "designer");
 
   const updateField = (i: number, field: keyof DirectionOut, val: unknown) => {
     const next = [...value];
@@ -63,6 +65,7 @@ export function DirectionsEditor({ value, onChange, roles = [] }: Props) {
         dev_role:     "",
         tester_role:  "",
         analyst_role: "",
+        designer_id:  "",
       },
     ]);
   };
@@ -77,7 +80,8 @@ export function DirectionsEditor({ value, onChange, roles = [] }: Props) {
         <p className="text-sm text-gray-400 italic">Нет направлений. Добавьте первое.</p>
       )}
       {value.map((dir, i) => {
-        const available = ALL_WORK_TYPES.filter((wt) => !dir.work_types.includes(wt));
+        const available    = ALL_WORK_TYPES.filter((wt) => !dir.work_types.includes(wt));
+        const hasDesign    = dir.work_types.includes("design");
         return (
           <div key={i} className="border rounded-lg p-3 bg-gray-50 space-y-2">
             {/* Название + удалить */}
@@ -160,6 +164,27 @@ export function DirectionsEditor({ value, onChange, roles = [] }: Props) {
                 </select>
               </div>
             </div>
+
+            {/* Дизайнер — только если design в pipeline */}
+            {hasDesign && designerMembers.length > 1 && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-0.5">
+                  Дизайнер
+                </label>
+                <select
+                  value={dir.designer_id ?? ""}
+                  onChange={(e) => updateField(i, "designer_id", e.target.value)}
+                  className="w-full px-2 py-1 border rounded text-sm"
+                >
+                  <option value="">автовыбор (единственный в команде)</option>
+                  {designerMembers.map(([accId, m]) => (
+                    <option key={accId} value={accId}>
+                      {m.file_name || m.jira_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Метки Jira */}
             <div>

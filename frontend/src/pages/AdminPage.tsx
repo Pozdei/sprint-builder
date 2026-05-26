@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import {
-  adminCreateUser, adminDeleteUser, adminListConfigs, adminListSprints,
-  adminListUsers, adminResetPassword, adminTransferConfig, adminUpdateUser,
+  adminCreateUser, adminDeleteUser, adminGetConfigTeam, adminListConfigs, adminListSprints,
+  adminListUsers, adminResetPassword, adminTransferConfig, adminUpdateSalaries, adminUpdateUser,
 } from "../api/admin-client";
 import type {
-  AdminConfigSummary, AdminSprintSummary,
+  AdminConfigSummary, AdminSprintSummary, AdminTeamMember,
 } from "../types/admin";
 import type { UserOut } from "../types/api";
 
@@ -15,6 +15,7 @@ type DataState = {
 };
 
 export function AdminPage() {
+  const [tab, setTab] = useState<"manage" | "salaries">("manage");
   const [data, setData] = useState<DataState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +62,27 @@ export function AdminPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
-      <h1 className="text-lg font-semibold text-gray-800">Админка</h1>
+      <div className="flex items-center gap-4">
+        <h1 className="text-lg font-semibold text-gray-800">Админка</h1>
+        <div className="flex gap-1">
+          <button
+            onClick={() => setTab("manage")}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
+              tab === "manage" ? "bg-blue-100 text-blue-800" : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            Управление
+          </button>
+          <button
+            onClick={() => setTab("salaries")}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
+              tab === "salaries" ? "bg-emerald-100 text-emerald-800" : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            Оклады
+          </button>
+        </div>
+      </div>
 
       {error && (
         <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg p-3">
@@ -69,94 +90,100 @@ export function AdminPage() {
         </div>
       )}
 
-      {/* Пользователи */}
-      <section className="bg-white rounded-lg border p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-gray-800">
-            Пользователи ({data.users.length})
-          </h2>
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-3 py-1.5 rounded"
-          >
-            + Создать
-          </button>
-        </div>
-        <UsersTable
-          users={data.users}
-          onUpdate={async (id, body) => {
-            await adminUpdateUser(id, body);
-            await reload();
-          }}
-          onResetPassword={(id) => setResetPwForUserId(id)}
-          onDelete={async (u) => {
-            const ok = window.confirm(
-              `Удалить пользователя ${u.email}?\n\n` +
-              `Вместе с ним удалится его конфиг и все его спринты (CASCADE).`
-            );
-            if (!ok) return;
-            try {
-              await adminDeleteUser(u.id);
-              await reload();
-            } catch (e) {
-              setError(extractError(e));
-            }
-          }}
-        />
-      </section>
+      {tab === "manage" && (
+        <>
+          {/* Пользователи */}
+          <section className="bg-white rounded-lg border p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-800">
+                Пользователи ({data.users.length})
+              </h2>
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-3 py-1.5 rounded"
+              >
+                + Создать
+              </button>
+            </div>
+            <UsersTable
+              users={data.users}
+              onUpdate={async (id, body) => {
+                await adminUpdateUser(id, body);
+                await reload();
+              }}
+              onResetPassword={(id) => setResetPwForUserId(id)}
+              onDelete={async (u) => {
+                const ok = window.confirm(
+                  `Удалить пользователя ${u.email}?\n\n` +
+                  `Вместе с ним удалится его конфиг и все его спринты (CASCADE).`
+                );
+                if (!ok) return;
+                try {
+                  await adminDeleteUser(u.id);
+                  await reload();
+                } catch (e) {
+                  setError(extractError(e));
+                }
+              }}
+            />
+          </section>
 
-      {/* Конфиги */}
-      <section className="bg-white rounded-lg border p-4 shadow-sm">
-        <h2 className="font-semibold text-gray-800 mb-3">
-          Конфиги ({data.configs.length})
-        </h2>
-        <ConfigsTable
-          configs={data.configs}
-          onTransfer={(cid) => setTransferForConfigId(cid)}
-        />
-      </section>
+          {/* Конфиги */}
+          <section className="bg-white rounded-lg border p-4 shadow-sm">
+            <h2 className="font-semibold text-gray-800 mb-3">
+              Конфиги ({data.configs.length})
+            </h2>
+            <ConfigsTable
+              configs={data.configs}
+              onTransfer={(cid) => setTransferForConfigId(cid)}
+            />
+          </section>
 
-      {/* Спринты (read-only) */}
-      <section className="bg-white rounded-lg border p-4 shadow-sm">
-        <h2 className="font-semibold text-gray-800 mb-3">
-          Спринты ({data.sprints.length})
-        </h2>
-        <SprintsTable sprints={data.sprints} />
-      </section>
+          {/* Спринты (read-only) */}
+          <section className="bg-white rounded-lg border p-4 shadow-sm">
+            <h2 className="font-semibold text-gray-800 mb-3">
+              Спринты ({data.sprints.length})
+            </h2>
+            <SprintsTable sprints={data.sprints} />
+          </section>
 
-      {createOpen && (
-        <CreateUserModal
-          onClose={() => setCreateOpen(false)}
-          onCreated={async () => {
-            setCreateOpen(false);
-            await reload();
-          }}
-          onError={setError}
-        />
+          {createOpen && (
+            <CreateUserModal
+              onClose={() => setCreateOpen(false)}
+              onCreated={async () => {
+                setCreateOpen(false);
+                await reload();
+              }}
+              onError={setError}
+            />
+          )}
+
+          {resetPwForUserId !== null && (
+            <ResetPasswordModal
+              user={data.users.find((u) => u.id === resetPwForUserId)!}
+              onClose={() => setResetPwForUserId(null)}
+              onDone={() => setResetPwForUserId(null)}
+              onError={setError}
+            />
+          )}
+
+          {transferForConfigId !== null && (
+            <TransferConfigModal
+              config={data.configs.find((c) => c.id === transferForConfigId)!}
+              leads={data.users.filter((u) => u.role === "lead")}
+              onClose={() => setTransferForConfigId(null)}
+              onDone={async () => {
+                setTransferForConfigId(null);
+                await reload();
+              }}
+              onError={setError}
+            />
+          )}
+        </>
       )}
 
-      {resetPwForUserId !== null && (
-        <ResetPasswordModal
-          user={data.users.find((u) => u.id === resetPwForUserId)!}
-          onClose={() => setResetPwForUserId(null)}
-          onDone={() => {
-            setResetPwForUserId(null);
-          }}
-          onError={setError}
-        />
-      )}
-
-      {transferForConfigId !== null && (
-        <TransferConfigModal
-          config={data.configs.find((c) => c.id === transferForConfigId)!}
-          leads={data.users.filter((u) => u.role === "lead")}
-          onClose={() => setTransferForConfigId(null)}
-          onDone={async () => {
-            setTransferForConfigId(null);
-            await reload();
-          }}
-          onError={setError}
-        />
+      {tab === "salaries" && (
+        <SalariesTab configs={data.configs} />
       )}
     </div>
   );
@@ -673,6 +700,146 @@ function TransferConfigModal({
         </div>
       </form>
     </ModalShell>
+  );
+}
+
+function SalariesTab({ configs }: { configs: AdminConfigSummary[] }) {
+  const [selectedConfigId, setSelectedConfigId] = useState<number | null>(
+    configs.length > 0 ? configs[0].id : null,
+  );
+  const [members, setMembers] = useState<AdminTeamMember[] | null>(null);
+  const [salaries, setSalaries] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedConfigId === null) return;
+    setLoading(true);
+    setMembers(null);
+    setError(null);
+    adminGetConfigTeam(selectedConfigId)
+      .then((ms) => {
+        setMembers(ms);
+        const init: Record<string, number> = {};
+        ms.forEach((m) => { init[m.account_id] = m.salary; });
+        setSalaries(init);
+      })
+      .catch((e) => setError(extractError(e)))
+      .finally(() => setLoading(false));
+  }, [selectedConfigId]);
+
+  const updateSalary = (accId: string, raw: string) => {
+    const n = parseInt(raw.replace(/\D/g, ""), 10);
+    setSalaries((prev) => ({ ...prev, [accId]: isNaN(n) ? 0 : n }));
+    setSavedAt(null);
+  };
+
+  const handleSave = async () => {
+    if (selectedConfigId === null) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await adminUpdateSalaries(selectedConfigId, salaries);
+      setSavedAt(new Date());
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="bg-white rounded-lg border p-4 shadow-sm">
+      <h2 className="font-semibold text-gray-800 mb-1">Оклады команды</h2>
+      <p className="text-xs text-gray-500 mb-4">
+        Оклад в ₽/месяц. Используется для расчёта стоимости проекта в прогнозе реализации.
+        Конфиденциально — участники команды не видят эти данные.
+      </p>
+
+      {configs.length === 0 ? (
+        <div className="text-gray-400 text-sm">Конфигов нет.</div>
+      ) : (
+        <>
+          <div className="mb-4">
+            <label className="text-sm text-gray-600 block mb-1">Конфиг</label>
+            <select
+              value={selectedConfigId ?? ""}
+              onChange={(e) => setSelectedConfigId(Number(e.target.value))}
+              className="px-2 py-1.5 border rounded text-sm bg-white"
+            >
+              {configs.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.owner_email ? `(${c.owner_email})` : "(без владельца)"}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {error && (
+            <div className="mb-3 bg-red-50 border border-red-300 text-red-800 rounded p-2 text-sm">
+              {error}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="text-gray-400 text-sm py-4">Загрузка…</div>
+          ) : members === null ? null : members.length === 0 ? (
+            <div className="text-gray-400 text-sm py-4">
+              Команда пуста. Добавьте участников в настройках конфига.
+            </div>
+          ) : (
+            <table className="w-full text-sm mb-4">
+              <thead className="bg-gray-100 border-b">
+                <tr>
+                  <th className="text-left px-3 py-1.5">Имя в Jira</th>
+                  <th className="text-left px-3 py-1.5">Имя для файла</th>
+                  <th className="text-left px-3 py-1.5 w-32">Роль</th>
+                  <th className="text-left px-3 py-1.5 w-44">Оклад, ₽/мес</th>
+                </tr>
+              </thead>
+              <tbody>
+                {members.map((m) => (
+                  <tr key={m.account_id} className="border-b">
+                    <td className="px-3 py-1.5">{m.jira_name}</td>
+                    <td className="px-3 py-1.5 text-gray-500">{m.file_name || "—"}</td>
+                    <td className="px-3 py-1.5 text-gray-500">{m.role}</td>
+                    <td className="px-3 py-1.5">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={salaries[m.account_id] ? salaries[m.account_id].toLocaleString("ru-RU") : ""}
+                        onChange={(e) => updateSalary(m.account_id, e.target.value)}
+                        placeholder="0"
+                        className="w-full px-2 py-1 border rounded text-sm text-right"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {members !== null && members.length > 0 && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white px-4 py-2 rounded text-sm font-semibold"
+              >
+                {saving ? "Сохраняю…" : "Сохранить"}
+              </button>
+              {savedAt && (
+                <span className="text-sm text-green-600">
+                  Сохранено в {savedAt.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

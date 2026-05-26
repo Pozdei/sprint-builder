@@ -5,6 +5,7 @@ import { getToken } from "./client";
 import type {
   AdminConfigSummary,
   AdminSprintSummary,
+  AdminTeamMember,
   UserCreateRequest,
   UserUpdateRequest,
 } from "../types/admin";
@@ -59,6 +60,21 @@ export async function adminResetPassword(id: number, newPassword: string): Promi
 
 export async function adminDeleteUser(id: number): Promise<void> {
   await axios.delete(`${baseURL}/api/admin/users/${id}`, { headers: authHeaders() });
+}
+
+// ---------- Оклады ----------
+
+export async function adminGetConfigTeam(configId: number): Promise<AdminTeamMember[]> {
+  const r = await axios.get(`${baseURL}/api/admin/configs/${configId}/team`, { headers: authHeaders() });
+  return r.data;
+}
+
+export async function adminUpdateSalaries(configId: number, salaries: Record<string, number>): Promise<void> {
+  await axios.patch(
+    `${baseURL}/api/admin/configs/${configId}/salaries`,
+    { salaries },
+    { headers: authHeaders() },
+  );
 }
 
 // ---------- Передача конфига ----------

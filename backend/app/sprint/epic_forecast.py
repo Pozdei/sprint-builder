@@ -21,6 +21,7 @@ from app.sprint.logic import (
     _find_lead_owner,
     _find_pipeline_position,
     _has_real_estimate,
+    _resolve_designer_for_direction,
     _resolve_developer_for_direction,
     _resolve_owner,
     _team_with_role,
@@ -118,6 +119,11 @@ def _generate_all_remaining_stages(
         if wt == "development":
             owner_id, role, role_team = _resolve_developer_for_direction(
                 f, direction, cfg, team_by_role, assignee_id,
+            )
+        elif wt == "design":
+            role = "designer"
+            owner_id, role_team = _resolve_designer_for_direction(
+                direction, cfg, team_by_role, assignee_id,
             )
         elif wt == "testing":
             role = direction.get("tester_role") or "analyst"
@@ -343,6 +349,36 @@ def build_epic_forecast(
     total_hours = sum(w.get("hours", 0) for w in work_items)
     default_count = sum(1 for w in work_items if w.get("hours_is_default"))
 
+    # Стоимость: оклад / 160 рабочих часов в месяц * часы на задачу
+    total_cost = 0.0
+    breakdown: dict[str, dict] = {}  # owner_id -> {name, hours, salary, cost}
+    for w in work_items:
+        oid = w.get("owner_id") or ""
+        member = cfg.team.get(oid) or {}
+        salary = member.get("salary") or 0
+        hours = w.get("hours", 0)
+        cost = hours * salary / 160.0 if salary > 0 else 0.0
+        total_cost += cost
+        if oid not in breakdown:
+            breakdown[oid] = {
+                "name": w.get("owner_file_name") or oid,
+                "hours": 0.0,
+                "salary": salary,
+                "cost": 0.0,
+            }
+        breakdown[oid]["hours"] += hours
+        breakdown[oid]["cost"] += cost
+
+    cost_breakdown = [
+        {
+            "name": v["name"],
+            "hours": round(v["hours"], 1),
+            "salary": v["salary"],
+            "cost": round(v["cost"], 0),
+        }
+        for v in sorted(breakdown.values(), key=lambda x: -x["cost"])
+    ]
+
     return {
         "gantt_items": gantt_items,
         "completion_date": completion_date,
@@ -352,6 +388,8 @@ def build_epic_forecast(
             "remaining_work_items": len(work_items),
             "total_planned_hours": round(total_hours, 1),
             "default_hours_count": default_count,
+            "total_cost": round(total_cost, 0),
         },
+        "cost_breakdown": cost_breakdown,
         "warnings": counters.get("unmapped_status", []),
     }

@@ -3,7 +3,7 @@
 import axios from "axios";
 import { getToken } from "./client";
 import type { ConfigOut } from "../types/api";
-import type { ConfigCreateRequest, ConfigSummary } from "../types/configs";
+import type { ConfigCreateRequest, ConfigSummary, ConfigTemplate } from "../types/configs";
 
 // baseURL: пустая строка = относительные пути (Docker), undefined = fallback на :8000 (dev).
 const envUrl = import.meta.env.VITE_API_URL;
@@ -17,6 +17,11 @@ function authHeaders() {
 
 export async function listMyConfigs(): Promise<ConfigSummary[]> {
   const r = await axios.get(`${baseURL}/api/configs`, { headers: authHeaders() });
+  return r.data;
+}
+
+export async function listConfigTemplates(): Promise<ConfigTemplate[]> {
+  const r = await axios.get(`${baseURL}/api/configs/templates`, { headers: authHeaders() });
   return r.data;
 }
 

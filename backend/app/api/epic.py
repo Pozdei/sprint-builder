@@ -126,6 +126,14 @@ class EpicStats(BaseModel):
     remaining_work_items: int
     total_planned_hours: float
     default_hours_count: int
+    total_cost: float = 0.0
+
+
+class CostBreakdownItem(BaseModel):
+    name: str
+    hours: float
+    salary: int
+    cost: float
 
 
 class EpicForecastResponse(BaseModel):
@@ -134,6 +142,7 @@ class EpicForecastResponse(BaseModel):
     gantt_items: list[GanttItem]
     completion_date: str | None
     stats: EpicStats
+    cost_breakdown: list[CostBreakdownItem] = []
     warnings: list[str]
 
 
@@ -312,5 +321,6 @@ def epic_forecast(
         gantt_items=result["gantt_items"],
         completion_date=result["completion_date"],
         stats=EpicStats(**result["stats"]),
+        cost_breakdown=[CostBreakdownItem(**item) for item in result.get("cost_breakdown", [])],
         warnings=result["warnings"],
     )

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_admin
 from app.db import models, sprints_repository, users_repository
 from app.db.session import get_db
-from app.schemas.admin import AdminConfigSummary, AdminSprintSummary
+from app.schemas.admin import AdminConfigSummary, AdminSprintSummary, AdminTeamMemberOut, SalaryUpdateRequest
 from app.schemas.auth import (
     ConfigTransferRequest, PasswordResetRequest, UserCreateRequest,
     UserOut, UserUpdateRequest,
@@ -156,6 +156,47 @@ def delete_user_endpoint(
         admin_service.delete_user(db, target, current_admin_id=admin.id)
     except AdminActionError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# -------------------- Оклады команды --------------------
+
+@router.get("/configs/{config_id}/team", response_model=list[AdminTeamMemberOut])
+def get_config_team(
+    config_id: int,
+    _admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    from app.db import repository
+    cfg = repository.get_config(db, config_id)
+    if not cfg:
+        raise HTTPException(status_code=404, detail=f"Конфиг {config_id} не найден")
+    return [
+        AdminTeamMemberOut(
+            account_id=tm.jira_account_id,
+            jira_name=tm.jira_name,
+            file_name=tm.file_name,
+            role=tm.role,
+            salary=tm.salary or 0,
+        )
+        for tm in sorted(cfg.team_members, key=lambda m: m.sort_order)
+    ]
+
+
+@router.patch("/configs/{config_id}/salaries", status_code=204)
+def update_config_salaries(
+    config_id: int,
+    body: SalaryUpdateRequest,
+    _admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    from app.db import repository
+    cfg = repository.get_config(db, config_id)
+    if not cfg:
+        raise HTTPException(status_code=404, detail=f"Конфиг {config_id} не найден")
+    for tm in cfg.team_members:
+        if tm.jira_account_id in body.salaries:
+            tm.salary = body.salaries[tm.jira_account_id] or None
+    db.commit()
 
 
 # -------------------- Передача конфига --------------------

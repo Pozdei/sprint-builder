@@ -10,6 +10,12 @@ class ConfigSummary(BaseModel):
     is_active: bool
 
 
+class ConfigTemplate(BaseModel):
+    """Минимальная запись конфига для выбора шаблона при копировании."""
+    id: int
+    name: str
+
+
 class ConfigCreateRequest(BaseModel):
     name: str
     source_config_id: int | None = None  # если указан — копируем; иначе пустой
@@ -42,6 +48,7 @@ class DirectionOut(BaseModel):
     dev_role:     str = ""
     tester_role:  str = ""   # роль тестера; пусто = "analyst"
     analyst_role: str = ""   # роль аналитика; пусто = "analyst"
+    designer_id:  str = ""   # accountId дизайнера; пусто = автовыбор по роли
 
 
 class PseudoTaskOut(BaseModel):
@@ -59,6 +66,7 @@ class TeamMemberOut(BaseModel):
     jira_name: str
     file_name: str
     role: str
+    salary: int = 0
 
 
 class ConfigOut(BaseModel):

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  activateConfig, createConfig, deleteConfigById, listMyConfigs,
+  activateConfig, createConfig, deleteConfigById, listConfigTemplates, listMyConfigs,
 } from "../api/configs-client";
-import type { ConfigSummary } from "../types/configs";
+import type { ConfigSummary, ConfigTemplate } from "../types/configs";
 
 interface Props {
   /** Колбек при смене активного конфига — нужен, чтобы хост-страница перезагрузила данные. */
@@ -22,6 +22,7 @@ export function ConfigSwitcher({ onChange }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newFrom, setNewFrom] = useState<number | "empty">("empty");
+  const [templates, setTemplates] = useState<ConfigTemplate[]>([]);
 
   const load = async () => {
     setError(null);
@@ -30,6 +31,14 @@ export function ConfigSwitcher({ onChange }: Props) {
       setConfigs(r);
     } catch (e) {
       setError(extractError(e));
+    }
+  };
+
+  const loadTemplates = async () => {
+    try {
+      setTemplates(await listConfigTemplates());
+    } catch {
+      // не критично — дропдаун просто покажет только свои конфиги
     }
   };
 
@@ -166,7 +175,7 @@ export function ConfigSwitcher({ onChange }: Props) {
 
           {!createOpen ? (
             <button
-              onClick={() => setCreateOpen(true)}
+              onClick={() => { setCreateOpen(true); loadTemplates(); }}
               className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50"
             >
               + Создать новый конфиг
@@ -186,7 +195,7 @@ export function ConfigSwitcher({ onChange }: Props) {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Источник</label>
+                <label className="block text-xs text-gray-600 mb-1">Скопировать настройки из</label>
                 <select
                   value={String(newFrom)}
                   onChange={(e) =>
@@ -194,10 +203,10 @@ export function ConfigSwitcher({ onChange }: Props) {
                   }
                   className="w-full px-2 py-1 border rounded text-sm bg-white"
                 >
-                  <option value="empty">Пустой</option>
-                  {configs?.map((c) => (
+                  <option value="empty">— пустой конфиг —</option>
+                  {templates.map((c) => (
                     <option key={c.id} value={c.id}>
-                      Копия: {c.name}
+                      {c.name}
                     </option>
                   ))}
                 </select>

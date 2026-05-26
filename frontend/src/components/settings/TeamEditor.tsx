@@ -27,6 +27,7 @@ export function TeamEditor({ value, onChange, roleOptions }: Props) {
         jira_name: user.display_name,
         file_name: "",
         role: roleOptions[0]?.name || "analyst",
+        salary: 0,
       },
     };
     onChange(next);
@@ -68,7 +69,7 @@ export function TeamEditor({ value, onChange, roleOptions }: Props) {
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={5} className="text-center text-gray-400 py-3 italic">
+              <td colSpan={4} className="text-center text-gray-400 py-3 italic">
                 Команда пуста. Добавьте через «+ Добавить из Jira».
               </td>
             </tr>

@@ -18,3 +18,15 @@ class AdminSprintSummary(BaseModel):
     status: str
     config_id: int | None
     owner_email: str | None
+
+
+class AdminTeamMemberOut(BaseModel):
+    account_id: str
+    jira_name: str
+    file_name: str
+    role: str
+    salary: int
+
+
+class SalaryUpdateRequest(BaseModel):
+    salaries: dict[str, int]  # account_id -> ₽/месяц

@@ -152,10 +152,8 @@ def create_config_from(db: Session, user: models.User, *,
                         source_config_id: int, name: str) -> models.Config:
     """Создать новый конфиг копированием из source. Псевдо-задачи НЕ копируем."""
     source = repository.get_config(db, source_config_id)
-    if not source or source.owner_user_id != user.id:
-        raise ConfigServiceError(
-            f"Исходный конфиг {source_config_id} не найден или вам не принадлежит"
-        )
+    if not source:
+        raise ConfigServiceError(f"Исходный конфиг {source_config_id} не найден")
 
     if not name.strip():
         raise ConfigServiceError("Имя конфига не может быть пустым")

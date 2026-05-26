@@ -88,6 +88,14 @@ export interface EpicStats {
   remaining_work_items: number;
   total_planned_hours: number;
   default_hours_count: number;
+  total_cost: number;
+}
+
+export interface CostBreakdownItem {
+  name: string;
+  hours: number;
+  salary: number;
+  cost: number;
 }
 
 export interface EpicForecastResponse {
@@ -96,6 +104,7 @@ export interface EpicForecastResponse {
   gantt_items: GanttItem[];
   completion_date: string | null;
   stats: EpicStats;
+  cost_breakdown: CostBreakdownItem[];
   warnings: string[];
 }
 
@@ -200,6 +209,7 @@ export interface TeamMemberOut {
   jira_name: string;
   file_name: string;
   role: string;
+  salary: number;
 }
 
 export interface RoleOut {
@@ -238,6 +248,7 @@ export interface DirectionOut {
   dev_role:     string;
   tester_role:  string;
   analyst_role: string;
+  designer_id:  string;
 }
 
 export interface ConfigOut {

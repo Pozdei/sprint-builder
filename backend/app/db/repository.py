@@ -85,6 +85,7 @@ def upsert_team_members(db: Session, config: models.Config, items: list[dict]) -
                 file_name=item["file_name"],
                 role=item.get("role", "analyst"),
                 sort_order=item.get("sort_order", i),
+                salary=item.get("salary") or None,
             )
         )
 
@@ -198,6 +199,7 @@ def upsert_directions(db: Session, config: models.Config,
                 dev_role=item.get("dev_role") or None,
                 tester_role=item.get("tester_role") or None,
                 analyst_role=item.get("analyst_role") or None,
+                designer_id=item.get("designer_id") or None,
             )
         )
 
@@ -232,6 +234,7 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
                 "jira_name": info["jira_name"],
                 "file_name": info["file_name"],
                 "role": info.get("role", "analyst"),
+                "salary": info.get("salary") or None,
             }
             for acc_id, info in data["team"].items()
         ]
@@ -291,6 +294,7 @@ def model_to_sprint_config_dict(config: models.Config) -> dict:
             "role": tm.role,
             "id": tm.id,
             "person_id": tm.person_id,
+            "salary": tm.salary or 0,
         }
 
     return {
@@ -346,6 +350,7 @@ def model_to_sprint_config_dict(config: models.Config) -> dict:
                 "dev_role":     d.dev_role or "",
                 "tester_role":  d.tester_role or "",
                 "analyst_role": d.analyst_role or "",
+                "designer_id":  d.designer_id or "",
             }
             for d in config.directions
         ],

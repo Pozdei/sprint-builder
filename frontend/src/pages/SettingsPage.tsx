@@ -39,13 +39,14 @@ export function SettingsPage() {
     setSaving(true);
     setError(null);
     try {
-      // Передаём team как {accountId: {jira_name, file_name, role}}
-      const teamForApi: Record<string, { jira_name: string; file_name: string; role: string }> = {};
+      // Передаём team как {accountId: {jira_name, file_name, role, salary}}
+      const teamForApi: Record<string, { jira_name: string; file_name: string; role: string; salary: number }> = {};
       Object.entries(config.team).forEach(([accId, m]) => {
         teamForApi[accId] = {
           jira_name: m.jira_name,
           file_name: m.file_name,
           role: m.role,
+          salary: m.salary ?? 0,
         };
       });
 
@@ -261,6 +262,7 @@ export function SettingsPage() {
           value={config.directions ?? []}
           onChange={(v) => update("directions", v)}
           roles={config.roles}
+          team={config.team}
         />
       </Section>
 

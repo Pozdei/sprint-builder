@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_config, require_lead
 from app.db import models, repository
 from app.db.session import get_db
-from app.schemas.config import ConfigCreateRequest, ConfigOut, ConfigSummary, ConfigUpdate
+from app.schemas.config import ConfigCreateRequest, ConfigOut, ConfigSummary, ConfigTemplate, ConfigUpdate
 from app.schemas.gantt import EmployeeVacationIn, EmployeeVacationOut
 from app.services import config_service
 from app.services.config_service import ConfigServiceError
@@ -32,6 +32,16 @@ def _vacation_to_out(v: models.EmployeeVacation) -> EmployeeVacationOut:
         start_date=v.start_date,
         end_date=v.end_date,
     )
+
+
+@router.get("/templates", response_model=list[ConfigTemplate])
+def list_all_templates(
+    _user: models.User = Depends(require_lead),
+    db: Session = Depends(get_db),
+):
+    """Все конфиги системы — для выбора шаблона при копировании."""
+    items = repository.list_configs(db)
+    return [ConfigTemplate(id=cfg.id, name=cfg.name) for cfg in items]
 
 
 @router.get("", response_model=list[ConfigSummary])
