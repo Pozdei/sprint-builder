@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import {
-  adminCreateUser, adminDeleteUser, adminGetConfigTeam, adminListConfigs, adminListSprints,
-  adminListUsers, adminResetPassword, adminTransferConfig, adminUpdateSalaries, adminUpdateUser,
+  adminCreateUser, adminDeleteUser, adminGetAllSalaries, adminListConfigs, adminListSprints,
+  adminListUsers, adminResetPassword, adminTransferConfig, adminUpdateAllSalaries, adminUpdateUser,
 } from "../api/admin-client";
+import { extractError } from "../lib/api-error";
 import type {
   AdminConfigSummary, AdminSprintSummary, AdminTeamMember,
 } from "../types/admin";
@@ -183,7 +184,7 @@ export function AdminPage() {
       )}
 
       {tab === "salaries" && (
-        <SalariesTab configs={data.configs} />
+        <SalariesTab />
       )}
     </div>
   );
@@ -703,23 +704,16 @@ function TransferConfigModal({
   );
 }
 
-function SalariesTab({ configs }: { configs: AdminConfigSummary[] }) {
-  const [selectedConfigId, setSelectedConfigId] = useState<number | null>(
-    configs.length > 0 ? configs[0].id : null,
-  );
+function SalariesTab() {
   const [members, setMembers] = useState<AdminTeamMember[] | null>(null);
   const [salaries, setSalaries] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (selectedConfigId === null) return;
-    setLoading(true);
-    setMembers(null);
-    setError(null);
-    adminGetConfigTeam(selectedConfigId)
+    adminGetAllSalaries()
       .then((ms) => {
         setMembers(ms);
         const init: Record<string, number> = {};
@@ -728,7 +722,7 @@ function SalariesTab({ configs }: { configs: AdminConfigSummary[] }) {
       })
       .catch((e) => setError(extractError(e)))
       .finally(() => setLoading(false));
-  }, [selectedConfigId]);
+  }, []);
 
   const updateSalary = (accId: string, raw: string) => {
     const n = parseInt(raw.replace(/\D/g, ""), 10);
@@ -737,11 +731,10 @@ function SalariesTab({ configs }: { configs: AdminConfigSummary[] }) {
   };
 
   const handleSave = async () => {
-    if (selectedConfigId === null) return;
     setSaving(true);
     setError(null);
     try {
-      await adminUpdateSalaries(selectedConfigId, salaries);
+      await adminUpdateAllSalaries(salaries);
       setSavedAt(new Date());
     } catch (e) {
       setError(extractError(e));
@@ -758,96 +751,66 @@ function SalariesTab({ configs }: { configs: AdminConfigSummary[] }) {
         Конфиденциально — участники команды не видят эти данные.
       </p>
 
-      {configs.length === 0 ? (
-        <div className="text-gray-400 text-sm">Конфигов нет.</div>
+      {error && (
+        <div className="mb-3 bg-red-50 border border-red-300 text-red-800 rounded p-2 text-sm">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-gray-400 text-sm py-4">Загрузка…</div>
+      ) : members === null ? null : members.length === 0 ? (
+        <div className="text-gray-400 text-sm py-4">
+          Команда пуста. Добавьте участников в настройках конфига.
+        </div>
       ) : (
         <>
-          <div className="mb-4">
-            <label className="text-sm text-gray-600 block mb-1">Конфиг</label>
-            <select
-              value={selectedConfigId ?? ""}
-              onChange={(e) => setSelectedConfigId(Number(e.target.value))}
-              className="px-2 py-1.5 border rounded text-sm bg-white"
-            >
-              {configs.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.owner_email ? `(${c.owner_email})` : "(без владельца)"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {error && (
-            <div className="mb-3 bg-red-50 border border-red-300 text-red-800 rounded p-2 text-sm">
-              {error}
-            </div>
-          )}
-
-          {loading ? (
-            <div className="text-gray-400 text-sm py-4">Загрузка…</div>
-          ) : members === null ? null : members.length === 0 ? (
-            <div className="text-gray-400 text-sm py-4">
-              Команда пуста. Добавьте участников в настройках конфига.
-            </div>
-          ) : (
-            <table className="w-full text-sm mb-4">
-              <thead className="bg-gray-100 border-b">
-                <tr>
-                  <th className="text-left px-3 py-1.5">Имя в Jira</th>
-                  <th className="text-left px-3 py-1.5">Имя для файла</th>
-                  <th className="text-left px-3 py-1.5 w-32">Роль</th>
-                  <th className="text-left px-3 py-1.5 w-44">Оклад, ₽/мес</th>
+          <table className="w-full text-sm mb-4">
+            <thead className="bg-gray-100 border-b">
+              <tr>
+                <th className="text-left px-3 py-1.5">Имя в Jira</th>
+                <th className="text-left px-3 py-1.5">Имя для файла</th>
+                <th className="text-left px-3 py-1.5 w-32">Роль</th>
+                <th className="text-left px-3 py-1.5 w-44">Оклад, ₽/мес</th>
+              </tr>
+            </thead>
+            <tbody>
+              {members.map((m) => (
+                <tr key={m.account_id} className="border-b">
+                  <td className="px-3 py-1.5">{m.jira_name}</td>
+                  <td className="px-3 py-1.5 text-gray-500">{m.file_name || "—"}</td>
+                  <td className="px-3 py-1.5 text-gray-500">{m.role}</td>
+                  <td className="px-3 py-1.5">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={salaries[m.account_id] ? salaries[m.account_id].toLocaleString("ru-RU") : ""}
+                      onChange={(e) => updateSalary(m.account_id, e.target.value)}
+                      placeholder="0"
+                      className="w-full px-2 py-1 border rounded text-sm text-right"
+                    />
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {members.map((m) => (
-                  <tr key={m.account_id} className="border-b">
-                    <td className="px-3 py-1.5">{m.jira_name}</td>
-                    <td className="px-3 py-1.5 text-gray-500">{m.file_name || "—"}</td>
-                    <td className="px-3 py-1.5 text-gray-500">{m.role}</td>
-                    <td className="px-3 py-1.5">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={salaries[m.account_id] ? salaries[m.account_id].toLocaleString("ru-RU") : ""}
-                        onChange={(e) => updateSalary(m.account_id, e.target.value)}
-                        placeholder="0"
-                        className="w-full px-2 py-1 border rounded text-sm text-right"
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+              ))}
+            </tbody>
+          </table>
 
-          {members !== null && members.length > 0 && (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white px-4 py-2 rounded text-sm font-semibold"
-              >
-                {saving ? "Сохраняю…" : "Сохранить"}
-              </button>
-              {savedAt && (
-                <span className="text-sm text-green-600">
-                  Сохранено в {savedAt.toLocaleTimeString()}
-                </span>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white px-4 py-2 rounded text-sm font-semibold"
+            >
+              {saving ? "Сохраняю…" : "Сохранить"}
+            </button>
+            {savedAt && (
+              <span className="text-sm text-green-600">
+                Сохранено в {savedAt.toLocaleTimeString()}
+              </span>
+            )}
+          </div>
         </>
       )}
     </section>
   );
-}
-
-function extractError(e: unknown): string {
-  if (e && typeof e === "object" && "response" in e) {
-    const r = (e as { response?: { data?: { detail?: string } } }).response;
-    if (r?.data?.detail) return r.data.detail;
-  }
-  if (e instanceof Error) return e.message;
-  return String(e);
 }

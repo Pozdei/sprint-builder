@@ -9,7 +9,7 @@ const envUrl = import.meta.env.VITE_API_URL;
 const baseURL =
   envUrl === undefined ? "http://localhost:8000" : envUrl;
 
-const api = axios.create({ baseURL });
+export const api = axios.create({ baseURL });
 
 const TOKEN_KEY = "sb_token";
 

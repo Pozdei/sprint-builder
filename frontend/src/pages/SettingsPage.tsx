@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { getDefaultConfig, updateConfig } from "../api/client";
+import { extractError } from "../lib/api-error";
 import { DictEditor } from "../components/settings/DictEditor";
 import { DirectionsEditor } from "../components/settings/DirectionsEditor";
 import { PseudoTasksEditor } from "../components/settings/PseudoTasksEditor";
@@ -322,13 +323,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </div>
   );
-}
-
-function extractError(e: unknown): string {
-  if (e && typeof e === "object" && "response" in e) {
-    const r = (e as { response?: { data?: { detail?: string } } }).response;
-    if (r?.data?.detail) return r.data.detail;
-  }
-  if (e instanceof Error) return e.message;
-  return String(e);
 }

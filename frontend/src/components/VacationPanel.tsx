@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { addVacation, deleteVacation, fetchVacations } from "../api/client";
+import { extractError } from "../lib/api-error";
 import type { EmployeeVacation, GanttItem } from "../types/api";
 
 interface Props {
@@ -213,13 +214,4 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
 function fmtDate(iso: string): string {
   const [y, m, d] = iso.split("-");
   return `${d}.${m}.${y}`;
-}
-
-function extractError(e: unknown): string {
-  if (e && typeof e === "object" && "response" in e) {
-    const r = (e as { response?: { data?: { detail?: string } } }).response;
-    if (r?.data?.detail) return r.data.detail;
-  }
-  if (e instanceof Error) return e.message;
-  return String(e);
 }

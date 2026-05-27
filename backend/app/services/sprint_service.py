@@ -34,6 +34,30 @@ def _load_user_config(db: Session, user_id: int):
     return from_dict(repository.model_to_sprint_config_dict(cfg_model))
 
 
+def _apply_manual_assignments(candidates: list[dict], team: dict) -> list[dict]:
+    """Применить ручные назначения дизайнера к sub-задачам «Дизайн» в candidates."""
+    designer_by_key: dict[str, str] = {
+        c["key"]: c["designer_id"]
+        for c in candidates
+        if c.get("designer_id") and not c.get("is_pseudo")
+    }
+    if not designer_by_key:
+        return candidates
+    updated = []
+    for c in candidates:
+        key = c.get("key")
+        if (
+            key in designer_by_key
+            and c.get("bucket") == "Дизайн"
+            and c.get("role") == "designer"
+        ):
+            designer_id = designer_by_key[key]
+            if designer_id in team:
+                c = {**c, "owner_id": designer_id, "owner_file_name": team[designer_id]["file_name"]}
+        updated.append(c)
+    return updated
+
+
 def collect_sprint_candidates(db: Session, jira: JiraClient, user_id: int) -> dict:
     cfg = _load_user_config(db, user_id)
     candidates, diagnostics = collect_candidates(jira, cfg)
@@ -56,7 +80,7 @@ def build_sprint(
     cfg = _load_user_config(db, user_id)
 
     if candidates_in:
-        candidates = candidates_in
+        candidates = _apply_manual_assignments(candidates_in, cfg.team)
         diagnostics = {"reused": True}
     else:
         candidates, diagnostics = collect_candidates(jira, cfg)

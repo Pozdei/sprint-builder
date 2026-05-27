@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   activateConfig, createConfig, deleteConfigById, listConfigTemplates, listMyConfigs,
 } from "../api/configs-client";
+import { extractError } from "../lib/api-error";
 import type { ConfigSummary, ConfigTemplate } from "../types/configs";
 
 interface Props {
@@ -234,13 +235,4 @@ export function ConfigSwitcher({ onChange }: Props) {
       )}
     </div>
   );
-}
-
-function extractError(e: unknown): string {
-  if (e && typeof e === "object" && "response" in e) {
-    const r = (e as { response?: { data?: { detail?: string } } }).response;
-    if (r?.data?.detail) return r.data.detail;
-  }
-  if (e instanceof Error) return e.message;
-  return String(e);
 }

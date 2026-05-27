@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { extractError } from "../lib/api-error";
 import type { OwnerStat, TaskOut } from "../types/api";
 
 interface Props {
@@ -29,6 +30,8 @@ export function SprintComposer({
   const [inSprint, setInSprint] = useState<TaskOut[]>(sprintTasks);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filterBoard, setFilterBoard] = useState<string>("");
+  const [filterAssignee, setFilterAssignee] = useState<string>("");
 
   const inSprintUids = new Set(inSprint.map(taskUid));
 
@@ -43,10 +46,16 @@ export function SprintComposer({
     return (a.priority ?? 9999) - (b.priority ?? 9999);
   });
 
-  // Сортировка кандидатов по приоритету
-  const sortedAvailable = [...available].sort(
-    (a, b) => (a.priority ?? 9999) - (b.priority ?? 9999),
-  );
+  // Уникальные доски и исполнители для фильтров
+  const boards = [...new Set(available.map((t) => t.key.split("-")[0]))].sort();
+  const assignees = [...new Map(available.map((t) => [t.owner_id, t.owner_file_name])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]));
+
+  // Фильтрация + сортировка кандидатов
+  const sortedAvailable = [...available]
+    .filter((t) => !filterBoard || t.key.startsWith(filterBoard + "-"))
+    .filter((t) => !filterAssignee || t.owner_id === filterAssignee)
+    .sort((a, b) => (a.priority ?? 9999) - (b.priority ?? 9999));
 
   // Пересчёт часов на лету
   const usedByOwner = new Map<string, number>();
@@ -132,6 +141,28 @@ export function SprintComposer({
           <h4 className="font-semibold text-gray-600 text-sm mb-2">
             Кандидаты ({sortedAvailable.length})
           </h4>
+          <div className="flex gap-2 mb-2">
+            <select
+              value={filterBoard}
+              onChange={(e) => setFilterBoard(e.target.value)}
+              className="flex-1 border rounded text-xs px-2 py-1 bg-white"
+            >
+              <option value="">Все доски</option>
+              {boards.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+            <select
+              value={filterAssignee}
+              onChange={(e) => setFilterAssignee(e.target.value)}
+              className="flex-1 border rounded text-xs px-2 py-1 bg-white"
+            >
+              <option value="">Все исполнители</option>
+              {assignees.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </select>
+          </div>
           <TaskList
             tasks={sortedAvailable}
             actionLabel="→"
@@ -208,13 +239,4 @@ function TaskList({
       ))}
     </div>
   );
-}
-
-function extractError(e: unknown): string {
-  if (e && typeof e === "object" && "response" in e) {
-    const r = (e as { response?: { data?: { detail?: string } } }).response;
-    if (r?.data?.detail) return r.data.detail;
-  }
-  if (e instanceof Error) return e.message;
-  return String(e);
 }

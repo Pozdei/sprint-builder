@@ -35,3 +35,6 @@ class TaskOut(BaseModel):
     developer_name: str | None = None
     hours_is_default: bool = False
     overflow_reason: str | None = None
+    # Привязка дизайнера/тестировщика к задаче (только в нашем сервисе, не в Jira)
+    designer_id: str | None = None
+    tester_id: str | None = None

@@ -6,10 +6,18 @@ import {
 } from "@tanstack/react-table";
 import type { TaskOut } from "../types/api";
 
+export interface AssignablePerson {
+  id: string;
+  name: string;
+}
+
 interface Props {
   tasks: TaskOut[];
   isOverflow?: boolean;
   onEditTask?: (task: TaskOut) => void;
+  designers?: AssignablePerson[];
+  testers?: AssignablePerson[];
+  onPatchTask?: (key: string, patch: Partial<TaskOut>) => void;
 }
 
 function bucketColor(bucket: string): string {
@@ -24,7 +32,7 @@ function bucketColor(bucket: string): string {
   return "";
 }
 
-export function SprintTable({ tasks, isOverflow = false, onEditTask }: Props) {
+export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, testers, onPatchTask }: Props) {
   const baseColumns: ColumnDef<TaskOut>[] = [
     {
       accessorKey: "priority",
@@ -188,6 +196,48 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask }: Props) {
     { accessorKey: "board", header: "Источник" },
   ];
 
+  const designerColumn: ColumnDef<TaskOut> = {
+    id: "designer_id",
+    header: "Дизайнер",
+    cell: (info) => {
+      const t = info.row.original;
+      if (t.is_pseudo) return null;
+      return (
+        <select
+          value={t.designer_id ?? ""}
+          onChange={(e) => onPatchTask?.(t.key, { designer_id: e.target.value || null })}
+          className="text-xs border rounded px-1 py-0.5 bg-white w-28"
+        >
+          <option value="">—</option>
+          {designers!.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+      );
+    },
+  };
+
+  const testerColumn: ColumnDef<TaskOut> = {
+    id: "tester_id",
+    header: "Тестировщик",
+    cell: (info) => {
+      const t = info.row.original;
+      if (t.is_pseudo) return null;
+      return (
+        <select
+          value={t.tester_id ?? ""}
+          onChange={(e) => onPatchTask?.(t.key, { tester_id: e.target.value || null })}
+          className="text-xs border rounded px-1 py-0.5 bg-white w-28"
+        >
+          <option value="">—</option>
+          {testers!.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      );
+    },
+  };
+
   const editColumn: ColumnDef<TaskOut> = {
     id: "edit",
     header: "",
@@ -225,6 +275,8 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask }: Props) {
   const columns = [
     ...(onEditTask ? [editColumn] : []),
     ...baseColumns,
+    ...(designers && onPatchTask ? [designerColumn] : []),
+    ...(testers && onPatchTask ? [testerColumn] : []),
     ...(isOverflow ? [overflowColumn] : []),
   ];
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { searchJiraUsers } from "../api/jira-client";
+import { extractError } from "../lib/api-error";
 import type { JiraUserSearchResult } from "../types/intrusions";
 
 interface Props {
@@ -110,13 +111,4 @@ export function JiraUserSearchModal({ onClose, onPick }: Props) {
       </div>
     </div>
   );
-}
-
-function extractError(e: unknown): string {
-  if (e && typeof e === "object" && "response" in e) {
-    const r = (e as { response?: { data?: { detail?: string } } }).response;
-    if (r?.data?.detail) return r.data.detail;
-  }
-  if (e instanceof Error) return e.message;
-  return String(e);
 }

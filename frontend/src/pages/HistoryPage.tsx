@@ -9,6 +9,7 @@ import {
   getSprint,
   listSprints,
 } from "../api/client";
+import { extractError } from "../lib/api-error";
 import { ClosedSprintView } from "../components/ClosedSprintView";
 import { GanttChart } from "../components/GanttChart";
 import { OwnerStats } from "../components/OwnerStats";
@@ -417,13 +418,4 @@ const _dtFmt = new Intl.DateTimeFormat("ru-RU", {
 
 function formatDate(iso: string): string {
   return _dtFmt.format(new Date(iso));
-}
-
-function extractError(e: unknown): string {
-  if (e && typeof e === "object" && "response" in e) {
-    const r = (e as { response?: { data?: { detail?: string } } }).response;
-    if (r?.data?.detail) return r.data.detail;
-  }
-  if (e instanceof Error) return e.message;
-  return String(e);
 }

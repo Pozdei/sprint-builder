@@ -1025,16 +1025,21 @@ def derive_pipeline_tasks(
             for wt in post_alloc_order:
                 if wt == "testing":
                     tester_role = (direction.get("tester_role") or "analyst") if direction else "analyst"
-                    tester_team = _team_with_role(cfg, tester_role)
                     test_cand_key = (key, tester_role, "Тестирование")
                     if test_cand_key not in allocated_keys:
-                        owner_id = _resolve_owner(
-                            tester_role,
-                            task.get("assignee_id"),
-                            task.get("responsible_id"),
-                            task.get("reporter_id"),
-                            tester_team,
-                        )
+                        task_tester_id = (task.get("tester_id") or "").strip()
+                        if task_tester_id and task_tester_id in cfg.team:
+                            owner_id = task_tester_id
+                            tester_team = {task_tester_id: cfg.team[task_tester_id]}
+                        else:
+                            tester_team = _team_with_role(cfg, tester_role)
+                            owner_id = _resolve_owner(
+                                tester_role,
+                                task.get("assignee_id"),
+                                task.get("responsible_id"),
+                                task.get("reporter_id"),
+                                tester_team,
+                            )
                         if owner_id:
                             h = task.get("hours_tester")
                             try:

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { checkJira, getMe, getToken, setToken } from "./api/client";
+import { extractError } from "./lib/api-error";
 import { ConfigSwitcher } from "./components/ConfigSwitcher";
 import { AdminPage } from "./pages/AdminPage";
 import { EpicForecastPage } from "./pages/EpicForecastPage";
@@ -153,15 +154,6 @@ function UserMenu({ user, onLogout }: { user: UserOut; onLogout: () => void }) {
       </button>
     </div>
   );
-}
-
-function extractError(e: unknown): string {
-  if (e && typeof e === "object" && "response" in e) {
-    const r = (e as { response?: { data?: { detail?: string } } }).response;
-    if (r?.data?.detail) return r.data.detail;
-  }
-  if (e instanceof Error) return e.message;
-  return String(e);
 }
 
 export default App;

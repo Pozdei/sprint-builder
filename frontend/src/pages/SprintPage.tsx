@@ -1,18 +1,21 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   approveSprint,
   buildAndSaveSprint,
   downloadCandidatesXlsx,
   downloadSprintXlsx,
   fetchCandidates,
+  getDefaultConfig,
   setSprintTasks,
 } from "../api/client";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { JiraFieldEditor } from "../components/JiraFieldEditor";
 import { OwnerStats } from "../components/OwnerStats";
 import { SprintComposer } from "../components/SprintComposer";
+import type { AssignablePerson } from "../components/SprintTable";
 import { SprintTable } from "../components/SprintTable";
 import type { IssueFieldsUpdate } from "../api/jira-client";
+import { extractError } from "../lib/api-error";
 import type { OwnerStat, SprintOut, TaskOut } from "../types/api";
 
 interface Props {
@@ -22,6 +25,8 @@ interface Props {
 export function SprintPage({ jiraReady }: Props) {
   const [candidates, setCandidates] = useState<TaskOut[] | null>(null);
   const [maxSprint, setMaxSprint] = useState<number | null>(null);
+  const [designers, setDesigners] = useState<AssignablePerson[]>([]);
+  const [testers, setTesters] = useState<AssignablePerson[]>([]);
 
   const [sprint, setSprint] = useState<SprintOut | null>(null);
   const [allocated, setAllocated] = useState<TaskOut[] | null>(null);
@@ -36,6 +41,24 @@ export function SprintPage({ jiraReady }: Props) {
   const [downloadingC, setDownloadingC] = useState(false);
   const [downloadingS, setDownloadingS] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getDefaultConfig().then((cfg) => {
+      const entries = Object.entries(cfg.team);
+      setDesigners(
+        entries
+          .filter(([, m]) => m.role.startsWith("designer"))
+          .map(([id, m]) => ({ id, name: m.file_name }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setTesters(
+        entries
+          .filter(([, m]) => m.role.startsWith("tester") || m.role === "qa")
+          .map(([id, m]) => ({ id, name: m.file_name }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
+    }).catch(() => {/* конфиг недоступен — просто не показываем дропдауны */});
+  }, []);
 
   // Фильтры таблицы
   const [filterOwner, setFilterOwner] = useState("");
@@ -148,6 +171,12 @@ export function SprintPage({ jiraReady }: Props) {
     setAllocated(updated.tasks);
     setOwnerStats(updated.owner_stats);
     setEditing(false);
+  };
+
+  const handlePatchCandidate = (key: string, patch: Partial<TaskOut>) => {
+    setCandidates((prev) =>
+      prev ? prev.map((t) => (t.key === key ? { ...t, ...patch } : t)) : prev,
+    );
   };
 
   const resetSprint = () => {
@@ -379,6 +408,9 @@ export function SprintPage({ jiraReady }: Props) {
                   <SprintTable
                     tasks={candidates}
                     onEditTask={setEditingTask}
+                    designers={designers.length > 0 ? designers : undefined}
+                    testers={testers.length > 0 ? testers : undefined}
+                    onPatchTask={handlePatchCandidate}
                   />
                 </>
               )}
@@ -411,13 +443,4 @@ function SprintStatusBadge({ sprint }: { sprint: SprintOut }) {
       Sprint {sprint.sprint_num} · {isApproved ? "approved" : "draft"}
     </span>
   );
-}
-
-function extractError(e: unknown): string {
-  if (e && typeof e === "object" && "response" in e) {
-    const r = (e as { response?: { data?: { detail?: string } } }).response;
-    if (r?.data?.detail) return r.data.detail;
-  }
-  if (e instanceof Error) return e.message;
-  return String(e);
 }

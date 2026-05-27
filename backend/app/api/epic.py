@@ -261,6 +261,22 @@ def epic_forecast(
     cfg = from_dict(cfg_dict)
     cfg_snapshot = {"id": cfg_model.id, **cfg_dict}
 
+    # Оклады глобальны — берём максимальный salary по всем конфигам для каждого account_id.
+    # Это нужно, чтобы прогноз видел зарплаты вне зависимости от активного конфига.
+    team_ids = list(cfg.team.keys())
+    if team_ids:
+        all_members = db.query(models.TeamMember).filter(
+            models.TeamMember.jira_account_id.in_(team_ids)
+        ).all()
+        global_salary: dict[str, int] = {}
+        for tm in all_members:
+            if tm.salary and tm.salary > 0:
+                if tm.jira_account_id not in global_salary or tm.salary > global_salary[tm.jira_account_id]:
+                    global_salary[tm.jira_account_id] = tm.salary
+        for acc_id, info in cfg.team.items():
+            if acc_id in global_salary:
+                info["salary"] = global_salary[acc_id]
+
     # Получаем задачи (эпик → дочерние; обычная задача → сама или подзадачи)
     try:
         issue_summary, _issue_type, issues = _fetch_issue_children(

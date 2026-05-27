@@ -1,7 +1,6 @@
 // Админский API-клиент.
 
-import axios from "axios";
-import { getToken } from "./client";
+import { api } from "./client";
 import type {
   AdminConfigSummary,
   AdminSprintSummary,
@@ -11,70 +10,52 @@ import type {
 } from "../types/admin";
 import type { UserOut } from "../types/api";
 
-// baseURL: пустая строка = относительные пути (Docker), undefined = fallback на :8000 (dev).
-const envUrl = import.meta.env.VITE_API_URL;
-const baseURL =
-  envUrl === undefined ? "http://localhost:8000" : envUrl;
-
-function authHeaders() {
-  const t = getToken();
-  return t ? { Authorization: `Bearer ${t}` } : {};
-}
-
 // ---------- Обзор ----------
 
 export async function adminListConfigs(): Promise<AdminConfigSummary[]> {
-  const r = await axios.get(`${baseURL}/api/admin/configs`, { headers: authHeaders() });
+  const r = await api.get("/api/admin/configs");
   return r.data;
 }
 
 export async function adminListSprints(): Promise<AdminSprintSummary[]> {
-  const r = await axios.get(`${baseURL}/api/admin/sprints`, { headers: authHeaders() });
+  const r = await api.get("/api/admin/sprints");
   return r.data;
 }
 
 // ---------- Пользователи ----------
 
 export async function adminListUsers(): Promise<UserOut[]> {
-  const r = await axios.get(`${baseURL}/api/admin/users`, { headers: authHeaders() });
+  const r = await api.get("/api/admin/users");
   return r.data;
 }
 
 export async function adminCreateUser(body: UserCreateRequest): Promise<UserOut> {
-  const r = await axios.post(`${baseURL}/api/admin/users`, body, { headers: authHeaders() });
+  const r = await api.post("/api/admin/users", body);
   return r.data;
 }
 
 export async function adminUpdateUser(id: number, body: UserUpdateRequest): Promise<UserOut> {
-  const r = await axios.patch(`${baseURL}/api/admin/users/${id}`, body, { headers: authHeaders() });
+  const r = await api.patch(`/api/admin/users/${id}`, body);
   return r.data;
 }
 
 export async function adminResetPassword(id: number, newPassword: string): Promise<void> {
-  await axios.post(
-    `${baseURL}/api/admin/users/${id}/reset-password`,
-    { new_password: newPassword },
-    { headers: authHeaders() },
-  );
+  await api.post(`/api/admin/users/${id}/reset-password`, { new_password: newPassword });
 }
 
 export async function adminDeleteUser(id: number): Promise<void> {
-  await axios.delete(`${baseURL}/api/admin/users/${id}`, { headers: authHeaders() });
+  await api.delete(`/api/admin/users/${id}`);
 }
 
-// ---------- Оклады ----------
+// ---------- Оклады (глобальные) ----------
 
-export async function adminGetConfigTeam(configId: number): Promise<AdminTeamMember[]> {
-  const r = await axios.get(`${baseURL}/api/admin/configs/${configId}/team`, { headers: authHeaders() });
+export async function adminGetAllSalaries(): Promise<AdminTeamMember[]> {
+  const r = await api.get("/api/admin/salaries");
   return r.data;
 }
 
-export async function adminUpdateSalaries(configId: number, salaries: Record<string, number>): Promise<void> {
-  await axios.patch(
-    `${baseURL}/api/admin/configs/${configId}/salaries`,
-    { salaries },
-    { headers: authHeaders() },
-  );
+export async function adminUpdateAllSalaries(salaries: Record<string, number>): Promise<void> {
+  await api.patch("/api/admin/salaries", { salaries });
 }
 
 // ---------- Передача конфига ----------
@@ -83,10 +64,8 @@ export async function adminTransferConfig(
   configId: number,
   newOwnerUserId: number,
 ): Promise<AdminConfigSummary> {
-  const r = await axios.post(
-    `${baseURL}/api/admin/configs/${configId}/transfer`,
-    { new_owner_user_id: newOwnerUserId },
-    { headers: authHeaders() },
-  );
+  const r = await api.post(`/api/admin/configs/${configId}/transfer`, {
+    new_owner_user_id: newOwnerUserId,
+  });
   return r.data;
 }

@@ -29,6 +29,8 @@ export interface TaskOut {
   hours_original?: number | null;
   hours_is_default?: boolean;
   overflow_reason?: string | null;
+  designer_id?: string | null;
+  tester_id?: string | null;
   developer_name?: string | null;
 }
 

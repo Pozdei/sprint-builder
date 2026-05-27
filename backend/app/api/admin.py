@@ -158,44 +158,41 @@ def delete_user_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# -------------------- Оклады команды --------------------
+# -------------------- Оклады команды (глобально) --------------------
 
-@router.get("/configs/{config_id}/team", response_model=list[AdminTeamMemberOut])
-def get_config_team(
-    config_id: int,
+@router.get("/salaries", response_model=list[AdminTeamMemberOut])
+def get_all_salaries(
     _admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    from app.db import repository
-    cfg = repository.get_config(db, config_id)
-    if not cfg:
-        raise HTTPException(status_code=404, detail=f"Конфиг {config_id} не найден")
-    return [
-        AdminTeamMemberOut(
-            account_id=tm.jira_account_id,
-            jira_name=tm.jira_name,
-            file_name=tm.file_name,
-            role=tm.role,
-            salary=tm.salary or 0,
-        )
-        for tm in sorted(cfg.team_members, key=lambda m: m.sort_order)
-    ]
+    """Возвращает всех уникальных участников команды по jira_account_id с их окладом."""
+    all_members = db.query(models.TeamMember).all()
+    seen: dict[str, AdminTeamMemberOut] = {}
+    for tm in all_members:
+        acc = tm.jira_account_id
+        if acc not in seen or (tm.salary and not seen[acc].salary):
+            seen[acc] = AdminTeamMemberOut(
+                account_id=acc,
+                jira_name=tm.jira_name,
+                file_name=tm.file_name,
+                role=tm.role,
+                salary=tm.salary or 0,
+            )
+    return sorted(seen.values(), key=lambda m: m.jira_name)
 
 
-@router.patch("/configs/{config_id}/salaries", status_code=204)
-def update_config_salaries(
-    config_id: int,
+@router.patch("/salaries", status_code=204)
+def update_all_salaries(
     body: SalaryUpdateRequest,
     _admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    from app.db import repository
-    cfg = repository.get_config(db, config_id)
-    if not cfg:
-        raise HTTPException(status_code=404, detail=f"Конфиг {config_id} не найден")
-    for tm in cfg.team_members:
-        if tm.jira_account_id in body.salaries:
-            tm.salary = body.salaries[tm.jira_account_id] or None
+    """Сохраняет оклад глобально — обновляет ВСЕ записи TeamMember с данным account_id."""
+    members = db.query(models.TeamMember).filter(
+        models.TeamMember.jira_account_id.in_(list(body.salaries.keys()))
+    ).all()
+    for tm in members:
+        tm.salary = body.salaries.get(tm.jira_account_id) or None
     db.commit()
 
 
