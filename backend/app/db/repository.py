@@ -64,30 +64,50 @@ def upsert_team_members(db: Session, config: models.Config, items: list[dict]) -
     """items: список dict с jira_account_id, jira_name, file_name, role, sort_order.
 
     Под капотом находим/создаём Person в справочнике пользователя.
+    Существующие TeamMember обновляются на месте (ID сохраняется), чтобы не
+    инвалидировать FK в pseudo_tasks. Только удалённые из списка — удаляются.
     """
-    config.team_members.clear()
+    existing = {tm.jira_account_id: tm for tm in config.team_members}
+    new_acc_ids = {item["jira_account_id"] for item in items}
+
+    # Удаляем тех, кого убрали из команды
+    for acc_id in list(existing):
+        if acc_id not in new_acc_ids:
+            config.team_members.remove(existing.pop(acc_id))
     db.flush()
+
     owner_id = config.owner_user_id
     for i, item in enumerate(items):
+        acc_id = item["jira_account_id"]
         person = None
         if owner_id is not None:
             person = people_repository.get_or_create_person(
                 db, owner_id,
-                jira_account_id=item["jira_account_id"],
+                jira_account_id=acc_id,
                 jira_name=item["jira_name"],
                 file_name=item["file_name"],
             )
-        config.team_members.append(
-            models.TeamMember(
-                person_id=person.id if person else None,
-                jira_account_id=item["jira_account_id"],
-                jira_name=item["jira_name"],
-                file_name=item["file_name"],
-                role=item.get("role", "analyst"),
-                sort_order=item.get("sort_order", i),
-                salary=item.get("salary") or None,
+
+        if acc_id in existing:
+            tm = existing[acc_id]
+            tm.person_id = person.id if person else None
+            tm.jira_name = item["jira_name"]
+            tm.file_name = item["file_name"]
+            tm.role = item.get("role", "analyst")
+            tm.sort_order = item.get("sort_order", i)
+            tm.salary = item.get("salary") or None
+        else:
+            config.team_members.append(
+                models.TeamMember(
+                    person_id=person.id if person else None,
+                    jira_account_id=acc_id,
+                    jira_name=item["jira_name"],
+                    file_name=item["file_name"],
+                    role=item.get("role", "analyst"),
+                    sort_order=item.get("sort_order", i),
+                    salary=item.get("salary") or None,
+                )
             )
-        )
 
 
 def upsert_boards(db: Session, config: models.Config, items: list[dict]) -> None:

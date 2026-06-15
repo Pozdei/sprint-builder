@@ -366,6 +366,30 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
   );
 }
 
+function exportCostBreakdownCsv(breakdown: CostBreakdownItem[], totalCost: number) {
+  const sep = ";";
+  const rows = [
+    ["Исполнитель", "Часов", "Оклад, ₽", "Стоимость, ₽"],
+    ...breakdown.map((r) => [
+      r.name,
+      String(r.hours),
+      r.salary > 0 ? String(r.salary) : "",
+      r.cost > 0 ? String(Math.round(r.cost)) : "",
+    ]),
+    ["Итого", "", "", String(Math.round(totalCost))],
+  ];
+  const csv = "﻿" + rows.map((r) => r.join(sep)).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "cost_breakdown.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function CostBreakdownModal({
   breakdown, totalCost, onClose,
 }: {
@@ -384,7 +408,15 @@ function CostBreakdownModal({
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-800">Подробный расчёт стоимости</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => exportCostBreakdownCsv(breakdown, totalCost)}
+              className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 rounded px-2 py-1"
+            >
+              Скачать xlsx
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+          </div>
         </div>
 
         {breakdown.length === 0 ? (
