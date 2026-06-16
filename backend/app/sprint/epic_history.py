@@ -104,20 +104,83 @@ def _assignee_at(
     return who_id, who_name
 
 
+_STATUS_BUCKET_KEYWORDS: list[tuple[list[str], str, str]] = [
+    # (ключевые слова в статусе, bucket, role-fallback)
+    (["разраб", "код", "ревью"], "Разработка", "developer"),
+    (["тест"],                   "Тестирование", "tester"),
+    (["анализ", "в работе", "новый", "создан"], "Анализ", "analyst"),
+]
+
+# Что может делать каждый тип роли: prefix роли → допустимые bucket-категории.
+# Используется в историческом режиме чтобы не класть разработчика в Анализ и т.п.
+_ROLE_WORK_CATEGORIES: dict[str, frozenset[str]] = {
+    "analyst":   frozenset({"Анализ", "Тестирование"}),
+    "tester":    frozenset({"Тестирование"}),
+    "developer": frozenset({"Разработка", "Код-ревью"}),
+    "designer":  frozenset({"Дизайн", "Дизайн-ревью"}),
+}
+
+# Когда между сменой статуса и сменой assignee прошло меньше этого порога —
+# считаем их одновременными и берём assignee ПОСЛЕ смены (Jira-автоматика часто
+# проставляет статус и исполнителя с разницей в несколько секунд).
+_ASSIGNEE_GRACE_SECONDS = 300  # 5 минут
+
+
+def _infer_bucket_from_status(status: str) -> tuple[str, str] | None:
+    """Попытаться определить (bucket, role) по ключевым словам в названии статуса."""
+    s = status.lower()
+    for keywords, bucket, role in _STATUS_BUCKET_KEYWORDS:
+        if any(kw in s for kw in keywords):
+            return bucket, role
+    return None
+
+
+def _role_allowed_buckets(role: str | None) -> frozenset[str] | None:
+    """Множество bucket-категорий, доступных роли. None = без ограничений."""
+    if not role:
+        return None
+    for prefix, cats in _ROLE_WORK_CATEGORIES.items():
+        if role.startswith(prefix):
+            return cats
+    return None
+
+
 def _pick_role_bucket(
     roles: list[tuple[str, str]], assignee_id: str | None, cfg: SprintConfig,
-) -> tuple[str, str]:
+    status_name: str = "",
+) -> tuple[str, str] | None:
     """Выбрать (role, bucket) для статуса по роли assignee.
 
-    Один статус может маппиться на разные роли/бакеты (напр. «В работе» =
-    Разработка у разработчика и Тестирование у аналитика). Берём пару, чья роль
-    совпадает с ролью текущего исполнителя; иначе — первую.
+    Порядок:
+    1. Точное совпадение роли исполнителя с role_status_buckets — берём напрямую.
+    2. Keyword-inference по названию статуса + проверка совместимости роли:
+       разработчик не может быть в Анализе, аналитик — в Разработке и т.п.
+    3. Если bucket несовместим с ролью → возвращаем None (фазу пропускаем).
     """
     assignee_role = (cfg.team.get(assignee_id or "") or {}).get("role")
+
+    # 1. Точное совпадение роли в конфиге — самый надёжный путь
     if assignee_role:
         for role, bucket in roles:
             if role == assignee_role:
                 return role, bucket
+
+    # 2. Keyword-inference по статусу
+    inferred = _infer_bucket_from_status(status_name)
+    if inferred:
+        inferred_bucket, inferred_role = inferred
+
+        # Проверяем, может ли роль исполнителя работать в этом bucket
+        allowed = _role_allowed_buckets(assignee_role)
+        if allowed is not None and inferred_bucket not in allowed:
+            return None  # несовместимо — пропустить фазу
+
+        # Подбираем уже настроенный bucket с тем же именем, если есть
+        for role, bucket in roles:
+            if bucket == inferred_bucket:
+                return role, inferred_bucket
+        return inferred_role, inferred_bucket
+
     return roles[0]
 
 
@@ -162,15 +225,25 @@ def build_past_phases(
     direction = _find_direction(labels, cfg)
     direction_name = direction["name"] if direction else None
 
+    grace = timedelta(seconds=_ASSIGNEE_GRACE_SECONDS)
+
     phases: list[dict] = []
     for status, start_dt, end_dt in segments:
         roles = status_to_roles.get(status, [])
         if not roles:
-            continue  # статус не относится к рабочему bucket (Open/Backlog/Done и т.п.)
+            # Статус не в конфиге — пробуем keyword-inference
+            inferred = _infer_bucket_from_status(status)
+            if not inferred:
+                continue  # Open/Backlog/Done и т.п.
+            inferred_bucket, inferred_role = inferred
+            roles = [(inferred_role, inferred_bucket)]
         owner_id, owner_name = _assignee_at(
-            start_dt, initial_assignee, assignee_changes, current_assignee,
+            start_dt + grace, initial_assignee, assignee_changes, current_assignee,
         )
-        role, bucket = _pick_role_bucket(roles, owner_id, cfg)
+        rb = _pick_role_bucket(roles, owner_id, cfg, status_name=status)
+        if rb is None:
+            continue  # роль исполнителя несовместима с типом работы в этом статусе
+        role, bucket = rb
         member = cfg.team.get(owner_id or "") or {}
         owner_file = member.get("file_name") or owner_name or (owner_id or "—")
         hours = estimate_hours_for_role(f, role, bucket, status, cfg, sp_field)
@@ -197,17 +270,25 @@ def build_past_phases(
 
 
 def _merge_adjacent(phases: list[dict]) -> list[dict]:
-    """Слить соседние фазы одного (bucket, owner) — напр. два dev-статуса подряд."""
+    """Слить соседние фазы одного bucket в одну.
+
+    У задачи не может быть двух одновременных разработчиков (или аналитиков):
+    если исполнитель сменился внутри одного bucket — значит лид делегировал работу
+    следующему. Берём последнего исполнителя как фактического владельца всей фазы.
+    """
     if not phases:
         return phases
     phases.sort(key=lambda p: p["_start_dt"])
-    merged: list[dict] = [phases[0]]
+    merged: list[dict] = [phases[0].copy()]
     for p in phases[1:]:
         prev = merged[-1]
         if (p["bucket"] == prev["bucket"]
-                and p["owner_id"] == prev["owner_id"]
                 and p["_start_dt"] <= prev["_end_dt"]):
+            # Продлеваем фазу и обновляем исполнителя на последнего (фактического)
             prev["_end_dt"] = max(prev["_end_dt"], p["_end_dt"])
+            prev["owner_id"] = p["owner_id"]
+            prev["owner_file_name"] = p["owner_file_name"]
+            prev["role"] = p["role"]
         else:
-            merged.append(p)
+            merged.append(p.copy())
     return merged

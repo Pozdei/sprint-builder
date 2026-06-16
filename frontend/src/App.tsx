@@ -3,6 +3,7 @@ import { checkJira, getMe, getToken, setToken } from "./api/client";
 import { extractError } from "./lib/api-error";
 import { ConfigSwitcher } from "./components/ConfigSwitcher";
 import { AdminPage } from "./pages/AdminPage";
+import { DocsPage } from "./pages/DocsPage";
 import { EpicForecastPage } from "./pages/EpicForecastPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -15,11 +16,11 @@ type JiraStatus =
   | { kind: "ok"; name: string }
   | { kind: "error"; message: string };
 
-type LeadPage = "sprint" | "history" | "forecast" | "settings";
+type LeadPage = "sprint" | "history" | "forecast" | "settings" | "docs";
 type AdminPageKind = "admin";
 type Page = LeadPage | AdminPageKind;
 
-const PAGES: readonly Page[] = ["sprint", "history", "forecast", "settings", "admin"];
+const PAGES: readonly Page[] = ["sprint", "history", "forecast", "settings", "docs", "admin"];
 
 /** Распарсить текущий hash в страницу. Неизвестное → "sprint". */
 function hashToPage(hash: string): Page {
@@ -119,6 +120,9 @@ function App() {
               <NavTab active={activePage === "settings"} onClick={() => setPage("settings")}>
                 Настройки
               </NavTab>
+              <NavTab active={activePage === "docs"} onClick={() => setPage("docs")}>
+                Справка
+              </NavTab>
               {isAdmin && (
                 <NavTab active={activePage === "admin"} onClick={() => setPage("admin")}>
                   Админка
@@ -140,6 +144,7 @@ function App() {
       {activePage === "history" && <HistoryPage key={`history-${configEpoch}`} />}
       {activePage === "forecast" && <EpicForecastPage key={`forecast-${configEpoch}`} isAdmin={isAdmin} />}
       {activePage === "settings" && <SettingsPage key={`settings-${configEpoch}`} />}
+      {activePage === "docs" && <DocsPage />}
       {isAdmin && activePage === "admin" && <AdminPage />}
     </div>
   );

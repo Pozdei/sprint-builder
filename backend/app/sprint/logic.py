@@ -185,9 +185,9 @@ def _find_direction(labels: list[str], cfg: SprintConfig) -> dict | None:
     """Найти первое направление, чьи метки пересекаются с метками задачи."""
     if not cfg.directions or not labels:
         return None
-    label_set = set(labels)
+    label_set = {l.lower() for l in labels}
     for direction in cfg.directions:
-        dir_labels = set(direction.get("labels", []))
+        dir_labels = {l.lower() for l in direction.get("labels", [])}
         if dir_labels & label_set:
             return direction
     return None
@@ -468,18 +468,21 @@ def _resolve_developer_for_direction(
     dev_role = direction.get("dev_role") or "developer"
     role_team = team_by_role.get(dev_role) or _team_with_role(cfg, dev_role)
 
-    # 1. Поле «Разработчик» из Jira — приоритет, смотрим среди всей команды,
-    #    но только если роль человека совместима с dev_role направления.
+    # 1. Поле «Разработчик» из Jira — безусловный приоритет.
+    #    Если поле явно заполнено — берём этого человека, не проверяя соответствие dev_role.
     if cfg.developer_field:
         dev_field_val = f.get(cfg.developer_field) or {}
         dev_field_id = dev_field_val.get("accountId") if isinstance(dev_field_val, dict) else None
-        if dev_field_id and dev_field_id in cfg.team:
-            person_role = cfg.team[dev_field_id].get("role", dev_role)
-            expected_dev_role = direction.get("dev_role") or ""
-            # Берём если у направления нет конкретного dev_role ИЛИ роль совпадает
-            if not expected_dev_role or person_role == expected_dev_role:
+        if dev_field_id:
+            if dev_field_id in cfg.team:
+                person_role = cfg.team[dev_field_id].get("role", dev_role)
                 actual_team = team_by_role.get(person_role) or _team_with_role(cfg, person_role)
                 return dev_field_id, person_role, actual_team
+            else:
+                # Не в команде конфига — синтетическая запись с displayName из Jira.
+                display_name = dev_field_val.get("displayName") or dev_field_id
+                synth_team = {dev_field_id: {"file_name": display_name, "role": dev_role, "salary": 0}}
+                return dev_field_id, dev_role, synth_team
 
     # 2. Assignee в команде нужной dev_role
     if assignee_id and assignee_id in role_team:

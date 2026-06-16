@@ -118,11 +118,12 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
           >
             {loading ? "Считаю…" : "Построить прогноз"}
           </button>
-          <label className="flex items-center gap-2 cursor-pointer select-none ml-1" title="Восстановить прошлые фазы по истории Jira (кто и когда был на аналитике/разработке/тесте) и показать их на одной шкале с прогнозом">
-            <div
-              onClick={() => setUseHistory(v => !v)}
-              className={`relative w-9 h-5 rounded-full transition-colors ${useHistory ? "bg-indigo-500" : "bg-gray-300"}`}
-            >
+          <label
+            className="flex items-center gap-2 cursor-pointer select-none ml-1"
+            title="Восстановить прошлые фазы по истории Jira (кто и когда был на аналитике/разработке/тесте) и показать их на одной шкале с прогнозом"
+            onClick={() => setUseHistory(v => !v)}
+          >
+            <div className={`relative w-9 h-5 rounded-full transition-colors ${useHistory ? "bg-indigo-500" : "bg-gray-300"}`}>
               <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${useHistory ? "translate-x-4" : "translate-x-0.5"}`} />
             </div>
             <span className="text-sm text-gray-600">По истории статусов</span>
