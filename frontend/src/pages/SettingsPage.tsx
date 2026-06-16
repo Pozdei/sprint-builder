@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { getDefaultConfig, updateConfig } from "../api/client";
+import { useToast } from "../components/Toast";
 import { extractError } from "../lib/api-error";
 import { DictEditor } from "../components/settings/DictEditor";
 import { DirectionsEditor } from "../components/settings/DirectionsEditor";
@@ -12,16 +13,16 @@ import { TeamEditor } from "../components/settings/TeamEditor";
 import type { ConfigOut } from "../types/api";
 
 export function SettingsPage() {
+  const toast = useToast();
   const [config, setConfig] = useState<ConfigOut | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     getDefaultConfig()
       .then((c) => setConfig(c))
-      .catch((e) => setError(extractError(e)))
+      .catch((e) => setLoadError(extractError(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -38,7 +39,6 @@ export function SettingsPage() {
   const handleSave = async () => {
     if (!config) return;
     setSaving(true);
-    setError(null);
     try {
       // Передаём team как {accountId: {jira_name, file_name, role, salary}}
       const teamForApi: Record<string, { jira_name: string; file_name: string; role: string; salary: number }> = {};
@@ -55,9 +55,9 @@ export function SettingsPage() {
       const body = { ...rest, team: teamForApi };
       const updated = await updateConfig(id, body);
       setConfig(updated);
-      setSavedAt(new Date());
+      toast.success("Настройки сохранены");
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setSaving(false);
     }
@@ -66,11 +66,11 @@ export function SettingsPage() {
   if (loading) {
     return <div className="text-center text-gray-500 mt-20">Загрузка конфига…</div>;
   }
-  if (error && !config) {
+  if (loadError && !config) {
     return (
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg p-3">
-          Не удалось загрузить конфиг: {error}
+          Не удалось загрузить конфиг: {loadError}
         </div>
       </div>
     );
@@ -296,12 +296,6 @@ export function SettingsPage() {
         >
           {saving ? "Сохраняю…" : "Сохранить"}
         </button>
-        {savedAt && (
-          <span className="text-sm text-green-600">
-            Сохранено в {savedAt.toLocaleTimeString()}
-          </span>
-        )}
-        {error && <span className="text-sm text-red-600">{error}</span>}
       </div>
     </div>
   );

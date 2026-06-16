@@ -9,9 +9,11 @@
 """
 
 from collections import defaultdict
+from datetime import date, datetime
 
 from app.sprint.config import SprintConfig
-from app.sprint.gantt import compute_gantt_schedule
+from app.sprint.epic_history import build_past_phases, dt_to_work_hours
+from app.sprint.gantt import WORK_START_HOUR, compute_gantt_schedule
 from app.sprint.logic import (
     _WORK_TYPE_INFO,
     _extract_developer_name,
@@ -282,6 +284,148 @@ def collect_epic_remaining_work(
     return list(by_key_role.values()), counters
 
 
+def _compute_cost(items: list[dict], cfg: SprintConfig) -> tuple[float, dict[str, dict]]:
+    """Стоимость по списку рабочих единиц: оклад / 160 ч/мес * часы.
+
+    Возвращает (total_cost, breakdown) где breakdown: owner_id → {name,hours,salary,cost}.
+    """
+    total_cost = 0.0
+    breakdown: dict[str, dict] = {}
+    for w in items:
+        oid = w.get("owner_id") or ""
+        member = cfg.team.get(oid) or {}
+        salary = member.get("salary") or 0
+        hours = w.get("hours", 0)
+        cost = hours * salary / 160.0 if salary > 0 else 0.0
+        total_cost += cost
+        if oid not in breakdown:
+            breakdown[oid] = {
+                "name": w.get("owner_file_name") or oid,
+                "hours": 0.0, "salary": salary, "cost": 0.0,
+            }
+        breakdown[oid]["hours"] += hours
+        breakdown[oid]["cost"] += cost
+    return total_cost, breakdown
+
+
+def _breakdown_to_list(breakdown: dict[str, dict]) -> list[dict]:
+    return [
+        {
+            "name": v["name"],
+            "hours": round(v["hours"], 1),
+            "salary": v["salary"],
+            "cost": round(v["cost"], 0),
+        }
+        for v in sorted(breakdown.values(), key=lambda x: -x["cost"])
+    ]
+
+
+def _build_with_history(
+    issues: list[dict],
+    cfg: SprintConfig,
+    sp_field: str | None,
+    base_url: str,
+    hours_per_day: float,
+    dependencies: list[dict] | None,
+    vacations: list[dict] | None,
+    config_snapshot: dict,
+) -> dict:
+    """Историчный режим: прошлые фазы из changelog + прогноз остатка на одной шкале."""
+    now_dt = datetime.now()
+    today = date.today()
+    terminal_set = set(cfg.terminal_statuses)
+
+    # 1. Прошлые фазы для всех задач (включая закрытые — у них есть прошлое)
+    past_phases: list[dict] = []
+    done_count = 0
+    for issue in issues:
+        f = issue["fields"]
+        issuetype = (f.get("issuetype") or {}).get("name", "")
+        if issuetype.lower() in ("эпик", "epic"):
+            continue
+        if f["status"]["name"] in terminal_set:
+            done_count += 1
+        past_phases.extend(build_past_phases(issue, cfg, sp_field, base_url, now_dt))
+
+    # 2. Будущее (остаток) — только для незакрытых задач
+    work_items, counters = collect_epic_remaining_work(
+        issues, cfg, sp_field, base_url, use_history=False,
+    )
+
+    # 3. Начало шкалы = самая ранняя дата фазы (или сегодня)
+    origin = today
+    for p in past_phases:
+        d = p["_start_dt"].date()
+        if d < origin:
+            origin = d
+    today_dt = datetime.combine(today, datetime.min.time()).replace(hour=WORK_START_HOUR)
+    today_offset = dt_to_work_hours(today_dt, origin, hours_per_day)
+
+    # 4. Прогноз от сегодня + сдвиг в координаты шкалы
+    forecast_items = compute_gantt_schedule(
+        work_items, config_snapshot, today, hours_per_day,
+        dependencies=dependencies or [], vacations=vacations or [],
+    )
+    for it in forecast_items:
+        it["start_hours"] = round(it["start_hours"] + today_offset, 3)
+        it["end_hours"] = round(it["end_hours"] + today_offset, 3)
+        it["is_historical"] = False
+
+    # 5. Прошлые фазы → элементы Ганта (реальные даты + часы от origin)
+    min_width = hours_per_day * 0.2
+    past_items: list[dict] = []
+    for p in past_phases:
+        sd = p.pop("_start_dt")
+        ed = p.pop("_end_dt")
+        sh = dt_to_work_hours(sd, origin, hours_per_day)
+        eh = dt_to_work_hours(ed, origin, hours_per_day, end=True)
+        if eh - sh < min_width:
+            eh = sh + min_width
+        p["start_hours"] = round(sh, 3)
+        p["end_hours"] = round(eh, 3)
+        p["start"] = sd.isoformat()
+        p["end"] = ed.isoformat()
+        past_items.append(p)
+
+    gantt_items = past_items + forecast_items
+    gantt_items.sort(key=lambda x: (x["start_hours"], x.get("owner_file_name", "")))
+
+    # 6. Дата завершения = максимальный end среди будущих (иначе — конец прошлого)
+    completion_date: str | None = None
+    if forecast_items:
+        completion_date = max(forecast_items, key=lambda x: x["end_hours"])["end"][:10]
+    elif past_items:
+        completion_date = max(p["end"] for p in past_items)[:10]
+
+    # 7. Суммы: потрачено (прошлое) vs осталось (будущее)
+    spent_hours = sum(p.get("hours", 0) for p in past_items)
+    remaining_hours = sum(w.get("hours", 0) for w in work_items)
+    spent_cost, _ = _compute_cost(past_items, cfg)
+    remaining_cost, _ = _compute_cost(work_items, cfg)
+    total_cost, breakdown = _compute_cost(past_items + work_items, cfg)
+
+    return {
+        "gantt_items": gantt_items,
+        "completion_date": completion_date,
+        "stats": {
+            "total_issues": len(issues),
+            "done_issues": done_count,
+            "remaining_work_items": len(work_items),
+            "total_planned_hours": round(spent_hours + remaining_hours, 1),
+            "default_hours_count": sum(1 for w in work_items if w.get("hours_is_default")),
+            "total_cost": round(total_cost, 0),
+            "spent_hours": round(spent_hours, 1),
+            "spent_cost": round(spent_cost, 0),
+            "remaining_hours": round(remaining_hours, 1),
+            "remaining_cost": round(remaining_cost, 0),
+        },
+        "cost_breakdown": _breakdown_to_list(breakdown),
+        "warnings": counters.get("unmapped_status", []),
+        "gantt_start": origin.isoformat(),
+        "today_hours": round(today_offset, 3),
+    }
+
+
 def build_epic_forecast(
     issues: list[dict],
     cfg: SprintConfig,
@@ -316,8 +460,14 @@ def build_epic_forecast(
         ],
     }
 
+    if use_history:
+        return _build_with_history(
+            issues, cfg, sp_field, base_url, hours_per_day,
+            dependencies, vacations, config_snapshot,
+        )
+
     work_items, counters = collect_epic_remaining_work(
-        issues, cfg, sp_field, base_url, use_history=use_history,
+        issues, cfg, sp_field, base_url, use_history=False,
     )
 
     if not work_items:
@@ -330,8 +480,14 @@ def build_epic_forecast(
                 "remaining_work_items": 0,
                 "total_planned_hours": 0,
                 "default_hours_count": 0,
+                "total_cost": 0,
+                "spent_hours": 0, "spent_cost": 0,
+                "remaining_hours": 0, "remaining_cost": 0,
             },
+            "cost_breakdown": [],
             "warnings": counters.get("unmapped_status", []),
+            "gantt_start": start_date.isoformat() if hasattr(start_date, "isoformat") else str(start_date),
+            "today_hours": None,
         }
 
     gantt_items = compute_gantt_schedule(
@@ -348,36 +504,7 @@ def build_epic_forecast(
 
     total_hours = sum(w.get("hours", 0) for w in work_items)
     default_count = sum(1 for w in work_items if w.get("hours_is_default"))
-
-    # Стоимость: оклад / 160 рабочих часов в месяц * часы на задачу
-    total_cost = 0.0
-    breakdown: dict[str, dict] = {}  # owner_id -> {name, hours, salary, cost}
-    for w in work_items:
-        oid = w.get("owner_id") or ""
-        member = cfg.team.get(oid) or {}
-        salary = member.get("salary") or 0
-        hours = w.get("hours", 0)
-        cost = hours * salary / 160.0 if salary > 0 else 0.0
-        total_cost += cost
-        if oid not in breakdown:
-            breakdown[oid] = {
-                "name": w.get("owner_file_name") or oid,
-                "hours": 0.0,
-                "salary": salary,
-                "cost": 0.0,
-            }
-        breakdown[oid]["hours"] += hours
-        breakdown[oid]["cost"] += cost
-
-    cost_breakdown = [
-        {
-            "name": v["name"],
-            "hours": round(v["hours"], 1),
-            "salary": v["salary"],
-            "cost": round(v["cost"], 0),
-        }
-        for v in sorted(breakdown.values(), key=lambda x: -x["cost"])
-    ]
+    total_cost, breakdown = _compute_cost(work_items, cfg)
 
     return {
         "gantt_items": gantt_items,
@@ -389,7 +516,12 @@ def build_epic_forecast(
             "total_planned_hours": round(total_hours, 1),
             "default_hours_count": default_count,
             "total_cost": round(total_cost, 0),
+            "spent_hours": 0, "spent_cost": 0,
+            "remaining_hours": round(total_hours, 1),
+            "remaining_cost": round(total_cost, 0),
         },
-        "cost_breakdown": cost_breakdown,
+        "cost_breakdown": _breakdown_to_list(breakdown),
         "warnings": counters.get("unmapped_status", []),
+        "gantt_start": start_date.isoformat() if hasattr(start_date, "isoformat") else str(start_date),
+        "today_hours": None,
     }

@@ -3,6 +3,8 @@ import {
   type IssueFieldsUpdate,
   updateJiraIssueFields,
 } from "../api/jira-client";
+import { useToast } from "./Toast";
+import { extractError } from "../lib/api-error";
 import type { JiraUserSearchResult } from "../types/intrusions";
 import type { TaskOut } from "../types/api";
 import { JiraUserSearchModal } from "./JiraUserSearchModal";
@@ -39,6 +41,7 @@ function HoursInput({
 }
 
 export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
+  const toast = useToast();
   const [hoursAnalyst, setHoursAnalyst] = useState(
     task.hours_analyst != null ? String(task.hours_analyst) : "",
   );
@@ -55,7 +58,6 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
   const [showUserSearch, setShowUserSearch] = useState(false);
 
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handlePickUser = (u: JiraUserSearchResult) => {
     setDeveloper(u);
@@ -65,7 +67,6 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
 
   const handleSave = async () => {
     setSaving(true);
-    setError(null);
 
     const update: IssueFieldsUpdate = {};
     if (hoursAnalyst !== "") update.hours_analyst = Number(hoursAnalyst);
@@ -81,20 +82,10 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
     try {
       await updateJiraIssueFields(task.key, update);
       onSaved(task.key, update, developer?.display_name ?? null);
+      toast.success(`${task.key}: поля обновлены в Jira`);
       onClose();
     } catch (e: unknown) {
-      if (
-        e &&
-        typeof e === "object" &&
-        "response" in e
-      ) {
-        const r = (e as { response?: { data?: { detail?: string } } }).response;
-        setError(r?.data?.detail ?? "Ошибка сохранения");
-      } else if (e instanceof Error) {
-        setError(e.message);
-      } else {
-        setError("Ошибка сохранения");
-      }
+      toast.error(extractError(e, "Ошибка сохранения"));
     } finally {
       setSaving(false);
     }
@@ -181,12 +172,6 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
               )}
             </div>
           </div>
-
-          {error && (
-            <div className="bg-red-50 border border-red-300 text-red-800 rounded p-2 text-sm">
-              {error}
-            </div>
-          )}
 
           {/* Кнопки */}
           <div className="flex justify-end gap-2 pt-1">

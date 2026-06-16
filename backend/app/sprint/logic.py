@@ -89,6 +89,15 @@ def extract_max_sprint_number(sprints_value: list | None) -> tuple[int | None, s
 
 # -------------------- Оценка часов --------------------
 
+def _positive_float(v: Any) -> float | None:
+    """float(v), если получилось и значение > 0, иначе None. Глотает мусор (None, "", текст)."""
+    try:
+        fv = float(v)
+    except (TypeError, ValueError):
+        return None
+    return fv if fv > 0 else None
+
+
 # Маппинг бакета → категория поля часов в Jira.
 _BUCKET_TO_ROLE_HOURS_FIELD = {
     "Анализ":       "analyst",
@@ -151,14 +160,9 @@ def estimate_hours_for_role(fields: dict, role: str, bucket: str,
     if hours_role:
         field_id = cfg.role_hours_fields.get(hours_role)
         if field_id:
-            v = fields.get(field_id)
-            if v not in (None, "", 0):
-                try:
-                    fv = float(v)
-                    if fv > 0:
-                        return fv
-                except (TypeError, ValueError):
-                    pass
+            fv = _positive_float(fields.get(field_id))
+            if fv is not None:
+                return fv
 
     sec = fields.get("timeoriginalestimate")
     if sec:
@@ -308,13 +312,8 @@ def _has_real_estimate(f: dict, bucket: str, cfg: SprintConfig,
     hours_role = _BUCKET_TO_ROLE_HOURS_FIELD.get(bucket)
     if hours_role:
         field_id = cfg.role_hours_fields.get(hours_role)
-        if field_id:
-            v = f.get(field_id)
-            try:
-                if v and float(v) > 0:
-                    return True
-            except (TypeError, ValueError):
-                pass
+        if field_id and _positive_float(f.get(field_id)) is not None:
+            return True
     if f.get("timeoriginalestimate"):
         return True
     if sp_field and f.get(sp_field):
@@ -333,6 +332,49 @@ def _extract_developer_name(f: dict, cfg: SprintConfig) -> str | None:
     if acc_id and acc_id in cfg.team:
         return cfg.team[acc_id]["file_name"]
     return dev_val.get("displayName") or None
+
+
+def _make_candidate(
+    f: dict, cfg: SprintConfig, base_url: str, sp_field: str | None,
+    *, key: str, role: str, bucket: str, owner_id: str, owner_file_name: str,
+    status_name: str, board: str, direction: str | None, labels: list,
+    formal_only: bool = False,
+) -> dict:
+    """Собрать словарь-кандидата из полей Jira-задачи.
+
+    Единая точка формирования структуры кандидата — используется и для обычных
+    кандидатов (role_status_buckets), и для pre-allocation шагов pipeline.
+    """
+    assignee_id, reporter_id, responsible_id = _extract_owners(f, cfg)
+    sprint_num, sprint_name = extract_max_sprint_number(f.get(cfg.sprint_field))
+    h_analyst, h_tester, h_developer, orig_hours = _extract_role_hours(f, cfg)
+    return {
+        "key": key,
+        "url": f"{base_url}/browse/{key}",
+        "summary": f.get("summary") or "",
+        "status_name": status_name,
+        "bucket": bucket,
+        "role": role,
+        "owner_id": owner_id,
+        "owner_file_name": owner_file_name,
+        "hours": estimate_hours_for_role(f, role, bucket, status_name, cfg, sp_field),
+        "hours_is_default": not _has_real_estimate(f, bucket, cfg, sp_field),
+        "board": board,
+        "sprint_num": sprint_num,
+        "sprint_name": sprint_name,
+        "formal_only": formal_only,
+        "is_pseudo": False,
+        "hours_analyst": h_analyst,
+        "hours_tester": h_tester,
+        "hours_developer": h_developer,
+        "hours_original": orig_hours,
+        "direction": direction,
+        "labels": labels,
+        "responsible_id": responsible_id,
+        "assignee_id": assignee_id,
+        "reporter_id": reporter_id,
+        "developer_name": _extract_developer_name(f, cfg),
+    }
 
 
 def _process_issue_for_role(
@@ -366,42 +408,19 @@ def _process_issue_for_role(
     if cand_key in by_key_role:
         return
 
-    sprint_num, sprint_name = extract_max_sprint_number(f.get(cfg.sprint_field))
-    h_analyst, h_tester, h_developer, orig_hours = _extract_role_hours(f, cfg)
-
     formal_only = False
     if role == "analyst" and assignee_id not in role_team:
+        h_analyst, h_tester, _, _ = _extract_role_hours(f, cfg)
         formal_only = not h_analyst and not h_tester
 
-    hours = estimate_hours_for_role(f, role, bucket, status_name, cfg, sp_field)
-
-    by_key_role[cand_key] = {
-        "key": key,
-        "url": f"{base_url}/browse/{key}",
-        "summary": f.get("summary") or "",
-        "status_name": status_name,
-        "bucket": bucket,
-        "role": role,
-        "owner_id": owner_id,
-        "owner_file_name": role_team[owner_id]["file_name"],
-        "hours": hours,
-        "hours_is_default": not _has_real_estimate(f, bucket, cfg, sp_field),
-        "board": source_label,
-        "sprint_num": sprint_num,
-        "sprint_name": sprint_name,
-        "formal_only": formal_only,
-        "is_pseudo": False,
-        "hours_analyst": h_analyst,
-        "hours_tester": h_tester,
-        "hours_developer": h_developer,
-        "hours_original": orig_hours,
-        "direction": direction_name,
-        "labels": labels or [],
-        "responsible_id": responsible_id,
-        "assignee_id": assignee_id,
-        "reporter_id": reporter_id,
-        "developer_name": _extract_developer_name(f, cfg),
-    }
+    by_key_role[cand_key] = _make_candidate(
+        f, cfg, base_url, sp_field,
+        key=key, role=role, bucket=bucket, owner_id=owner_id,
+        owner_file_name=role_team[owner_id]["file_name"],
+        status_name=status_name, board=source_label,
+        direction=direction_name, labels=labels or [],
+        formal_only=formal_only,
+    )
     counters["matched"] += 1
 
 
@@ -500,8 +519,6 @@ def _generate_direction_pre_candidates(
         return  # Статус не распознан в pipeline — не генерируем
 
     assignee_id, reporter_id, responsible_id = _extract_owners(f, cfg)
-    sprint_num, sprint_name = extract_max_sprint_number(f.get(cfg.sprint_field))
-    h_analyst, h_tester, h_developer, orig_hours = _extract_role_hours(f, cfg)
 
     for pos, wt in enumerate(work_types):
         if pos <= current_pos:
@@ -544,35 +561,13 @@ def _generate_direction_pre_candidates(
         if cand_key in by_key_role:
             continue
 
-        hours = estimate_hours_for_role(f, role, bucket, status_name, cfg, sp_field)
-
-        by_key_role[cand_key] = {
-            "key": key,
-            "url": f"{base_url}/browse/{key}",
-            "summary": f.get("summary") or "",
-            "status_name": status_name,
-            "bucket": bucket,
-            "role": role,
-            "owner_id": owner_id,
-            "owner_file_name": role_team[owner_id]["file_name"],
-            "hours": hours,
-            "board": f"[{direction['name']}]",
-            "sprint_num": sprint_num,
-            "sprint_name": sprint_name,
-            "formal_only": False,
-            "is_pseudo": False,
-            "hours_analyst": h_analyst,
-            "hours_tester": h_tester,
-            "hours_developer": h_developer,
-            "hours_original": orig_hours,
-            "hours_is_default": not _has_real_estimate(f, bucket, cfg, sp_field),
-            "direction": direction["name"],
-            "labels": labels,
-            "responsible_id": responsible_id,
-            "assignee_id": assignee_id,
-            "reporter_id": reporter_id,
-            "developer_name": _extract_developer_name(f, cfg),
-        }
+        by_key_role[cand_key] = _make_candidate(
+            f, cfg, base_url, sp_field,
+            key=key, role=role, bucket=bucket, owner_id=owner_id,
+            owner_file_name=role_team[owner_id]["file_name"],
+            status_name=status_name, board=f"[{direction['name']}]",
+            direction=direction["name"], labels=labels,
+        )
         counters["matched"] += 1
 
 
@@ -949,6 +944,14 @@ def compute_sprint_expected_results(
 
 # -------------------- Post-allocation: pipeline-derived tasks --------------------
 
+def _tester_hours(task: dict, tester_role: str, cfg: SprintConfig) -> float:
+    """Часы шага тестирования: поле hours_tester задачи, иначе дефолт (роль, статус)."""
+    fv = _positive_float(task.get("hours_tester"))
+    if fv is not None:
+        return fv
+    return _default_hours_for(cfg, tester_role, task["status_name"])
+
+
 def derive_pipeline_tasks(
     allocated: list[dict], cfg: SprintConfig,
 ) -> list[dict]:
@@ -1041,16 +1044,10 @@ def derive_pipeline_tasks(
                                 tester_team,
                             )
                         if owner_id:
-                            h = task.get("hours_tester")
-                            try:
-                                hours = float(h) if h else 0.0
-                            except (TypeError, ValueError):
-                                hours = 0.0
-                            if hours <= 0:
-                                hours = _default_hours_for(cfg, tester_role, task["status_name"])
                             d = _make_derived(
                                 task, tester_role, "Тестирование",
-                                owner_id, tester_team[owner_id]["file_name"], hours,
+                                owner_id, tester_team[owner_id]["file_name"],
+                                _tester_hours(task, tester_role, cfg),
                             )
                             derived.append(d)
                             allocated_keys.add(test_cand_key)
@@ -1089,16 +1086,10 @@ def derive_pipeline_tasks(
                         tester_team,
                     )
                     if owner_id:
-                        h = task.get("hours_tester")
-                        try:
-                            hours = float(h) if h else 0.0
-                        except (TypeError, ValueError):
-                            hours = 0.0
-                        if hours <= 0:
-                            hours = _default_hours_for(cfg, tester_role, task["status_name"])
                         d = _make_derived(
                             task, tester_role, "Тестирование",
-                            owner_id, tester_team[owner_id]["file_name"], hours,
+                            owner_id, tester_team[owner_id]["file_name"],
+                            _tester_hours(task, tester_role, cfg),
                         )
                         derived.append(d)
                         allocated_keys.add(test_cand_key)

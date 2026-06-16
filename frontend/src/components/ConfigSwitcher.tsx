@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   activateConfig, createConfig, deleteConfigById, listConfigTemplates, listMyConfigs,
 } from "../api/configs-client";
+import { useToast } from "./Toast";
 import { extractError } from "../lib/api-error";
 import type { ConfigSummary, ConfigTemplate } from "../types/configs";
 
@@ -13,10 +14,10 @@ interface Props {
 /** Dropdown в шапке: показывает текущий активный конфиг, позволяет переключиться,
  *  создать новый (пустой или копией), удалить. */
 export function ConfigSwitcher({ onChange }: Props) {
+  const toast = useToast();
   const [configs, setConfigs] = useState<ConfigSummary[] | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   // Состояние формы создания
@@ -26,12 +27,11 @@ export function ConfigSwitcher({ onChange }: Props) {
   const [templates, setTemplates] = useState<ConfigTemplate[]>([]);
 
   const load = async () => {
-    setError(null);
     try {
       const r = await listMyConfigs();
       setConfigs(r);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     }
   };
 
@@ -64,14 +64,14 @@ export function ConfigSwitcher({ onChange }: Props) {
       return;
     }
     setBusy(true);
-    setError(null);
     try {
       await activateConfig(id);
       await load();
       setOpen(false);
       onChange();
+      toast.success("Конфиг переключён");
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setBusy(false);
     }
@@ -81,7 +81,6 @@ export function ConfigSwitcher({ onChange }: Props) {
     e.preventDefault();
     if (!newName.trim()) return;
     setBusy(true);
-    setError(null);
     try {
       const created = await createConfig({
         name: newName.trim(),
@@ -94,8 +93,9 @@ export function ConfigSwitcher({ onChange }: Props) {
       setNewName("");
       setNewFrom("empty");
       onChange();
+      toast.success(`Конфиг «${created.name}» создан`);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setBusy(false);
     }
@@ -104,9 +104,8 @@ export function ConfigSwitcher({ onChange }: Props) {
   const handleDelete = async (cfg: ConfigSummary) => {
     if (!configs) return;
     if (configs.length === 1) {
-      window.alert(
-        "Это последний конфиг. Удалить нельзя — после удаления было бы не с чем работать.\n" +
-        "Если хочешь — сначала создай новый, потом удали старый."
+      toast.info(
+        "Это последний конфиг — удалить нельзя. Сначала создай новый, потом удали старый."
       );
       return;
     }
@@ -116,13 +115,13 @@ export function ConfigSwitcher({ onChange }: Props) {
     );
     if (!ok) return;
     setBusy(true);
-    setError(null);
     try {
       await deleteConfigById(cfg.id);
       await load();
       onChange();
+      toast.success(`Конфиг «${cfg.name}» удалён`);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setBusy(false);
     }
@@ -139,12 +138,6 @@ export function ConfigSwitcher({ onChange }: Props) {
 
       {open && (
         <div className="absolute top-full mt-1 right-0 bg-white border rounded-md shadow-lg min-w-[260px] z-10">
-          {error && (
-            <div className="bg-red-50 border-b border-red-300 text-red-800 text-xs p-2">
-              {error}
-            </div>
-          )}
-
           {configs && configs.length > 0 && (
             <div className="border-b">
               {configs.map((c) => (

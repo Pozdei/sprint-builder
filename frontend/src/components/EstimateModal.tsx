@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { type IssueFieldsUpdate, updateJiraIssueFields } from "../api/jira-client";
+import { useToast } from "./Toast";
+import { extractError } from "../lib/api-error";
 import type { GanttItem } from "../types/api";
 
 // Маппинг бакета → поле IssueFieldsUpdate
@@ -76,6 +78,7 @@ function buildTaskRows(items: GanttItem[]): TaskRow[] {
 }
 
 export function EstimateModal({ items, onClose, onSaved }: Props) {
+  const toast = useToast();
   const tasks = buildTaskRows(items);
 
   // values[key][field] = введённое значение
@@ -125,16 +128,23 @@ export function EstimateModal({ items, onClose, onSaved }: Props) {
         await updateJiraIssueFields(t.key, update);
         res.push({ key: t.key, ok: true });
       } catch (e: unknown) {
-        const msg =
-          e && typeof e === "object" && "response" in e
-            ? (e as { response?: { data?: { detail?: string } } }).response?.data?.detail ?? "Ошибка"
-            : e instanceof Error ? e.message : "Ошибка";
-        res.push({ key: t.key, ok: false, error: msg });
+        res.push({ key: t.key, ok: false, error: extractError(e) });
       }
     }
 
     setResults(res);
     setSaving(false);
+
+    const okCount = res.filter((r) => r.ok).length;
+    const failCount = res.length - okCount;
+    if (res.length === 0) {
+      toast.info("Нет заполненных оценок для сохранения");
+    } else if (failCount === 0) {
+      toast.success(`Сохранено оценок: ${okCount}`);
+    } else {
+      toast.error(`Сохранено ${okCount}, с ошибкой ${failCount}`);
+    }
+
     if (res.length > 0 && res.every((r) => r.ok) && onSaved) {
       onSaved();
     }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { login, setToken } from "../api/client";
+import { useToast } from "../components/Toast";
 import { extractError } from "../lib/api-error";
 import type { UserOut } from "../types/api";
 
@@ -8,21 +9,20 @@ interface Props {
 }
 
 export function LoginPage({ onLogin }: Props) {
+  const toast = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
     try {
       const r = await login(email, password);
       setToken(r.access_token);
       onLogin(r.user);
     } catch (err) {
-      setError(extractError(err));
+      toast.error(extractError(err));
     } finally {
       setLoading(false);
     }
@@ -57,12 +57,6 @@ export function LoginPage({ onLogin }: Props) {
               className="w-full px-3 py-2 border rounded"
             />
           </div>
-
-          {error && (
-            <div className="bg-red-50 border border-red-300 text-red-800 rounded p-2 text-sm">
-              {error}
-            </div>
-          )}
 
           <button
             type="submit"

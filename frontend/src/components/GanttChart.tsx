@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { triggerDownload } from "../lib/download";
 import type { GanttItem, TaskDependency } from "../types/api";
 
 const HOUR_PX_DEFAULT = 12;
@@ -11,6 +12,8 @@ interface Props {
   hoursPerDay: number;
   dependencies?: TaskDependency[];
   onTaskClick?: (key: string) => void;
+  /** Рабочие часы от начала шкалы до «сегодня» — рисует линию-разделитель факт/прогноз. */
+  todayHours?: number | null;
 }
 
 const BUCKET_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -47,7 +50,7 @@ interface Tooltip {
   item: GanttItem;
 }
 
-export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], onTaskClick }: Props) {
+export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], onTaskClick, todayHours }: Props) {
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [hourPx, setHourPx] = useState(HOUR_PX_DEFAULT);
@@ -234,12 +237,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     const blob = new Blob([new XMLSerializer().serializeToString(wrapper)], {
       type: "image/svg+xml",
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `gantt-${startDate}.svg`;
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, `gantt-${startDate}.svg`);
   };
 
   return (
@@ -358,8 +356,25 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                 </g>
               ))}
 
-            {/* Полоса текущего шага (сейчас — 0h, т.е. левый край) */}
-            <line x1={0} y1={0} x2={0} y2={svgH} stroke="#3b82f6" strokeWidth={2} opacity={0.4} />
+            {/* Линия «сейчас». В истор-режиме — на todayHours (разделитель факт/прогноз),
+                иначе — на левом крае (0h = старт расчёта). */}
+            {todayHours != null && todayHours > 0 ? (
+              <g>
+                <line
+                  x1={hoursToX(todayHours)} y1={0}
+                  x2={hoursToX(todayHours)} y2={svgH}
+                  stroke="#ef4444" strokeWidth={2} strokeDasharray="5 3" opacity={0.7}
+                />
+                <text
+                  x={hoursToX(todayHours) + 4} y={12}
+                  fontSize={10} fill="#ef4444" fontWeight="700"
+                >
+                  сегодня
+                </text>
+              </g>
+            ) : (
+              <line x1={0} y1={0} x2={0} y2={svgH} stroke="#3b82f6" strokeWidth={2} opacity={0.4} />
+            )}
 
             {/* Стрелки FS-зависимостей */}
             <defs>
@@ -426,8 +441,10 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                       width={w} height={h}
                       rx={3}
                       fill={col.bg}
+                      fillOpacity={item.is_historical ? 0.5 : 1}
                       stroke={isSelected ? "#2563eb" : col.border}
                       strokeWidth={isSelected ? 2 : 1.5}
+                      strokeDasharray={item.is_historical && !isSelected ? "3 2" : undefined}
                     />
                     {w > 40 && (
                       <text
@@ -475,6 +492,11 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                   {tooltip.item.bucket}
                 </span>
                 <span className="text-gray-300">{tooltip.item.hours.toFixed(1)} ч</span>
+                {tooltip.item.is_historical && (
+                  <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-gray-700 text-gray-200">
+                    факт{tooltip.item.phase_status ? ` · ${tooltip.item.phase_status}` : ""}
+                  </span>
+                )}
               </div>
               <div className="text-gray-400 mt-1 text-xs">
                 {new Date(tooltip.item.start).toLocaleString("ru-RU", {

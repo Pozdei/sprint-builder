@@ -91,6 +91,10 @@ export interface EpicStats {
   total_planned_hours: number;
   default_hours_count: number;
   total_cost: number;
+  spent_hours?: number;
+  spent_cost?: number;
+  remaining_hours?: number;
+  remaining_cost?: number;
 }
 
 export interface CostBreakdownItem {
@@ -108,6 +112,8 @@ export interface EpicForecastResponse {
   stats: EpicStats;
   cost_breakdown: CostBreakdownItem[];
   warnings: string[];
+  gantt_start?: string | null;
+  today_hours?: number | null;
 }
 
 export interface StandupTask {
@@ -151,6 +157,8 @@ export interface GanttItem {
   start_hours: number;
   end_hours: number;
   hours_is_default?: boolean;
+  is_historical?: boolean;
+  phase_status?: string | null;
 }
 
 export interface TaskDependency {

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { triggerDownload } from "../lib/download";
 import type {
   BuildAndSaveResponse, ClosedTaskData, ConfigOut, ConfigUpdate, EmployeeVacation,
   LoginResponse, OwnerStat, SprintBuildResponse, SprintOut, SprintSummary,
@@ -269,14 +270,7 @@ async function downloadBlob(url: string, payload: object, fallbackName: string) 
   const match = cd.match(/filename\*=UTF-8''([^;]+)/i);
   const filename = match ? decodeURIComponent(match[1]) : fallbackName;
 
-  const blobUrl = window.URL.createObjectURL(r.data as Blob);
-  const a = document.createElement("a");
-  a.href = blobUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.URL.revokeObjectURL(blobUrl);
+  triggerDownload(r.data as Blob, filename);
 }
 
 export async function downloadSprintXlsx(payload: SprintExportPayload) {

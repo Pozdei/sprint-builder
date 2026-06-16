@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { fetchStandup, submitStandup } from "../api/client";
+import { useToast } from "./Toast";
+import { extractError } from "../lib/api-error";
+import { fmtDateDotted, todayISO } from "../lib/format";
 import type { RoleOut, SprintOut, StandupExecutor, StandupSubmitResult } from "../types/api";
 
 const STATUSES = ["Выполнено", "В работе", "Заблокировано", "Не начинал"];
@@ -13,15 +16,6 @@ interface TaskState {
 interface Props {
   sprint: SprintOut;
   onClose: () => void;
-}
-
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
 }
 
 function fmtTime(iso: string): string {
@@ -41,6 +35,7 @@ function bucketColor(bucket: string): string {
 }
 
 export function StandupModal({ sprint, onClose }: Props) {
+  const toast = useToast();
   const roles: RoleOut[] = (sprint.config_snapshot.roles as RoleOut[] | undefined) ?? [];
   const enabledRoles = roles.filter((r) => r.enabled && !r.is_lead);
   const leadRoles   = roles.filter((r) => r.enabled && r.is_lead);
@@ -62,7 +57,6 @@ export function StandupModal({ sprint, onClose }: Props) {
   const [executors, setExecutors] = useState<StandupExecutor[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<StandupSubmitResult[]>([]);
 
   // task states keyed by "key|bucket"
@@ -78,7 +72,6 @@ export function StandupModal({ sprint, onClose }: Props) {
 
   const handleLoad = async () => {
     setLoading(true);
-    setError(null);
     try {
       const data = await fetchStandup(
         sprint.id,
@@ -88,7 +81,7 @@ export function StandupModal({ sprint, onClose }: Props) {
         Array.from(selectedRoles),
       );
       if (data.length === 0) {
-        setError("По выбранным параметрам задач не найдено. Проверьте дату начала спринта и роли.");
+        toast.info("По выбранным параметрам задач не найдено. Проверьте дату начала спринта и роли.");
         setLoading(false);
         return;
       }
@@ -107,12 +100,7 @@ export function StandupModal({ sprint, onClose }: Props) {
       setTaskStates(initial);
       setStep("form");
     } catch (e: unknown) {
-      if (e && typeof e === "object" && "response" in e) {
-        const r = (e as { response?: { data?: { detail?: string } } }).response;
-        setError(r?.data?.detail ?? "Ошибка загрузки");
-      } else if (e instanceof Error) {
-        setError(e.message);
-      }
+      toast.error(extractError(e, "Ошибка загрузки"));
     } finally {
       setLoading(false);
     }
@@ -120,9 +108,8 @@ export function StandupModal({ sprint, onClose }: Props) {
 
   const handleSubmit = async () => {
     setSubmitting(true);
-    setError(null);
 
-    const standupDateFmt = fmtDate(standupDate);
+    const standupDateFmt = fmtDateDotted(standupDate);
     const updates: {
       key: string; owner_file_name: string; bucket: string;
       status: string; comment: string; push_to_jira: boolean;
@@ -147,13 +134,14 @@ export function StandupModal({ sprint, onClose }: Props) {
       const res = await submitStandup({ standup_date: standupDateFmt, updates });
       setResults(res);
       setStep("done");
+      const pushed = res.filter((r) => r.pushed).length;
+      toast.success(
+        pushed > 0
+          ? `Стендап проведён · ${pushed} коммент. отправлено в Jira`
+          : "Стендап проведён",
+      );
     } catch (e: unknown) {
-      if (e && typeof e === "object" && "response" in e) {
-        const r = (e as { response?: { data?: { detail?: string } } }).response;
-        setError(r?.data?.detail ?? "Ошибка отправки");
-      } else if (e instanceof Error) {
-        setError(e.message);
-      }
+      toast.error(extractError(e, "Ошибка отправки"));
     } finally {
       setSubmitting(false);
     }
@@ -179,7 +167,7 @@ export function StandupModal({ sprint, onClose }: Props) {
             </h2>
             {step === "form" && (
               <p className="text-sm text-gray-500 mt-0.5">
-                {fmtDate(standupDate)} · {executors.length} участников · {totalTasks} задач
+                {fmtDateDotted(standupDate)} · {executors.length} участников · {totalTasks} задач
               </p>
             )}
           </div>
@@ -251,10 +239,6 @@ export function StandupModal({ sprint, onClose }: Props) {
                   <p className="text-sm text-gray-400 italic">Нет настроенных ролей в конфиге спринта.</p>
                 )}
               </div>
-
-              {error && (
-                <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg p-3 text-sm">{error}</div>
-              )}
             </div>
           )}
 
@@ -368,10 +352,6 @@ export function StandupModal({ sprint, onClose }: Props) {
                   </div>
                 </div>
               ))}
-
-              {error && (
-                <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg p-3 text-sm">{error}</div>
-              )}
             </div>
           )}
 
@@ -379,7 +359,7 @@ export function StandupModal({ sprint, onClose }: Props) {
           {step === "done" && (
             <div className="space-y-3">
               <p className="text-gray-700 font-medium">
-                Стендап проведён · {fmtDate(standupDate)}
+                Стендап проведён · {fmtDateDotted(standupDate)}
               </p>
               {results.length > 0 && (
                 <div className="border rounded-xl overflow-hidden">
@@ -424,7 +404,7 @@ export function StandupModal({ sprint, onClose }: Props) {
           {step === "form" && (
             <>
               <button
-                onClick={() => { setStep("setup"); setError(null); }}
+                onClick={() => setStep("setup")}
                 className="text-sm text-gray-500 hover:text-gray-700"
               >
                 ← Назад

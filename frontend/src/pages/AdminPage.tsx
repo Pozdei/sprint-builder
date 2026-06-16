@@ -4,6 +4,7 @@ import {
   adminListUsers, adminResetPassword, adminTransferConfig, adminUpdateAllSalaries, adminUpdateUser,
 } from "../api/admin-client";
 import { extractError } from "../lib/api-error";
+import { useToast } from "../components/Toast";
 import type {
   AdminConfigSummary, AdminSprintSummary, AdminTeamMember,
 } from "../types/admin";
@@ -16,10 +17,11 @@ type DataState = {
 };
 
 export function AdminPage() {
+  const toast = useToast();
   const [tab, setTab] = useState<"manage" | "salaries">("manage");
   const [data, setData] = useState<DataState | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Модалки
   const [createOpen, setCreateOpen] = useState(false);
@@ -28,7 +30,7 @@ export function AdminPage() {
 
   const reload = async () => {
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
       const [users, configs, sprints] = await Promise.all([
         adminListUsers(),
@@ -37,7 +39,7 @@ export function AdminPage() {
       ]);
       setData({ users, configs, sprints });
     } catch (e) {
-      setError(extractError(e));
+      setLoadError(extractError(e));
     } finally {
       setLoading(false);
     }
@@ -50,11 +52,11 @@ export function AdminPage() {
   if (loading) {
     return <div className="text-center text-gray-500 mt-20">Загрузка…</div>;
   }
-  if (error && !data) {
+  if (loadError && !data) {
     return (
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg p-3">
-          {error}
+          {loadError}
         </div>
       </div>
     );
@@ -85,12 +87,6 @@ export function AdminPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg p-3">
-          {error}
-        </div>
-      )}
-
       {tab === "manage" && (
         <>
           {/* Пользователи */}
@@ -111,6 +107,7 @@ export function AdminPage() {
               onUpdate={async (id, body) => {
                 await adminUpdateUser(id, body);
                 await reload();
+                toast.success("Пользователь обновлён");
               }}
               onResetPassword={(id) => setResetPwForUserId(id)}
               onDelete={async (u) => {
@@ -122,8 +119,9 @@ export function AdminPage() {
                 try {
                   await adminDeleteUser(u.id);
                   await reload();
+                  toast.success(`Пользователь ${u.email} удалён`);
                 } catch (e) {
-                  setError(extractError(e));
+                  toast.error(extractError(e));
                 }
               }}
             />
@@ -154,8 +152,9 @@ export function AdminPage() {
               onCreated={async () => {
                 setCreateOpen(false);
                 await reload();
+                toast.success("Пользователь создан");
               }}
-              onError={setError}
+              onError={toast.error}
             />
           )}
 
@@ -163,8 +162,11 @@ export function AdminPage() {
             <ResetPasswordModal
               user={data.users.find((u) => u.id === resetPwForUserId)!}
               onClose={() => setResetPwForUserId(null)}
-              onDone={() => setResetPwForUserId(null)}
-              onError={setError}
+              onDone={() => {
+                setResetPwForUserId(null);
+                toast.success("Пароль изменён");
+              }}
+              onError={toast.error}
             />
           )}
 
@@ -176,8 +178,9 @@ export function AdminPage() {
               onDone={async () => {
                 setTransferForConfigId(null);
                 await reload();
+                toast.success("Конфиг передан");
               }}
-              onError={setError}
+              onError={toast.error}
             />
           )}
         </>
@@ -235,6 +238,7 @@ function UserRow({
   onResetPassword: (id: number) => void;
   onDelete: (u: UserOut) => void;
 }) {
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user.display_name);
   const [role, setRole] = useState(user.role);
@@ -250,6 +254,8 @@ function UserRow({
         is_active: isActive !== user.is_active ? isActive : undefined,
       });
       setEditing(false);
+    } catch (e) {
+      toast.error(extractError(e));
     } finally {
       setBusy(false);
     }
@@ -705,12 +711,11 @@ function TransferConfigModal({
 }
 
 function SalariesTab() {
+  const toast = useToast();
   const [members, setMembers] = useState<AdminTeamMember[] | null>(null);
   const [salaries, setSalaries] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<Date | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     adminGetAllSalaries()
@@ -720,24 +725,23 @@ function SalariesTab() {
         ms.forEach((m) => { init[m.account_id] = m.salary; });
         setSalaries(init);
       })
-      .catch((e) => setError(extractError(e)))
+      .catch((e) => toast.error(extractError(e)))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const updateSalary = (accId: string, raw: string) => {
     const n = parseInt(raw.replace(/\D/g, ""), 10);
     setSalaries((prev) => ({ ...prev, [accId]: isNaN(n) ? 0 : n }));
-    setSavedAt(null);
   };
 
   const handleSave = async () => {
     setSaving(true);
-    setError(null);
     try {
       await adminUpdateAllSalaries(salaries);
-      setSavedAt(new Date());
+      toast.success("Оклады сохранены");
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setSaving(false);
     }
@@ -750,12 +754,6 @@ function SalariesTab() {
         Оклад в ₽/месяц. Используется для расчёта стоимости проекта в прогнозе реализации.
         Конфиденциально — участники команды не видят эти данные.
       </p>
-
-      {error && (
-        <div className="mb-3 bg-red-50 border border-red-300 text-red-800 rounded p-2 text-sm">
-          {error}
-        </div>
-      )}
 
       {loading ? (
         <div className="text-gray-400 text-sm py-4">Загрузка…</div>
@@ -803,11 +801,6 @@ function SalariesTab() {
             >
               {saving ? "Сохраняю…" : "Сохранить"}
             </button>
-            {savedAt && (
-              <span className="text-sm text-green-600">
-                Сохранено в {savedAt.toLocaleTimeString()}
-              </span>
-            )}
           </div>
         </>
       )}

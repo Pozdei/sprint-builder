@@ -14,6 +14,7 @@ import { OwnerStats } from "../components/OwnerStats";
 import { SprintComposer } from "../components/SprintComposer";
 import type { AssignablePerson } from "../components/SprintTable";
 import { SprintTable } from "../components/SprintTable";
+import { useToast } from "../components/Toast";
 import type { IssueFieldsUpdate } from "../api/jira-client";
 import { extractError } from "../lib/api-error";
 import type { OwnerStat, SprintOut, TaskOut } from "../types/api";
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export function SprintPage({ jiraReady }: Props) {
+  const toast = useToast();
   const [candidates, setCandidates] = useState<TaskOut[] | null>(null);
   const [maxSprint, setMaxSprint] = useState<number | null>(null);
   const [designers, setDesigners] = useState<AssignablePerson[]>([]);
@@ -40,7 +42,6 @@ export function SprintPage({ jiraReady }: Props) {
   const [approving, setApproving] = useState(false);
   const [downloadingC, setDownloadingC] = useState(false);
   const [downloadingS, setDownloadingS] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getDefaultConfig().then((cfg) => {
@@ -72,15 +73,15 @@ export function SprintPage({ jiraReady }: Props) {
 
   const handleLoadCandidates = async () => {
     setLoadingCandidates(true);
-    setError(null);
     resetSprint();
     try {
       const r = await fetchCandidates();
       setCandidates(r.candidates);
       setMaxSprint(r.max_sprint_num);
       setDiagnostics(r.diagnostics);
+      toast.success(`Загружено кандидатов: ${r.candidates.length}`);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setLoadingCandidates(false);
     }
@@ -89,7 +90,6 @@ export function SprintPage({ jiraReady }: Props) {
   const handleBuildSprint = async () => {
     if (!candidates) return;
     setLoadingSprint(true);
-    setError(null);
     resetSprint();
     try {
       const r = await buildAndSaveSprint(candidates);
@@ -98,8 +98,9 @@ export function SprintPage({ jiraReady }: Props) {
       setOverflow(r.overflow);
       setOwnerStats(r.owner_stats);
       setDiagnostics(r.diagnostics);
+      toast.success(`Sprint ${r.sprint.sprint_num} сформирован и сохранён`);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setLoadingSprint(false);
     }
@@ -113,12 +114,12 @@ export function SprintPage({ jiraReady }: Props) {
     );
     if (!ok) return;
     setApproving(true);
-    setError(null);
     try {
       const updated = await approveSprint(sprint.id);
       setSprint(updated);
+      toast.success(`Sprint ${updated.sprint_num} утверждён`);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setApproving(false);
     }
@@ -127,7 +128,6 @@ export function SprintPage({ jiraReady }: Props) {
   const handleDownloadCandidates = async () => {
     if (!candidates) return;
     setDownloadingC(true);
-    setError(null);
     try {
       const allocatedSet = allocated
         ? allocated
@@ -140,7 +140,7 @@ export function SprintPage({ jiraReady }: Props) {
         allocated_set: allocatedSet,
       });
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setDownloadingC(false);
     }
@@ -149,7 +149,6 @@ export function SprintPage({ jiraReady }: Props) {
   const handleDownloadSprint = async () => {
     if (!allocated) return;
     setDownloadingS(true);
-    setError(null);
     try {
       await downloadSprintXlsx({
         allocated,
@@ -157,7 +156,7 @@ export function SprintPage({ jiraReady }: Props) {
         max_sprint_num: maxSprint,
       });
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setDownloadingS(false);
     }
@@ -165,12 +164,17 @@ export function SprintPage({ jiraReady }: Props) {
 
   const handleSaveComposer = async (newTasks: TaskOut[]) => {
     if (!sprint) return;
-    const updated = await setSprintTasks(sprint.id, newTasks);
-    // Обновляем все локальные состояния новыми данными
-    setSprint(updated);
-    setAllocated(updated.tasks);
-    setOwnerStats(updated.owner_stats);
-    setEditing(false);
+    try {
+      const updated = await setSprintTasks(sprint.id, newTasks);
+      // Обновляем все локальные состояния новыми данными
+      setSprint(updated);
+      setAllocated(updated.tasks);
+      setOwnerStats(updated.owner_stats);
+      setEditing(false);
+      toast.success("Состав спринта обновлён");
+    } catch (e) {
+      toast.error(extractError(e));
+    }
   };
 
   const handlePatchCandidate = (key: string, patch: Partial<TaskOut>) => {
@@ -297,12 +301,6 @@ export function SprintPage({ jiraReady }: Props) {
               {approving ? "Утверждаю…" : "Утвердить"}
             </button>
           )}
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-red-50 border border-red-300 text-red-800 rounded-lg p-3 mb-4">
-          {error}
         </div>
       )}
 

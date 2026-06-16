@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { extractError } from "../lib/api-error";
 import type { OwnerStat, TaskOut } from "../types/api";
 
 interface Props {
@@ -29,7 +28,6 @@ export function SprintComposer({
   // Локальные состояния (редактирование без сохранения)
   const [inSprint, setInSprint] = useState<TaskOut[]>(sprintTasks);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [filterBoard, setFilterBoard] = useState<string>("");
   const [filterAssignee, setFilterAssignee] = useState<string>("");
 
@@ -74,11 +72,9 @@ export function SprintComposer({
 
   const handleSave = async () => {
     setSaving(true);
-    setError(null);
     try {
+      // Ошибки и успех показывает родитель (toast) — здесь только индикатор сохранения.
       await onSave(inSprint);
-    } catch (e) {
-      setError(extractError(e));
     } finally {
       setSaving(false);
     }
@@ -107,12 +103,6 @@ export function SprintComposer({
           </button>
         </div>
       </div>
-
-      {error && (
-        <div className="bg-red-50 border border-red-300 text-red-800 rounded p-2 mb-3 text-sm">
-          {error}
-        </div>
-      )}
 
       {/* Сводка по людям с пересчётом на лету */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">

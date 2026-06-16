@@ -1,3 +1,4 @@
+import { useToast } from "../Toast";
 import type { PseudoTaskOut, TeamMemberOut } from "../../types/api";
 
 interface Props {
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export function PseudoTasksEditor({ value, onChange, team }: Props) {
+  const toast = useToast();
   // Берём только сохранённых (id > 0). У свежедобавленных через "+ Добавить из Jira"
   // id = 0 — для них псевдо-задачи нельзя завести до сохранения конфига.
   const members = Object.entries(team)
@@ -28,9 +30,8 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
 
   const handleAdd = () => {
     if (members.length === 0) {
-      window.alert(
-        "Нет ни одного сохранённого человека в команде. " +
-        "Сначала добавьте людей через «+ Добавить из Jira» и сохраните конфиг."
+      toast.info(
+        "Нет сохранённых людей в команде. Сначала добавьте их через «+ Добавить из Jira» и сохраните конфиг."
       );
       return;
     }

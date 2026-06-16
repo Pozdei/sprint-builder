@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { addVacation, deleteVacation, fetchVacations } from "../api/client";
+import { useToast } from "./Toast";
 import { extractError } from "../lib/api-error";
+import { fmtDateDotted } from "../lib/format";
 import type { EmployeeVacation, GanttItem } from "../types/api";
 
 interface Props {
@@ -10,10 +12,10 @@ interface Props {
 }
 
 export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
+  const toast = useToast();
   const [vacations, setVacations] = useState<EmployeeVacation[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Форма добавления
   const [selOwner, setSelOwner] = useState("");
@@ -33,8 +35,9 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
     setLoading(true);
     fetchVacations()
       .then(setVacations)
-      .catch((e) => setError(extractError(e)))
+      .catch((e) => toast.error(extractError(e)))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Проверка на пересечение с существующими отпусками того же сотрудника
@@ -43,19 +46,18 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
     const existing = vacations.filter((v) => v.jira_account_id === selOwner);
     const overlap = existing.find((v) => startDate <= v.end_date && endDate >= v.start_date);
     if (!overlap) return null;
-    return `Пересекается с отпуском ${fmtDate(overlap.start_date)}–${fmtDate(overlap.end_date)}`;
+    return `Пересекается с отпуском ${fmtDateDotted(overlap.start_date)}–${fmtDateDotted(overlap.end_date)}`;
   })();
 
   const handleAdd = async () => {
     if (!selOwner || !startDate || !endDate) return;
     if (endDate < startDate) {
-      setError("Дата окончания не может быть раньше даты начала");
+      toast.error("Дата окончания не может быть раньше даты начала");
       return;
     }
     const owner = owners.find((o) => o.owner_id === selOwner);
     if (!owner) return;
     setSaving(true);
-    setError(null);
     try {
       const vac = await addVacation({
         jira_account_id: owner.owner_id,
@@ -67,8 +69,9 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
       setStartDate("");
       setEndDate("");
       onChanged();
+      toast.success(`Отпуск добавлен: ${owner.display_name}`);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setSaving(false);
     }
@@ -76,13 +79,13 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
 
   const handleDelete = async (id: number) => {
     setSaving(true);
-    setError(null);
     try {
       await deleteVacation(id);
       setVacations((prev) => prev.filter((v) => v.id !== id));
       onChanged();
+      toast.success("Отпуск удалён");
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setSaving(false);
     }
@@ -102,12 +105,6 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        {error && (
-          <div className="bg-red-50 border border-red-300 text-red-800 rounded p-2 mb-3 text-xs">
-            {error}
-          </div>
-        )}
-
         {/* Список отпусков по сотрудникам */}
         <div className="mb-4">
           {loading ? (
@@ -128,8 +125,8 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
                           className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded px-3 py-1"
                         >
                           <span className="text-xs text-gray-700">
-                            {fmtDate(v.start_date)}
-                            {v.start_date !== v.end_date && ` — ${fmtDate(v.end_date)}`}
+                            {fmtDateDotted(v.start_date)}
+                            {v.start_date !== v.end_date && ` — ${fmtDateDotted(v.end_date)}`}
                           </span>
                           <button
                             onClick={() => handleDelete(v.id)}
@@ -209,9 +206,4 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
       </div>
     </div>
   );
-}
-
-function fmtDate(iso: string): string {
-  const [y, m, d] = iso.split("-");
-  return `${d}.${m}.${y}`;
 }

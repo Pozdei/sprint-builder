@@ -8,48 +8,40 @@ import { EstimateModal } from "../components/EstimateModal";
 import { ForecastTrendChart } from "../components/ForecastTrendChart";
 import { GanttChart } from "../components/GanttChart";
 import { TaskPipelineModal } from "../components/TaskPipelineModal";
+import { useToast } from "../components/Toast";
 import { VacationPanel } from "../components/VacationPanel";
+import { extractError } from "../lib/api-error";
+import { triggerDownload } from "../lib/download";
+import { daysUntil, fmtDateLong, fmtNum, fmtRub, todayISO } from "../lib/format";
+import { loadRecentEpics, pushRecentEpic, removeRecentEpic } from "../lib/recent-epics";
 import type { CostBreakdownItem, EpicForecastResponse, EpicForecastSnapshot, TaskDependency } from "../types/api";
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function fmtDate(iso: string) {
-  const d = new Date(iso + "T12:00:00");
-  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
-}
-
-function daysUntil(isoDate: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(isoDate + "T00:00:00");
-  return Math.ceil((target.getTime() - today.getTime()) / 86400000);
-}
-
 export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
+  const toast = useToast();
   const [epicKey,    setEpicKey]    = useState("");
   const [startDate,  setStartDate]  = useState(todayISO());
   const [hoursPerDay, setHoursPerDay] = useState(8);
 
   const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState<string | null>(null);
   const [result,   setResult]   = useState<EpicForecastResponse | null>(null);
   const [selectedKey,    setSelectedKey]    = useState<string | null>(null);
   const [showEstimates,  setShowEstimates]  = useState(false);
 
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
+  const [showRoi,       setShowRoi]       = useState(false);
   const [showDeps,      setShowDeps]      = useState(false);
   const [showVacations, setShowVacations] = useState(false);
   const [epicDeps,      setEpicDeps]      = useState<TaskDependency[]>([]);
   const [snapshots,     setSnapshots]     = useState<EpicForecastSnapshot[]>([]);
   const [useHistory,    setUseHistory]    = useState(false);
+  const [recentEpics,   setRecentEpics]   = useState<string[]>(() => loadRecentEpics());
 
-  const handleForecast = async () => {
-    const key = epicKey.trim().toUpperCase();
+  // overrideKey — если передан (клик по чипсу), считаем сразу по нему, не дожидаясь setState.
+  const handleForecast = async (overrideKey?: string) => {
+    const key = (overrideKey ?? epicKey).trim().toUpperCase();
     if (!key) return;
+    if (overrideKey) setEpicKey(key);
     setLoading(true);
-    setError(null);
     setResult(null);
     try {
       const [data, deps] = await Promise.all([
@@ -60,13 +52,14 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
       setEpicDeps(deps);
       // Снапшоты загружаем после forecast (бэкенд уже сохранил новый)
       fetchEpicSnapshots(key).then(setSnapshots).catch(() => {});
+      setRecentEpics(pushRecentEpic(key));
+      toast.success(
+        data.completion_date
+          ? `${data.epic_key}: прогноз построен — ${fmtDateLong(data.completion_date)}`
+          : `${data.epic_key}: прогноз построен`,
+      );
     } catch (e: unknown) {
-      if (e && typeof e === "object" && "response" in e) {
-        const r = (e as { response?: { data?: { detail?: string } } }).response;
-        setError(r?.data?.detail ?? "Ошибка");
-      } else if (e instanceof Error) {
-        setError(e.message);
-      }
+      toast.error(extractError(e));
     } finally {
       setLoading(false);
     }
@@ -118,14 +111,14 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
             />
           </div>
           <button
-            onClick={handleForecast}
+            onClick={() => handleForecast()}
             disabled={loading || !epicKey.trim()}
             className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300
                        text-white font-semibold px-5 py-2 rounded-lg text-sm transition"
           >
             {loading ? "Считаю…" : "Построить прогноз"}
           </button>
-          <label className="flex items-center gap-2 cursor-pointer select-none ml-1" title="Учитывать историю смен статусов при определении пройденных этапов">
+          <label className="flex items-center gap-2 cursor-pointer select-none ml-1" title="Восстановить прошлые фазы по истории Jira (кто и когда был на аналитике/разработке/тесте) и показать их на одной шкале с прогнозом">
             <div
               onClick={() => setUseHistory(v => !v)}
               className={`relative w-9 h-5 rounded-full transition-colors ${useHistory ? "bg-indigo-500" : "bg-gray-300"}`}
@@ -136,12 +129,38 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
           </label>
         </div>
 
-        {error && (
-          <div className="mt-3 bg-red-50 border border-red-300 text-red-800 rounded-lg p-3 text-sm">
-            {error}
+        {recentEpics.length > 0 && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-400">Недавние:</span>
+            {recentEpics.map((k) => (
+              <span
+                key={k}
+                className="group inline-flex items-center gap-1 bg-gray-100 hover:bg-indigo-50
+                           border border-transparent hover:border-indigo-200 rounded-full
+                           pl-2.5 pr-1 py-0.5 text-xs font-mono text-gray-600 transition"
+              >
+                <button
+                  onClick={() => handleForecast(k)}
+                  disabled={loading}
+                  className="hover:text-indigo-700 disabled:opacity-50"
+                  title={`Построить прогноз для ${k}`}
+                >
+                  {k}
+                </button>
+                <button
+                  onClick={() => setRecentEpics(removeRecentEpic(k))}
+                  className="text-gray-300 hover:text-red-500 leading-none px-0.5"
+                  title="Убрать из недавних"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
           </div>
         )}
       </div>
+
+      {loading && !result && <ForecastSkeleton />}
 
       {result && (
         <>
@@ -165,7 +184,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                     days <= 14   ? "text-amber-700" :
                                    "text-indigo-700"
                   }`}>
-                    {fmtDate(result.completion_date)}
+                    {fmtDateLong(result.completion_date)}
                   </div>
                   {days !== null && (
                     <div className="text-sm mt-0.5 text-gray-500">
@@ -187,24 +206,39 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { label: "Всего задач",     value: result.stats.total_issues },
+                  { label: "Всего задач",     value: result.stats.total_issues,
+                    icon: METRIC_ICONS.total, accent: "text-slate-500 bg-slate-100" },
                   { label: "Выполнено",        value: result.stats.done_issues,
+                    icon: METRIC_ICONS.done, accent: "text-green-600 bg-green-100",
                     sub: `${Math.round(result.stats.done_issues / Math.max(result.stats.total_issues,1)*100)}%` },
                   { label: "Осталось задач",  value: result.stats.total_issues - result.stats.done_issues,
+                    icon: METRIC_ICONS.remaining, accent: "text-indigo-600 bg-indigo-100",
                     sub: `${result.stats.remaining_work_items} эт. в расписании` },
                   { label: "Плановых часов",  value: `${result.stats.total_planned_hours} ч`,
                     warn: result.stats.default_hours_count > 0,
+                    icon: METRIC_ICONS.hours,
+                    accent: result.stats.default_hours_count > 0
+                      ? "text-amber-600 bg-amber-100" : "text-blue-600 bg-blue-100",
                     sub: result.stats.default_hours_count > 0
                       ? `${result.stats.default_hours_count} без оценки`
                       : "все оценены" },
                 ].map((m) => (
-                  <div key={m.label} className="bg-gray-50 rounded-xl px-3 py-2">
-                    <div className="text-xs text-gray-500">{m.label}</div>
-                    <div className={`text-xl font-bold ${m.warn ? "text-amber-600" : "text-gray-800"}`}>
+                  <div
+                    key={m.label}
+                    className="bg-gray-50 rounded-xl px-3 py-2.5 border border-transparent
+                               hover:border-gray-200 hover:bg-white hover:shadow-sm transition"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`w-6 h-6 rounded-lg flex items-center justify-center ${m.accent}`}>
+                        {m.icon}
+                      </span>
+                      <div className="text-xs text-gray-500">{m.label}</div>
+                    </div>
+                    <div className={`text-xl font-bold leading-none ${m.warn ? "text-amber-600" : "text-gray-800"}`}>
                       {m.value}
                     </div>
                     {m.sub && (
-                      <div className={`text-xs ${m.warn ? "text-amber-500" : "text-gray-400"}`}>
+                      <div className={`text-xs mt-1 ${m.warn ? "text-amber-500" : "text-gray-400"}`}>
                         {m.sub}
                       </div>
                     )}
@@ -215,17 +249,42 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                 <div className="mt-3 bg-blue-50 rounded-xl px-4 py-2.5 flex items-center gap-3 flex-wrap">
                   <span className="text-xs text-blue-500">Стоимость проекта</span>
                   <span className="text-2xl font-bold text-blue-700">
-                    {result.stats.total_cost.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽
+                    {fmtRub(result.stats.total_cost)}
                   </span>
                   <span className="text-xs text-blue-400">по окладам команды</span>
-                  {isAdmin && (
+                  <div className="ml-auto flex items-center gap-3">
                     <button
-                      onClick={() => setShowCostBreakdown(true)}
-                      className="ml-auto text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2"
+                      onClick={() => setShowRoi(true)}
+                      className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1.5 transition"
                     >
-                      Подробный расчёт
+                      Посчитать ROI
                     </button>
-                  )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => setShowCostBreakdown(true)}
+                        className="text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2"
+                      >
+                        Подробный расчёт
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {result.today_hours != null && (
+                <div className="mt-2 flex items-center gap-3 flex-wrap text-sm">
+                  <span className="inline-flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+                    <span className="text-xs text-gray-500">Потрачено</span>
+                    <span className="font-semibold text-gray-700">{fmtRub(result.stats.spent_cost ?? 0)}</span>
+                    <span className="text-xs text-gray-400">· {fmtNum(result.stats.spent_hours ?? 0, 1)} ч</span>
+                  </span>
+                  <span className="inline-flex items-center gap-2 bg-indigo-50 rounded-lg px-3 py-1.5">
+                    <span className="text-xs text-indigo-500">Осталось</span>
+                    <span className="font-semibold text-indigo-700">{fmtRub(result.stats.remaining_cost ?? 0)}</span>
+                    <span className="text-xs text-indigo-400">· {fmtNum(result.stats.remaining_hours ?? 0, 1)} ч</span>
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    левее красной линии на диаграмме — факт по истории Jira
+                  </span>
                 </div>
               )}
             </div>
@@ -292,10 +351,11 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
               </div>
               <GanttChart
                 items={result.gantt_items}
-                startDate={startDate}
+                startDate={result.gantt_start ?? startDate}
                 hoursPerDay={hoursPerDay}
                 dependencies={epicDeps}
                 onTaskClick={setSelectedKey}
+                todayHours={result.today_hours}
               />
             </>
           ) : (
@@ -360,8 +420,65 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
               onClose={() => setShowCostBreakdown(false)}
             />
           )}
+
+          {showRoi && result && (
+            <RoiModal
+              totalCost={result.stats.total_cost}
+              onClose={() => setShowRoi(false)}
+            />
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+/** Иконки для метрик-карточек сводки (20×20 inline SVG). */
+const METRIC_ICONS = {
+  total: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+      <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 5a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V9zm0 5a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z" />
+    </svg>
+  ),
+  done: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+      <path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0L3.3 9.7a1 1 0 011.4-1.4l3.1 3.1 6.8-6.8a1 1 0 011.4 0z" clipRule="evenodd" />
+    </svg>
+  ),
+  remaining: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM11 6a1 1 0 10-2 0v4a1 1 0 00.3.7l2.5 2.5a1 1 0 001.4-1.4L11 9.6V6z" clipRule="evenodd" />
+    </svg>
+  ),
+  hours: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+      <path fillRule="evenodd" d="M10 2a1 1 0 011 1v6.4l4 2.3a1 1 0 01-1 1.7l-4.5-2.6A1 1 0 019 10V3a1 1 0 011-1z" clipRule="evenodd" />
+    </svg>
+  ),
+};
+
+/** Скелетон-заглушка на время расчёта прогноза. */
+function ForecastSkeleton() {
+  return (
+    <div className="mb-5 flex flex-wrap gap-4 items-start animate-pulse">
+      <div className="flex-none rounded-2xl p-5 border-2 border-gray-100 bg-gray-50 w-56">
+        <div className="h-3 w-28 bg-gray-200 rounded mb-3" />
+        <div className="h-7 w-40 bg-gray-200 rounded mb-2" />
+        <div className="h-3 w-20 bg-gray-200 rounded" />
+      </div>
+      <div className="flex-1 bg-white rounded-2xl border shadow-sm p-5 min-w-[280px]">
+        <div className="h-4 w-48 bg-gray-200 rounded mb-4" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="bg-gray-50 rounded-xl px-3 py-2.5">
+              <div className="h-6 w-6 bg-gray-200 rounded-lg mb-2" />
+              <div className="h-5 w-12 bg-gray-200 rounded mb-1.5" />
+              <div className="h-3 w-16 bg-gray-200 rounded" />
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 h-10 bg-gray-100 rounded-xl" />
+      </div>
     </div>
   );
 }
@@ -380,14 +497,7 @@ function exportCostBreakdownCsv(breakdown: CostBreakdownItem[], totalCost: numbe
   ];
   const csv = "﻿" + rows.map((r) => r.join(sep)).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "cost_breakdown.csv";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  triggerDownload(blob, "cost_breakdown.csv");
 }
 
 function CostBreakdownModal({
@@ -437,10 +547,10 @@ function CostBreakdownModal({
                   <td className="px-3 py-1.5">{row.name}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{row.hours}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">
-                    {row.salary > 0 ? row.salary.toLocaleString("ru-RU") : "—"}
+                    {row.salary > 0 ? fmtNum(row.salary) : "—"}
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums font-medium">
-                    {row.cost > 0 ? row.cost.toLocaleString("ru-RU", { maximumFractionDigits: 0 }) : "—"}
+                    {row.cost > 0 ? fmtNum(row.cost) : "—"}
                   </td>
                 </tr>
               ))}
@@ -449,7 +559,7 @@ function CostBreakdownModal({
               <tr>
                 <td colSpan={3} className="px-3 py-1.5 font-semibold text-right">Итого</td>
                 <td className="px-3 py-1.5 text-right font-bold text-blue-700 tabular-nums">
-                  {totalCost.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽
+                  {fmtRub(totalCost)}
                 </td>
               </tr>
             </tfoot>
@@ -458,6 +568,77 @@ function CostBreakdownModal({
 
         <p className="text-xs text-gray-400">
           Расчёт: оклад ÷ 160 ч/мес × плановые часы в прогнозе
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function RoiModal({ totalCost, onClose }: { totalCost: number; onClose: () => void }) {
+  const [revenueStr, setRevenueStr] = useState("");
+
+  // Принимаем «1 200 000», «1200000», «1 200 000,50» — оставляем только цифры и разделитель
+  const revenue = Number(revenueStr.replace(/\s/g, "").replace(",", ".")) || 0;
+  const hasInput = revenueStr.trim() !== "" && revenue > 0;
+
+  const profit = revenue - totalCost;
+  const roiPct = totalCost > 0 ? (profit / totalCost) * 100 : 0;
+  const positive = profit >= 0;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-xl border w-full max-w-md p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-800">Расчёт ROI</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Доход от проекта, ₽
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoFocus
+            value={revenueStr}
+            onChange={(e) => setRevenueStr(e.target.value)}
+            placeholder="Например, 5 000 000"
+            className="w-full px-3 py-2 border rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+        </div>
+
+        <div className="space-y-2 text-sm">
+          <div className="flex items-center justify-between px-3 py-2 bg-blue-50 rounded-lg">
+            <span className="text-blue-500">Стоимость проекта</span>
+            <span className="font-semibold text-blue-700 tabular-nums">{fmtRub(totalCost)}</span>
+          </div>
+          {hasInput && (
+            <>
+              <div className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
+                <span className="text-gray-500">Прибыль</span>
+                <span className={`font-semibold tabular-nums ${positive ? "text-green-700" : "text-red-700"}`}>
+                  {profit >= 0 ? "+" : "−"}{fmtRub(Math.abs(profit))}
+                </span>
+              </div>
+              <div className={`flex items-center justify-between px-3 py-2.5 rounded-lg ${positive ? "bg-green-50" : "bg-red-50"}`}>
+                <span className={positive ? "text-green-600" : "text-red-600"}>ROI</span>
+                <span className={`text-2xl font-bold tabular-nums ${positive ? "text-green-700" : "text-red-700"}`}>
+                  {roiPct >= 0 ? "+" : "−"}{fmtNum(Math.abs(roiPct), 1)} %
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <p className="mt-4 text-xs text-gray-400">
+          ROI = (доход − стоимость проекта) ÷ стоимость проекта × 100 %
         </p>
       </div>
     </div>

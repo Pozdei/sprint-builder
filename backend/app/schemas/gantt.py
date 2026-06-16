@@ -39,6 +39,8 @@ class GanttItem(BaseModel):
     start_hours: float
     end_hours: float
     hours_is_default: bool = False
+    is_historical: bool = False   # True — реконструированная фаза из истории Jira
+    phase_status: str | None = None  # статус Jira, в котором задача была в эту фазу
 
 
 class StandupTask(BaseModel):

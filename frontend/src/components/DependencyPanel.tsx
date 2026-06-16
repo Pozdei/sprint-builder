@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useToast } from "./Toast";
 import { extractError } from "../lib/api-error";
 import type { GanttItem, TaskDependency } from "../types/api";
 
@@ -14,10 +15,10 @@ interface Props {
 export function DependencyPanel({
   ganttItems, onFetchDeps, onAddDep, onRemoveDep, onClose, onChanged,
 }: Props) {
+  const toast = useToast();
   const [deps, setDeps] = useState<TaskDependency[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [fromKey, setFromKey] = useState("");
   const [toKey, setToKey] = useState("");
@@ -30,23 +31,24 @@ export function DependencyPanel({
     setLoading(true);
     onFetchDeps()
       .then(setDeps)
-      .catch((e) => setError(extractError(e)))
+      .catch((e) => toast.error(extractError(e)))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleAdd = async () => {
     if (!fromKey || !toKey || fromKey === toKey) return;
     const dep: TaskDependency = { from_key: fromKey, to_key: toKey };
     setSaving(true);
-    setError(null);
     try {
       const updated = await onAddDep(dep);
       setDeps(updated);
       setFromKey("");
       setToKey("");
       onChanged();
+      toast.success(`Зависимость добавлена: ${dep.from_key} → ${dep.to_key}`);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setSaving(false);
     }
@@ -54,13 +56,13 @@ export function DependencyPanel({
 
   const handleRemove = async (dep: TaskDependency) => {
     setSaving(true);
-    setError(null);
     try {
       await onRemoveDep(dep);
       setDeps((prev) => prev.filter((d) => !(d.from_key === dep.from_key && d.to_key === dep.to_key)));
       onChanged();
+      toast.success("Зависимость удалена");
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setSaving(false);
     }
@@ -74,12 +76,6 @@ export function DependencyPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        {error && (
-          <div className="bg-red-50 border border-red-300 text-red-800 rounded p-2 mb-3 text-xs">
-            {error}
-          </div>
-        )}
-
         <div className="mb-4">
           <p className="text-xs text-gray-500 mb-2">
             Задача B стартует только после завершения всех этапов задачи A.

@@ -127,6 +127,11 @@ class EpicStats(BaseModel):
     total_planned_hours: float
     default_hours_count: int
     total_cost: float = 0.0
+    # Историчный режим: разбивка потрачено (прошлое) / осталось (будущее)
+    spent_hours: float = 0.0
+    spent_cost: float = 0.0
+    remaining_hours: float = 0.0
+    remaining_cost: float = 0.0
 
 
 class CostBreakdownItem(BaseModel):
@@ -144,6 +149,8 @@ class EpicForecastResponse(BaseModel):
     stats: EpicStats
     cost_breakdown: list[CostBreakdownItem] = []
     warnings: list[str]
+    gantt_start: str | None = None   # начало шкалы Ганта (для истор. режима — origin)
+    today_hours: float | None = None  # рабочие часы от начала шкалы до «сегодня»
 
 
 def _fetch_issue_children(
@@ -158,7 +165,7 @@ def _fetch_issue_children(
     Возвращает (summary, issue_type_name, список задач).
     """
     base_fields = (
-        "summary,status,issuetype,assignee,reporter,labels,"
+        "summary,status,issuetype,assignee,reporter,labels,created,"
         "timeoriginalestimate,customfield_10020"
     )
 
@@ -211,6 +218,30 @@ def _fetch_issue_children(
             issues = [full]
 
     return summary, issue_type, issues
+
+
+def _fetch_full_changelog(issue_key: str) -> list[dict]:
+    """Полная история изменений задачи (пагинация).
+
+    `expand=changelog` в /search/jql может усекаться, поэтому в истор. режиме
+    дотягиваем changelog отдельным эндпоинтом — для корректных самых ранних дат.
+    """
+    histories: list[dict] = []
+    start_at = 0
+    for _ in range(50):  # предохранитель от бесконечного цикла
+        try:
+            data = client.get(
+                f"/rest/api/3/issue/{issue_key}/changelog",
+                params={"startAt": start_at, "maxResults": 100},
+            )
+        except JiraError:
+            break
+        values = data.get("values", [])
+        histories.extend(values)
+        start_at += len(values)
+        if data.get("isLast") or not values or start_at >= data.get("total", 0):
+            break
+    return histories
 
 
 def _enrich_with_config_fields(issues: list[dict], cfg_snapshot: dict) -> list[dict]:
@@ -291,6 +322,13 @@ def epic_forecast(
     # Дозапрашиваем кастомные поля (часы, разработчик)
     issues = _enrich_with_config_fields(issues, cfg_snapshot)
 
+    # В истор. режиме дотягиваем полную историю изменений по каждой задаче
+    if use_history:
+        for issue in issues:
+            full = _fetch_full_changelog(issue["key"])
+            if full:
+                issue.setdefault("changelog", {})["histories"] = full
+
     # Подставляем правильный sprint_field в задачи (он уже в fields)
     try:
         sp_field = find_story_points_field(client)
@@ -339,4 +377,6 @@ def epic_forecast(
         stats=EpicStats(**result["stats"]),
         cost_breakdown=[CostBreakdownItem(**item) for item in result.get("cost_breakdown", [])],
         warnings=result["warnings"],
+        gantt_start=result.get("gantt_start"),
+        today_hours=result.get("today_hours"),
     )

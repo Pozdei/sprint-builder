@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { deleteEpicSnapshot, pinEpicSnapshot } from "../api/client";
+import { fmtDateLong, fmtDateShort } from "../lib/format";
 import type { EpicForecastSnapshot } from "../types/api";
 
 interface Props {
@@ -10,16 +11,6 @@ interface Props {
 
 function parseDate(iso: string): number {
   return new Date(iso + "T12:00:00").getTime();
-}
-
-function fmtDate(iso: string): string {
-  const d = new Date(iso + "T12:00:00");
-  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" });
-}
-
-function fmtDateFull(iso: string): string {
-  const d = new Date(iso + "T12:00:00");
-  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
 }
 
 export function ForecastTrendChart({ snapshots, onDeleted, onPinToggled }: Props) {
@@ -160,10 +151,10 @@ export function ForecastTrendChart({ snapshots, onDeleted, onPinToggled }: Props
           >
             <div className="font-semibold text-gray-700 mb-1 flex items-center gap-1">
               {hovered.s.is_pinned && <span title="Закреплён">📌</span>}
-              {fmtDate(hovered.s.captured_date)}
+              {fmtDateShort(hovered.s.captured_date)}
             </div>
             <div className="text-gray-600">
-              Прогноз: <span className="font-medium">{fmtDateFull(hovered.s.completion_date!)}</span>
+              Прогноз: <span className="font-medium">{fmtDateLong(hovered.s.completion_date!)}</span>
             </div>
             <div className="text-gray-400 mt-1">
               {hovered.s.done_issues}/{hovered.s.total_issues} задач выполнено
@@ -196,8 +187,8 @@ export function ForecastTrendChart({ snapshots, onDeleted, onPinToggled }: Props
 
       {/* X-axis labels */}
       <div className="flex justify-between mt-1 px-1">
-        <span className="text-xs text-gray-400">{fmtDate(withDate[0].captured_date)}</span>
-        <span className="text-xs text-gray-400">{fmtDate(withDate[withDate.length - 1].captured_date)}</span>
+        <span className="text-xs text-gray-400">{fmtDateShort(withDate[0].captured_date)}</span>
+        <span className="text-xs text-gray-400">{fmtDateShort(withDate[withDate.length - 1].captured_date)}</span>
       </div>
     </div>
   );

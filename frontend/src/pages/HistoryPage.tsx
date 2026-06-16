@@ -11,6 +11,7 @@ import {
 } from "../api/client";
 import { extractError } from "../lib/api-error";
 import { ClosedSprintView } from "../components/ClosedSprintView";
+import { useToast } from "../components/Toast";
 import { GanttChart } from "../components/GanttChart";
 import { OwnerStats } from "../components/OwnerStats";
 import { SprintTable } from "../components/SprintTable";
@@ -120,9 +121,10 @@ interface RowProps {
 }
 
 function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
+  const toast = useToast();
   const [detail, setDetail] = useState<SprintOut | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"approve" | "delete" | "download" | "close" | null>(null);
   const [showStandup, setShowStandup] = useState(false);
 
@@ -139,10 +141,10 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   useEffect(() => {
     if (!expanded || detail) return;
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     getSprint(summary.id)
       .then(setDetail)
-      .catch((e) => setError(extractError(e)))
+      .catch((e) => setLoadError(extractError(e)))
       .finally(() => setLoading(false));
   }, [expanded, summary.id, detail]);
 
@@ -164,13 +166,13 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
     );
     if (!ok) return;
     setBusy("approve");
-    setError(null);
     try {
       const updated = await approveSprint(detail.id);
       setDetail(updated);
       onChanged();
+      toast.success(`Sprint ${updated.sprint_num} утверждён`);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setBusy(null);
     }
@@ -185,13 +187,13 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
     );
     if (!ok) return;
     setBusy("close");
-    setError(null);
     try {
       const updated = await closeSprint(detail.id);
       setDetail(updated);
       onChanged();
+      toast.success(`Sprint ${updated.sprint_num} закрыт`);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setBusy(null);
     }
@@ -202,12 +204,12 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
     const ok = window.confirm(`Удалить Sprint ${detail.sprint_num}?`);
     if (!ok) return;
     setBusy("delete");
-    setError(null);
     try {
       await deleteSprint(detail.id);
+      toast.success(`Sprint ${detail.sprint_num} удалён`);
       onChanged();
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
       setBusy(null);
     }
   };
@@ -215,7 +217,6 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   const handleDownload = async () => {
     if (!detail) return;
     setBusy("download");
-    setError(null);
     try {
       const payload: Parameters<typeof downloadSprintXlsx>[0] = {
         allocated: detail.tasks,
@@ -232,7 +233,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
       }
       await downloadSprintXlsx(payload);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setBusy(null);
     }
@@ -241,13 +242,12 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   const handleLoadGantt = async () => {
     if (!detail) return;
     setGanttLoading(true);
-    setError(null);
     try {
       const items = await fetchGantt(detail.id, ganttDate, hoursPerDay);
       setGanttItems(items);
       setShowGantt(true);
     } catch (e) {
-      setError(extractError(e));
+      toast.error(extractError(e));
     } finally {
       setGanttLoading(false);
     }
@@ -283,9 +283,9 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
           <td colSpan={7} className="p-0">
             <div className="bg-gray-50 p-4 border-t">
               {loading && <div className="text-gray-500">Загрузка…</div>}
-              {error && (
+              {loadError && (
                 <div className="bg-red-50 border border-red-300 text-red-800 rounded p-3 mb-3">
-                  {error}
+                  {loadError}
                 </div>
               )}
               {detail && (

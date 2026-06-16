@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { checkJira, getMe, getToken, setToken } from "./api/client";
 import { extractError } from "./lib/api-error";
 import { ConfigSwitcher } from "./components/ConfigSwitcher";
@@ -19,9 +19,44 @@ type LeadPage = "sprint" | "history" | "forecast" | "settings";
 type AdminPageKind = "admin";
 type Page = LeadPage | AdminPageKind;
 
+const PAGES: readonly Page[] = ["sprint", "history", "forecast", "settings", "admin"];
+
+/** Распарсить текущий hash в страницу. Неизвестное → "sprint". */
+function hashToPage(hash: string): Page {
+  const seg = hash.replace(/^#\/?/, "").split("/")[0];
+  return (PAGES as readonly string[]).includes(seg) ? (seg as Page) : "sprint";
+}
+
+/**
+ * Страница, синхронизированная с `location.hash` (`#/forecast` и т.п.).
+ * Даёт работающие F5, кнопки назад/вперёд и ссылки на конкретный раздел.
+ */
+function useHashPage(): [Page, (p: Page) => void] {
+  const [page, setPageState] = useState<Page>(() => hashToPage(window.location.hash));
+
+  useEffect(() => {
+    const onHash = () => setPageState(hashToPage(window.location.hash));
+    window.addEventListener("hashchange", onHash);
+    // Если зашли без hash — проставим, чтобы URL отражал раздел.
+    if (!window.location.hash) window.location.hash = "#/sprint";
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const setPage = useCallback((p: Page) => {
+    const target = `#/${p}`;
+    if (window.location.hash !== target) {
+      window.location.hash = target;  // вызовет hashchange → обновит состояние
+    } else {
+      setPageState(p);
+    }
+  }, []);
+
+  return [page, setPage];
+}
+
 function App() {
   const [user, setUser] = useState<UserOut | null | undefined>(null);
-  const [page, setPage] = useState<Page>("sprint");
+  const [page, setPage] = useHashPage();
   const [jiraStatus, setJiraStatus] = useState<JiraStatus>({ kind: "checking" });
 
   // Эпоха активного конфига. Меняется при переключении/создании/удалении —
@@ -62,6 +97,8 @@ function App() {
   }
 
   const isAdmin = user.role === "admin";
+  // Не-админ по прямой ссылке на #/admin — мягко возвращаем на «Спринт».
+  const activePage: Page = page === "admin" && !isAdmin ? "sprint" : page;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -70,20 +107,20 @@ function App() {
           <div className="flex items-center gap-6">
             <h1 className="text-xl font-bold text-gray-800">Sprint Builder</h1>
             <nav className="flex gap-1">
-              <NavTab active={page === "sprint"} onClick={() => setPage("sprint")}>
+              <NavTab active={activePage === "sprint"} onClick={() => setPage("sprint")}>
                 Спринт
               </NavTab>
-              <NavTab active={page === "history"} onClick={() => setPage("history")}>
+              <NavTab active={activePage === "history"} onClick={() => setPage("history")}>
                 История
               </NavTab>
-              <NavTab active={page === "forecast"} onClick={() => setPage("forecast")}>
+              <NavTab active={activePage === "forecast"} onClick={() => setPage("forecast")}>
                 Прогноз реализации
               </NavTab>
-              <NavTab active={page === "settings"} onClick={() => setPage("settings")}>
+              <NavTab active={activePage === "settings"} onClick={() => setPage("settings")}>
                 Настройки
               </NavTab>
               {isAdmin && (
-                <NavTab active={page === "admin"} onClick={() => setPage("admin")}>
+                <NavTab active={activePage === "admin"} onClick={() => setPage("admin")}>
                   Админка
                 </NavTab>
               )}
@@ -97,13 +134,13 @@ function App() {
         </div>
       </header>
 
-      {page === "sprint" && (
+      {activePage === "sprint" && (
         <SprintPage key={`sprint-${configEpoch}`} jiraReady={jiraStatus.kind === "ok"} />
       )}
-      {page === "history" && <HistoryPage key={`history-${configEpoch}`} />}
-      {page === "forecast" && <EpicForecastPage key={`forecast-${configEpoch}`} isAdmin={isAdmin} />}
-      {page === "settings" && <SettingsPage key={`settings-${configEpoch}`} />}
-      {isAdmin && page === "admin" && <AdminPage />}
+      {activePage === "history" && <HistoryPage key={`history-${configEpoch}`} />}
+      {activePage === "forecast" && <EpicForecastPage key={`forecast-${configEpoch}`} isAdmin={isAdmin} />}
+      {activePage === "settings" && <SettingsPage key={`settings-${configEpoch}`} />}
+      {isAdmin && activePage === "admin" && <AdminPage />}
     </div>
   );
 }
