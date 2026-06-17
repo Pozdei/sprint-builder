@@ -431,3 +431,98 @@ def build_candidates_xlsx(candidates: list[dict],
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def build_epic_forecast_xlsx(gantt_items: list[dict], epic_key: str = "") -> bytes:
+    """Выгрузка прогноза эпика: 3 листа — по фазам, по задачам, по исполнителям."""
+    wb = Workbook()
+
+    # ---- Лист 1: По фазам ----
+    ws1 = wb.active
+    ws1.title = "По фазам"
+    h1 = ["Задача", "Название", "Фаза", "Исполнитель", "Часы", "Стоимость, ₽"]
+    for col, h in enumerate(h1, 1):
+        _style_header(ws1.cell(row=1, column=col, value=h))
+    ws1.freeze_panes = "A2"
+
+    items_sorted = sorted(gantt_items, key=lambda x: (x.get("bucket", ""), x.get("key", "")))
+    for row, it in enumerate(items_sorted, 2):
+        cell_key = ws1.cell(row=row, column=1, value=it.get("key", ""))
+        if it.get("url"):
+            cell_key.hyperlink = it["url"]
+            cell_key.font = Font(color="0563C1", underline="single")
+        ws1.cell(row=row, column=2, value=it.get("summary", ""))
+        ws1.cell(row=row, column=3, value=it.get("bucket", ""))
+        ws1.cell(row=row, column=4, value=it.get("owner_file_name", ""))
+        ws1.cell(row=row, column=5, value=it.get("hours", 0))
+        cost = it.get("phase_cost", 0)
+        ws1.cell(row=row, column=6, value=cost if cost else "")
+
+    for idx, w in {1: 12, 2: 50, 3: 16, 4: 18, 5: 8, 6: 16}.items():
+        ws1.column_dimensions[get_column_letter(idx)].width = w
+
+    # ---- Лист 2: По задачам ----
+    ws2 = wb.create_sheet("По задачам")
+    h2 = ["Задача", "Название", "Исполнители", "Часов", "Стоимость, ₽"]
+    for col, h in enumerate(h2, 1):
+        _style_header(ws2.cell(row=1, column=col, value=h))
+    ws2.freeze_panes = "A2"
+
+    by_task: dict[str, dict] = {}
+    for it in gantt_items:
+        k = it.get("key", "")
+        if k not in by_task:
+            by_task[k] = {
+                "summary": it.get("summary", ""),
+                "url": it.get("url", ""),
+                "executors": set(),
+                "hours": 0.0,
+                "cost": 0.0,
+            }
+        by_task[k]["executors"].add(it.get("owner_file_name", ""))
+        by_task[k]["hours"] += it.get("hours", 0)
+        by_task[k]["cost"] += it.get("phase_cost", 0)
+
+    for row, (k, d) in enumerate(sorted(by_task.items()), 2):
+        cell_key = ws2.cell(row=row, column=1, value=k)
+        if d["url"]:
+            cell_key.hyperlink = d["url"]
+            cell_key.font = Font(color="0563C1", underline="single")
+        ws2.cell(row=row, column=2, value=d["summary"])
+        ws2.cell(row=row, column=3, value=", ".join(sorted(d["executors"])))
+        ws2.cell(row=row, column=4, value=round(d["hours"], 1))
+        ws2.cell(row=row, column=5, value=round(d["cost"], 0) if d["cost"] else "")
+
+    for idx, w in {1: 12, 2: 50, 3: 35, 4: 10, 5: 16}.items():
+        ws2.column_dimensions[get_column_letter(idx)].width = w
+
+    # ---- Лист 3: По исполнителям ----
+    ws3 = wb.create_sheet("По исполнителям")
+    h3 = ["Исполнитель", "Задач", "Часов", "Стоимость, ₽"]
+    for col, h in enumerate(h3, 1):
+        _style_header(ws3.cell(row=1, column=col, value=h))
+    ws3.freeze_panes = "A2"
+
+    by_person: dict[str, dict] = {}
+    for it in gantt_items:
+        name = it.get("owner_file_name", "")
+        if name not in by_person:
+            by_person[name] = {"tasks": set(), "hours": 0.0, "cost": 0.0}
+        by_person[name]["tasks"].add(it.get("key", ""))
+        by_person[name]["hours"] += it.get("hours", 0)
+        by_person[name]["cost"] += it.get("phase_cost", 0)
+
+    for row, (name, d) in enumerate(
+        sorted(by_person.items(), key=lambda x: -x[1]["cost"]), 2
+    ):
+        ws3.cell(row=row, column=1, value=name)
+        ws3.cell(row=row, column=2, value=len(d["tasks"]))
+        ws3.cell(row=row, column=3, value=round(d["hours"], 1))
+        ws3.cell(row=row, column=4, value=round(d["cost"], 0) if d["cost"] else "")
+
+    for idx, w in {1: 22, 2: 10, 3: 10, 4: 16}.items():
+        ws3.column_dimensions[get_column_letter(idx)].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

@@ -232,7 +232,7 @@ def collect_epic_remaining_work(
 
         status_name = f["status"]["name"]
 
-        if status_name in terminal_set:
+        if status_name in terminal_set or _is_cancelled(status_name):
             counters["skipped_done"] += 1
             continue
 
@@ -282,6 +282,24 @@ def collect_epic_remaining_work(
             )
 
     return list(by_key_role.values()), counters
+
+
+_CANCELLED_STATUSES: frozenset[str] = frozenset({
+    "отменено", "cancelled", "rejected", "won't do", "wont do", "отклонено",
+})
+
+
+def _is_cancelled(status_name: str) -> bool:
+    return status_name.lower() in _CANCELLED_STATUSES
+
+
+def _annotate_phase_costs(gantt_items: list[dict], cfg: SprintConfig) -> None:
+    """Добавляет phase_cost к каждому элементу Ганта на основе оклада исполнителя."""
+    for item in gantt_items:
+        oid = item.get("owner_id") or ""
+        member = cfg.team.get(oid) or {}
+        salary = member.get("salary") or 0
+        item["phase_cost"] = round(item["hours"] * salary / 160.0, 0) if salary > 0 else 0.0
 
 
 def _compute_cost(items: list[dict], cfg: SprintConfig) -> tuple[float, dict[str, dict]]:
@@ -343,7 +361,10 @@ def _build_with_history(
         issuetype = (f.get("issuetype") or {}).get("name", "")
         if issuetype.lower() in ("эпик", "epic"):
             continue
-        if f["status"]["name"] in terminal_set:
+        status_name = f["status"]["name"]
+        if _is_cancelled(status_name):
+            continue
+        if status_name in terminal_set:
             done_count += 1
         past_phases.extend(build_past_phases(issue, cfg, sp_field, base_url, now_dt))
 
@@ -389,6 +410,7 @@ def _build_with_history(
 
     gantt_items = past_items + forecast_items
     gantt_items.sort(key=lambda x: (x["start_hours"], x.get("owner_file_name", "")))
+    _annotate_phase_costs(gantt_items, cfg)
 
     # 6. Дата завершения = максимальный end среди будущих (иначе — конец прошлого)
     completion_date: str | None = None
@@ -495,6 +517,7 @@ def build_epic_forecast(
         dependencies=dependencies or [],
         vacations=vacations or [],
     )
+    _annotate_phase_costs(gantt_items, cfg)
 
     # Предиктная дата = максимальный end из всех элементов
     completion_date: str | None = None

@@ -41,6 +41,7 @@ class GanttItem(BaseModel):
     hours_is_default: bool = False
     is_historical: bool = False   # True — реконструированная фаза из истории Jira
     phase_status: str | None = None  # статус Jira, в котором задача была в эту фазу
+    phase_cost: float = 0.0  # стоимость этапа по окладу исполнителя
 
 
 class StandupTask(BaseModel):

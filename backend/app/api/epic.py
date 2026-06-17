@@ -1,8 +1,10 @@
 """Прогноз реализации эпика."""
 
+import urllib.parse
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,7 @@ from app.jira.client import JiraError, client
 from app.schemas.gantt import GanttItem, TaskDependency
 from app.sprint.config import from_dict
 from app.sprint.epic_forecast import build_epic_forecast
+from app.sprint.excel import build_epic_forecast_xlsx
 from app.sprint.logic import find_story_points_field
 
 router = APIRouter(prefix="/epic", tags=["epic"])
@@ -379,4 +382,20 @@ def epic_forecast(
         warnings=result["warnings"],
         gantt_start=result.get("gantt_start"),
         today_hours=result.get("today_hours"),
+    )
+
+
+class EpicForecastExportPayload(BaseModel):
+    epic_key: str
+    gantt_items: list[dict]
+
+
+@router.post("/forecast/export")
+def export_epic_forecast_xlsx(body: EpicForecastExportPayload):
+    xlsx = build_epic_forecast_xlsx(body.gantt_items, body.epic_key)
+    safe_name = urllib.parse.quote(f"forecast_{body.epic_key}.xlsx")
+    return Response(
+        content=xlsx,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_name}"},
     )

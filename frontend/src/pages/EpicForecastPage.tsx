@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  addEpicDependency, fetchEpicDependencies,
+  addEpicDependency, downloadEpicForecastXlsx, fetchEpicDependencies,
   fetchEpicForecast, fetchEpicSnapshots, removeEpicDependency,
 } from "../api/client";
 import { DependencyPanel } from "../components/DependencyPanel";
@@ -11,10 +11,9 @@ import { TaskPipelineModal } from "../components/TaskPipelineModal";
 import { useToast } from "../components/Toast";
 import { VacationPanel } from "../components/VacationPanel";
 import { extractError } from "../lib/api-error";
-import { triggerDownload } from "../lib/download";
 import { daysUntil, fmtDateLong, fmtNum, fmtRub, todayISO } from "../lib/format";
 import { loadRecentEpics, pushRecentEpic, removeRecentEpic } from "../lib/recent-epics";
-import type { CostBreakdownItem, EpicForecastResponse, EpicForecastSnapshot, TaskDependency } from "../types/api";
+import type { CostBreakdownItem, EpicForecastResponse, EpicForecastSnapshot, GanttItem, TaskDependency } from "../types/api";
 
 export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const toast = useToast();
@@ -416,8 +415,10 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
 
           {showCostBreakdown && result && (
             <CostBreakdownModal
+              ganttItems={result.gantt_items}
               breakdown={result.cost_breakdown ?? []}
               totalCost={result.stats.total_cost}
+              epicKey={result.epic_key}
               onClose={() => setShowCostBreakdown(false)}
             />
           )}
@@ -484,90 +485,210 @@ function ForecastSkeleton() {
   );
 }
 
-function exportCostBreakdownCsv(breakdown: CostBreakdownItem[], totalCost: number) {
-  const sep = ";";
-  const rows = [
-    ["Исполнитель", "Часов", "Оклад, ₽", "Стоимость, ₽"],
-    ...breakdown.map((r) => [
-      r.name,
-      String(r.hours),
-      r.salary > 0 ? String(r.salary) : "",
-      r.cost > 0 ? String(Math.round(r.cost)) : "",
-    ]),
-    ["Итого", "", "", String(Math.round(totalCost))],
-  ];
-  const csv = "﻿" + rows.map((r) => r.join(sep)).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  triggerDownload(blob, "cost_breakdown.csv");
-}
+type CostTab = "phases" | "tasks" | "people";
 
 function CostBreakdownModal({
-  breakdown, totalCost, onClose,
+  ganttItems, breakdown, totalCost, epicKey, onClose,
 }: {
+  ganttItems: GanttItem[];
   breakdown: CostBreakdownItem[];
   totalCost: number;
+  epicKey: string;
   onClose: () => void;
 }) {
+  const [tab, setTab] = useState<CostTab>("phases");
+  const [xlsxLoading, setXlsxLoading] = useState(false);
+
+  const handleDownloadXlsx = async () => {
+    setXlsxLoading(true);
+    try {
+      await downloadEpicForecastXlsx(epicKey, ganttItems);
+    } finally {
+      setXlsxLoading(false);
+    }
+  };
+
+  // Данные для таба "По задачам"
+  const byTask = useMemo(() => {
+    const map = new Map<string, { summary: string; url: string; executors: Set<string>; hours: number; cost: number }>();
+    for (const it of ganttItems) {
+      if (!map.has(it.key)) {
+        map.set(it.key, { summary: it.summary, url: it.url, executors: new Set(), hours: 0, cost: 0 });
+      }
+      const d = map.get(it.key)!;
+      d.executors.add(it.owner_file_name);
+      d.hours += it.hours;
+      d.cost += it.phase_cost ?? 0;
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [ganttItems]);
+
+  const TABS: { key: CostTab; label: string }[] = [
+    { key: "phases",  label: "По фазам" },
+    { key: "tasks",   label: "По задачам" },
+    { key: "people",  label: "По исполнителям" },
+  ];
+
   return (
     <div
       className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-xl border w-full max-w-lg p-6"
+        className="bg-white rounded-xl shadow-xl border w-full max-w-3xl p-6 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-800">Подробный расчёт стоимости</h3>
+        {/* Шапка */}
+        <div className="flex items-center justify-between mb-4 flex-shrink-0">
+          <h3 className="font-semibold text-gray-800">Расчёт стоимости</h3>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => exportCostBreakdownCsv(breakdown, totalCost)}
-              className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 rounded px-2 py-1"
+              onClick={handleDownloadXlsx}
+              disabled={xlsxLoading}
+              className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 rounded px-2 py-1 disabled:opacity-50"
             >
-              Скачать xlsx
+              {xlsxLoading ? "Формирую…" : "Скачать xlsx"}
             </button>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
           </div>
         </div>
 
-        {breakdown.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-4">Оклады не настроены</p>
-        ) : (
-          <table className="w-full text-sm mb-4">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="text-left px-3 py-1.5">Исполнитель</th>
-                <th className="text-right px-3 py-1.5">Часов</th>
-                <th className="text-right px-3 py-1.5">Оклад, ₽</th>
-                <th className="text-right px-3 py-1.5">Стоимость, ₽</th>
-              </tr>
-            </thead>
-            <tbody>
-              {breakdown.map((row) => (
-                <tr key={row.name} className="border-b">
-                  <td className="px-3 py-1.5">{row.name}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{row.hours}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">
-                    {row.salary > 0 ? fmtNum(row.salary) : "—"}
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums font-medium">
-                    {row.cost > 0 ? fmtNum(row.cost) : "—"}
+        {/* Табы */}
+        <div className="flex gap-1 mb-4 flex-shrink-0 border-b">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition -mb-px ${
+                tab === t.key
+                  ? "border-indigo-500 text-indigo-700"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Контент */}
+        <div className="overflow-auto flex-1 min-h-0">
+          {tab === "phases" && (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b sticky top-0">
+                <tr>
+                  <th className="text-left px-3 py-1.5">Задача</th>
+                  <th className="text-left px-3 py-1.5">Фаза</th>
+                  <th className="text-left px-3 py-1.5">Исполнитель</th>
+                  <th className="text-right px-3 py-1.5">Часов</th>
+                  <th className="text-right px-3 py-1.5">Стоимость, ₽</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...ganttItems]
+                  .sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : a.key.localeCompare(b.key)))
+                  .map((it, i) => (
+                    <tr key={i} className="border-b hover:bg-gray-50">
+                      <td className="px-3 py-1.5">
+                        <a href={it.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-mono text-xs">
+                          {it.key}
+                        </a>
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-600">{it.bucket}</td>
+                      <td className="px-3 py-1.5">{it.owner_file_name}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{it.hours}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums font-medium">
+                        {(it.phase_cost ?? 0) > 0 ? fmtNum(it.phase_cost!) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+              <tfoot className="border-t-2 border-gray-300 bg-gray-50 sticky bottom-0">
+                <tr>
+                  <td colSpan={4} className="px-3 py-1.5 font-semibold text-right">Итого</td>
+                  <td className="px-3 py-1.5 text-right font-bold text-blue-700 tabular-nums">
+                    {fmtRub(totalCost)}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot className="border-t-2 border-gray-300 bg-gray-50">
-              <tr>
-                <td colSpan={3} className="px-3 py-1.5 font-semibold text-right">Итого</td>
-                <td className="px-3 py-1.5 text-right font-bold text-blue-700 tabular-nums">
-                  {fmtRub(totalCost)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        )}
+              </tfoot>
+            </table>
+          )}
 
-        <p className="text-xs text-gray-400">
+          {tab === "tasks" && (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b sticky top-0">
+                <tr>
+                  <th className="text-left px-3 py-1.5">Задача</th>
+                  <th className="text-left px-3 py-1.5">Название</th>
+                  <th className="text-left px-3 py-1.5">Исполнители</th>
+                  <th className="text-right px-3 py-1.5">Часов</th>
+                  <th className="text-right px-3 py-1.5">Стоимость, ₽</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byTask.map(([key, d]) => (
+                  <tr key={key} className="border-b hover:bg-gray-50">
+                    <td className="px-3 py-1.5">
+                      <a href={d.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-mono text-xs">
+                        {key}
+                      </a>
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-700 max-w-xs truncate" title={d.summary}>{d.summary}</td>
+                    <td className="px-3 py-1.5 text-gray-500 text-xs">{[...d.executors].sort().join(", ")}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(d.hours * 10) / 10}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums font-medium">
+                      {d.cost > 0 ? fmtNum(Math.round(d.cost)) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 border-gray-300 bg-gray-50 sticky bottom-0">
+                <tr>
+                  <td colSpan={4} className="px-3 py-1.5 font-semibold text-right">Итого</td>
+                  <td className="px-3 py-1.5 text-right font-bold text-blue-700 tabular-nums">
+                    {fmtRub(totalCost)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+
+          {tab === "people" && (
+            breakdown.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-4">Оклады не настроены</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b sticky top-0">
+                  <tr>
+                    <th className="text-left px-3 py-1.5">Исполнитель</th>
+                    <th className="text-right px-3 py-1.5">Часов</th>
+                    <th className="text-right px-3 py-1.5">Стоимость, ₽</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {breakdown.map((row) => (
+                    <tr key={row.name} className="border-b hover:bg-gray-50">
+                      <td className="px-3 py-1.5">{row.name}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{row.hours}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums font-medium">
+                        {row.cost > 0 ? fmtNum(row.cost) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="border-t-2 border-gray-300 bg-gray-50 sticky bottom-0">
+                  <tr>
+                    <td colSpan={2} className="px-3 py-1.5 font-semibold text-right">Итого</td>
+                    <td className="px-3 py-1.5 text-right font-bold text-blue-700 tabular-nums">
+                      {fmtRub(totalCost)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            )
+          )}
+        </div>
+
+        <p className="text-xs text-gray-400 mt-3 flex-shrink-0">
           Расчёт: оклад ÷ 160 ч/мес × плановые часы в прогнозе
         </p>
       </div>

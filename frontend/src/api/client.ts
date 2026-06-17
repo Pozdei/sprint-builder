@@ -280,3 +280,7 @@ export async function downloadSprintXlsx(payload: SprintExportPayload) {
 export async function downloadCandidatesXlsx(payload: CandidatesExportPayload) {
   await downloadBlob("/api/candidates/export", payload, "candidates.xlsx");
 }
+
+export async function downloadEpicForecastXlsx(epicKey: string, ganttItems: unknown[]) {
+  await downloadBlob("/api/epic/forecast/export", { epic_key: epicKey, gantt_items: ganttItems }, `forecast_${epicKey}.xlsx`);
+}

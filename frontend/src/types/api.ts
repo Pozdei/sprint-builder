@@ -159,6 +159,7 @@ export interface GanttItem {
   hours_is_default?: boolean;
   is_historical?: boolean;
   phase_status?: string | null;
+  phase_cost?: number;
 }
 
 export interface TaskDependency {
