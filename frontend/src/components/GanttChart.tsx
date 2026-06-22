@@ -14,6 +14,14 @@ interface Props {
   onTaskClick?: (key: string) => void;
   /** Рабочие часы от начала шкалы до «сегодня» — рисует линию-разделитель факт/прогноз. */
   todayHours?: number | null;
+  /** Верхняя сводная полоса по User Story (суммарная длительность каждой стори). */
+  groupByStory?: boolean;
+  /** Сводная полоса по эпикам — рисуется выше полосы стори. */
+  groupByEpic?: boolean;
+  /** Консолидированная полоса — по непосредственному родителю задачи. */
+  groupByParent?: boolean;
+  /** Активный спринт — рисуем вертикальные границы спринтов и их номера. */
+  sprintInfo?: { sprint_num: number | null; start_date: string; end_date: string } | null;
 }
 
 const BUCKET_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -26,6 +34,9 @@ const BUCKET_COLORS: Record<string, { bg: string; text: string; border: string }
   "Руководство":  { bg: "#ede9fe", text: "#4c1d95", border: "#7c3aed" },
   "Отсутствие":   { bg: "#f3f4f6", text: "#374151", border: "#9ca3af" },
   "Отпуск":       { bg: "#fff7ed", text: "#9a3412", border: "#f97316" },
+  "Story":        { bg: "#e0e7ff", text: "#3730a3", border: "#6366f1" },
+  "Epic":         { bg: "#ddd6fe", text: "#5b21b6", border: "#7c3aed" },
+  "Консолид.":    { bg: "#ccfbf1", text: "#115e59", border: "#14b8a6" },
 };
 const DEFAULT_COLOR = { bg: "#f3f4f6", text: "#374151", border: "#9ca3af" };
 
@@ -33,9 +44,26 @@ const ROW_H    = 36;   // px высота строки
 const ROW_GAP  = 4;    // px между строками
 const LABEL_W  = 160;  // px ширина колонки с именем
 const HEADER_H = 48;   // px высота шапки дат
+const BAND_GAP = 16;   // px разделитель между секциями (полосы сводов / детальная сетка)
 
 function bucketColor(bucket: string) {
   return BUCKET_COLORS[bucket] ?? DEFAULT_COLOR;
+}
+
+/** Человекочитаемая роль по имени роли из конфига (analyst/Tester/developer_lead/…). */
+function roleLabel(role: string): string {
+  const r = (role || "").toLowerCase();
+  if (!r) return "";
+  if (r.includes("lead") || r.includes("лид")) {
+    if (r.includes("design") || r.includes("диз")) return "Лид дизайна";
+    if (r.includes("dev") || r.includes("разраб")) return "Лид разработки";
+    return "Лид";
+  }
+  if (r.startsWith("test") || r.includes("qa") || r.includes("тест")) return "Тестировщик";
+  if (r.startsWith("analyst") || r.includes("анал")) return "Аналитик";
+  if (r.startsWith("design") || r.includes("диз")) return "Дизайнер";
+  if (r.startsWith("dev") || r.includes("разраб")) return "Разработчик";
+  return role;
 }
 
 function fmtDate(d: Date): string {
@@ -50,12 +78,76 @@ interface Tooltip {
   item: GanttItem;
 }
 
-export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], onTaskClick, todayHours }: Props) {
+interface Band {
+  kind: string;            // bucket-цвет (Epic / Story)
+  title: string;           // подпись секции
+  items: GanttItem[];      // агрегированные «колбасы»
+  y0: number;              // верхняя Y секции в SVG
+}
+
+/** Свернуть бары задач/фаз в одну суммарную «колбасу» на группу (по стори/эпику). */
+function aggregateBars(
+  items: GanttItem[],
+  keyOf: (i: GanttItem) => string | null | undefined,
+  summaryOf: (i: GanttItem) => string | null | undefined,
+  bucket: string,
+): GanttItem[] {
+  const groups: Record<string, GanttItem[]> = {};
+  const order: string[] = [];
+  for (const it of items) {
+    if (it.is_pseudo) continue;
+    const k = keyOf(it);
+    if (!k) continue;   // нет предка нужного типа — в свод не попадает
+    if (!groups[k]) { groups[k] = []; order.push(k); }
+    groups[k].push(it);
+  }
+  return order.map((k) => {
+    const g = groups[k];
+    const startItem = g.reduce((a, b) => (a.start_hours < b.start_hours ? a : b));
+    const endItem = g.reduce((a, b) => (a.end_hours > b.end_hours ? a : b));
+    const summary = g.map(summaryOf).find(Boolean) || g[0].summary || k;
+    // URL самой группы (стори/эпика), а не дочерней задачи: подменяем ключ в /browse/<key>
+    const sampleUrl = g.find((i) => i.url)?.url || "";
+    const url = sampleUrl ? sampleUrl.replace(/\/browse\/[^/]+$/, `/browse/${k}`) : "";
+    return {
+      key: k,
+      summary,
+      bucket,
+      role: "",
+      owner_id: k,
+      owner_file_name: `${k} · ${summary}`,
+      hours: g.reduce((s, i) => s + (i.hours || 0), 0),
+      is_pseudo: false,
+      url,
+      direction: null,
+      start: startItem.start,
+      end: endItem.end,
+      start_hours: startItem.start_hours,
+      end_hours: endItem.end_hours,
+    } as GanttItem;
+  });
+}
+
+export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], onTaskClick, todayHours, groupByStory = false, groupByEpic = false, groupByParent = false, sprintInfo = null }: Props) {
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [hourPx, setHourPx] = useState(HOUR_PX_DEFAULT);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // Агрегаты для верхних полос
+  const epicItems = useMemo(
+    () => aggregateBars(items, (i) => i.epic_key, (i) => i.epic_summary, "Epic"),
+    [items],
+  );
+  const storyItems = useMemo(
+    () => aggregateBars(items, (i) => i.story_key, (i) => i.story_summary, "Story"),
+    [items],
+  );
+  const parentItems = useMemo(
+    () => aggregateBars(items, (i) => i.parent_key, (i) => i.parent_summary, "Консолид."),
+    [items],
+  );
 
   const handleBarClick = (item: GanttItem) => {
     if (item.is_pseudo) return;
@@ -69,7 +161,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
       // Первый клик — ждём второго
       clickTimerRef.current = setTimeout(() => {
         clickTimerRef.current = null;
-        // Одиночный клик → выделяем все этапы задачи
+        // Одиночный клик → выделяем все этапы задачи/группы
         setSelectedKey((prev) => (prev === item.key ? null : item.key));
         if (onTaskClick) onTaskClick(item.key);
       }, 260);
@@ -78,7 +170,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
 
   const dayPx = hoursPerDay * hourPx;
 
-  // Группировка по исполнителю
+  // Группировка по исполнителю (нижний грид)
   const owners = useMemo(() => {
     const order: string[] = [];
     const seen = new Set<string>();
@@ -99,6 +191,44 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     return m;
   }, [items]);
 
+  // Роль исполнителя — наиболее частая роль среди его задач
+  const ownerRole = useMemo(() => {
+    const counts: Record<string, Record<string, number>> = {};
+    for (const it of items) {
+      (counts[it.owner_file_name] ??= {});
+      counts[it.owner_file_name][it.role] = (counts[it.owner_file_name][it.role] ?? 0) + 1;
+    }
+    const m: Record<string, string> = {};
+    for (const [name, c] of Object.entries(counts)) {
+      const top = Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+      m[name] = roleLabel(top);
+    }
+    return m;
+  }, [items]);
+
+  // Полосы сводов (Epic выше, Story ниже) + раскладка по Y
+  const bands: Band[] = useMemo(() => {
+    const arr: Band[] = [];
+    let top = HEADER_H;
+    if (groupByEpic && epicItems.length) {
+      arr.push({ kind: "Epic", title: "Epic", items: epicItems, y0: top });
+      top += epicItems.length * (ROW_H + ROW_GAP) + BAND_GAP;
+    }
+    if (groupByStory && storyItems.length) {
+      arr.push({ kind: "Story", title: "User Story", items: storyItems, y0: top });
+      top += storyItems.length * (ROW_H + ROW_GAP) + BAND_GAP;
+    }
+    if (groupByParent && parentItems.length) {
+      arr.push({ kind: "Консолид.", title: "Консолидировано", items: parentItems, y0: top });
+      top += parentItems.length * (ROW_H + ROW_GAP) + BAND_GAP;
+    }
+    return arr;
+  }, [groupByEpic, groupByStory, groupByParent, epicItems, storyItems, parentItems]);
+
+  const ownersTop = bands.length
+    ? bands[bands.length - 1].y0 + bands[bands.length - 1].items.length * (ROW_H + ROW_GAP) + BAND_GAP
+    : HEADER_H;
+
   // Максимальное время (для ширины графика)
   const maxHours = useMemo(
     () => Math.max(hoursPerDay, ...items.map((i) => i.end_hours)),
@@ -107,7 +237,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
 
   const totalDays = Math.ceil(maxHours / hoursPerDay);
   const chartW    = totalDays * dayPx;
-  const svgH      = HEADER_H + owners.length * (ROW_H + ROW_GAP);
+  const svgH      = ownersTop + owners.length * (ROW_H + ROW_GAP);
 
   // Даты для шапки
   const startD = new Date(startDate + "T00:00:00");
@@ -131,14 +261,47 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
   }, [startDate, totalDays, dayPx]);
 
   const hoursToX = (h: number) => h * hourPx;
-  const ownerY   = (idx: number) => HEADER_H + idx * (ROW_H + ROW_GAP);
+  const ownerY   = (idx: number) => ownersTop + idx * (ROW_H + ROW_GAP);
+  const bandRowY = (band: Band, idx: number) => band.y0 + idx * (ROW_H + ROW_GAP);
 
-  // Вычисляем координаты стрелок зависимостей
+  // Границы спринтов: вертикальные линии на старте каждого спринта + подпись номера.
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const sprintBoundaries = useMemo(() => {
+    if (!sprintInfo) return { lines: [] as { x: number; num: number | null }[], startNum: null as number | null };
+    const s = new Date(sprintInfo.start_date + "T00:00:00");
+    const e = new Date(sprintInfo.end_date + "T00:00:00");
+    const lenDays = Math.round((e.getTime() - s.getTime()) / 86_400_000);
+    if (!Number.isFinite(lenDays) || lenDays <= 0) return { lines: [], startNum: null };
+
+    const xByDate = new Map<string, number>();
+    let maxLabelTime = 0;
+    for (const l of dateLabels) {
+      const key = ymd(l.date);
+      if (!xByDate.has(key)) xByDate.set(key, l.x);
+      maxLabelTime = Math.max(maxLabelTime, l.date.getTime());
+    }
+    const chartStart = new Date(startDate + "T00:00:00");
+    const lines: { x: number; num: number | null }[] = [];
+    for (let k = 0; k < 200; k++) {
+      const d = new Date(s);
+      d.setDate(s.getDate() + k * lenDays);
+      if (d.getTime() > maxLabelTime) break;
+      if (d < chartStart) continue;
+      const x = xByDate.get(ymd(d));
+      if (x == null) continue;
+      lines.push({ x, num: sprintInfo.sprint_num != null ? sprintInfo.sprint_num + k : null });
+    }
+    // Номер спринта, в который попадает старт графика (для подписи слева)
+    const offset = Math.floor((chartStart.getTime() - s.getTime()) / (lenDays * 86_400_000));
+    const startNum = sprintInfo.sprint_num != null ? sprintInfo.sprint_num + Math.max(0, offset) : null;
+    return { lines, startNum };
+  }, [sprintInfo, dateLabels, startDate]);
+
+  // Вычисляем координаты стрелок зависимостей (нижний грид)
   const depArrows = useMemo(() => {
     return dependencies.flatMap((dep) => {
-      // Последний бар predecessor (максимальный end_hours)
       const fromItems = items.filter((i) => i.key === dep.from_key && !i.is_pseudo);
-      // Первый бар successor (минимальный start_hours)
       const toItems = items.filter((i) => i.key === dep.to_key && !i.is_pseudo);
       if (!fromItems.length || !toItems.length) return [];
 
@@ -162,7 +325,6 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     const svgEl = svgRef.current;
     if (!svgEl) return;
 
-    // Создаём новый SVG с добавленным столбцом имён
     const totalW = LABEL_W + chartW + 24;
     const ns = "http://www.w3.org/2000/svg";
     const wrapper = document.createElementNS(ns, "svg");
@@ -171,14 +333,12 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     wrapper.setAttribute("height", String(svgH));
     wrapper.setAttribute("viewBox", `0 0 ${totalW} ${svgH}`);
 
-    // Белый фон
     const bg = document.createElementNS(ns, "rect");
     bg.setAttribute("width", String(totalW));
     bg.setAttribute("height", String(svgH));
     bg.setAttribute("fill", "white");
     wrapper.appendChild(bg);
 
-    // Шапка "Исполнитель"
     const headerRect = document.createElementNS(ns, "rect");
     headerRect.setAttribute("x", "0");
     headerRect.setAttribute("y", "0");
@@ -194,10 +354,44 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     headerText.setAttribute("fill", "#6b7280");
     headerText.setAttribute("font-weight", "600");
     headerText.setAttribute("font-family", "system-ui, sans-serif");
-    headerText.textContent = "Исполнитель";
+    headerText.textContent = bands.length ? bands[0].title : "Исполнитель";
     wrapper.appendChild(headerText);
 
-    // Строки с именами
+    // Подписи сводных полос
+    for (const band of bands) {
+      const col = bucketColor(band.kind);
+      band.items.forEach((s, i) => {
+        const y = bandRowY(band, i);
+        const rowBg = document.createElementNS(ns, "rect");
+        rowBg.setAttribute("x", "0");
+        rowBg.setAttribute("y", String(y));
+        rowBg.setAttribute("width", String(LABEL_W));
+        rowBg.setAttribute("height", String(ROW_H));
+        rowBg.setAttribute("fill", i % 2 === 0 ? col.bg : "#ffffff");
+        wrapper.appendChild(rowBg);
+
+        const label = document.createElementNS(ns, "text");
+        label.setAttribute("x", "12");
+        label.setAttribute("y", String(y + ROW_H / 2 - 1));
+        label.setAttribute("font-size", "12");
+        label.setAttribute("fill", col.text);
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("font-family", "system-ui, sans-serif");
+        label.textContent = s.key;
+        wrapper.appendChild(label);
+
+        const sub = document.createElementNS(ns, "text");
+        sub.setAttribute("x", "12");
+        sub.setAttribute("y", String(y + ROW_H / 2 + 11));
+        sub.setAttribute("font-size", "9");
+        sub.setAttribute("fill", col.border);
+        sub.setAttribute("font-family", "system-ui, sans-serif");
+        sub.textContent = s.summary.length > 24 ? s.summary.slice(0, 23) + "…" : s.summary;
+        wrapper.appendChild(sub);
+      });
+    }
+
+    // Строки с именами исполнителей
     owners.forEach((name, i) => {
       const rowBg = document.createElementNS(ns, "rect");
       rowBg.setAttribute("x", "0");
@@ -207,18 +401,29 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
       rowBg.setAttribute("fill", i % 2 === 0 ? "#fafafa" : "#ffffff");
       wrapper.appendChild(rowBg);
 
+      const role = ownerRole[name];
       const label = document.createElementNS(ns, "text");
       label.setAttribute("x", "12");
-      label.setAttribute("y", String(ownerY(i) + ROW_H / 2 + 4));
+      label.setAttribute("y", String(ownerY(i) + ROW_H / 2 + (role ? -1 : 4)));
       label.setAttribute("font-size", "12");
       label.setAttribute("fill", "#374151");
       label.setAttribute("font-weight", "500");
       label.setAttribute("font-family", "system-ui, sans-serif");
       label.textContent = name.length > 20 ? name.slice(0, 19) + "…" : name;
       wrapper.appendChild(label);
+
+      if (role) {
+        const roleEl = document.createElementNS(ns, "text");
+        roleEl.setAttribute("x", "12");
+        roleEl.setAttribute("y", String(ownerY(i) + ROW_H / 2 + 11));
+        roleEl.setAttribute("font-size", "9");
+        roleEl.setAttribute("fill", "#9ca3af");
+        roleEl.setAttribute("font-family", "system-ui, sans-serif");
+        roleEl.textContent = role;
+        wrapper.appendChild(roleEl);
+      }
     });
 
-    // Разделитель
     const sep = document.createElementNS(ns, "line");
     sep.setAttribute("x1", String(LABEL_W));
     sep.setAttribute("y1", "0");
@@ -228,7 +433,6 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     sep.setAttribute("stroke-width", "1");
     wrapper.appendChild(sep);
 
-    // Основной SVG (смещён на LABEL_W)
     const g = document.createElementNS(ns, "g");
     g.setAttribute("transform", `translate(${LABEL_W}, 0)`);
     g.innerHTML = svgEl.innerHTML;
@@ -267,7 +471,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
         >↓ SVG</button>
       </div>
       <div style={{ display: "flex", minWidth: LABEL_W + chartW + 24 }}>
-        {/* Левая колонка: имена */}
+        {/* Левая колонка: имена / своды */}
         <div
           style={{ width: LABEL_W, minWidth: LABEL_W, flexShrink: 0 }}
           className="sticky left-0 bg-white z-10 border-r"
@@ -277,17 +481,56 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
             style={{ height: HEADER_H }}
             className="border-b flex items-end pb-1 px-3"
           >
-            <span className="text-xs font-semibold text-gray-500">Исполнитель</span>
+            <span className="text-xs font-semibold text-gray-500">
+              {bands.length ? bands[0].title : "Исполнитель"}
+            </span>
           </div>
-          {/* Строки */}
+          {/* Сводные полосы */}
+          {bands.map((band, bi) => {
+            const col = bucketColor(band.kind);
+            const nextTitle = bi + 1 < bands.length ? bands[bi + 1].title : "Исполнители";
+            return (
+              <div key={`band-${band.kind}`}>
+                {band.items.map((s) => (
+                  <div
+                    key={`${band.kind}-${s.key}`}
+                    style={{ height: ROW_H + ROW_GAP }}
+                    className="flex flex-col justify-center px-3 border-b"
+                    title={`${s.key} · ${s.summary}`}
+                  >
+                    <span
+                      className="text-sm font-semibold truncate leading-tight"
+                      style={{ color: col.text }}
+                    >{s.key}</span>
+                    <span
+                      className="text-[10px] truncate leading-tight"
+                      style={{ color: col.border }}
+                    >{s.summary}</span>
+                  </div>
+                ))}
+                <div
+                  style={{ height: BAND_GAP }}
+                  className="flex items-center px-3 border-b bg-gray-100"
+                >
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{nextTitle}</span>
+                </div>
+              </div>
+            );
+          })}
+          {/* Строки исполнителей */}
           {owners.map((name) => (
             <div
               key={name}
               style={{ height: ROW_H + ROW_GAP }}
-              className="flex items-center px-3 border-b text-sm font-medium text-gray-700 truncate"
-              title={name}
+              className="flex flex-col justify-center px-3 border-b"
+              title={ownerRole[name] ? `${name} · ${ownerRole[name]}` : name}
             >
-              {name}
+              <span className="text-sm font-medium text-gray-700 truncate leading-tight">{name}</span>
+              {ownerRole[name] && (
+                <span className="text-[10px] text-gray-400 truncate leading-tight">
+                  {ownerRole[name]}
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -306,7 +549,6 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
               .filter((l) => !l.isWeekend)
               .map((l, i) => (
                 <g key={i}>
-                  {/* Заливка выходных (следующий если сегодня пятница) */}
                   <line
                     x1={l.x}
                     y1={HEADER_H}
@@ -318,7 +560,31 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                 </g>
               ))}
 
-            {/* Горизонтальные полосы строк */}
+            {/* Фоны строк сводных полос */}
+            {bands.map((band) => {
+              const col = bucketColor(band.kind);
+              return band.items.map((_, rowI) => (
+                <rect
+                  key={`bandbg-${band.kind}-${rowI}`}
+                  x={0}
+                  y={bandRowY(band, rowI)}
+                  width={chartW + 24}
+                  height={ROW_H}
+                  fill={rowI % 2 === 0 ? col.bg : "#ffffff"}
+                  opacity={0.5}
+                />
+              ));
+            })}
+            {/* Разделитель перед нижним гридом */}
+            {bands.length > 0 && (
+              <line
+                x1={0} y1={ownersTop - BAND_GAP / 2}
+                x2={chartW + 24} y2={ownersTop - BAND_GAP / 2}
+                stroke="#cbd5e1" strokeWidth={1}
+              />
+            )}
+
+            {/* Горизонтальные полосы строк исполнителей */}
             {owners.map((_, rowI) => (
               <rect
                 key={rowI}
@@ -356,8 +622,27 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                 </g>
               ))}
 
-            {/* Линия «сейчас». В истор-режиме — на todayHours (разделитель факт/прогноз),
-                иначе — на левом крае (0h = старт расчёта). */}
+            {/* Границы спринтов */}
+            {sprintBoundaries.lines.map((ln, i) => (
+              <g key={`sprint-${i}`}>
+                <line
+                  x1={ln.x} y1={0} x2={ln.x} y2={svgH}
+                  stroke="#7c3aed" strokeWidth={1.5} strokeDasharray="2 3" opacity={0.55}
+                />
+                {ln.num != null && (
+                  <text x={ln.x + 3} y={HEADER_H - 2} fontSize={10} fill="#7c3aed" fontWeight="700">
+                    {`Спринт ${ln.num}`}
+                  </text>
+                )}
+              </g>
+            ))}
+            {sprintBoundaries.startNum != null && (
+              <text x={6} y={HEADER_H - 2} fontSize={10} fill="#a78bfa" fontWeight="700">
+                {`Спринт ${sprintBoundaries.startNum}`}
+              </text>
+            )}
+
+            {/* Линия «сейчас» */}
             {todayHours != null && todayHours > 0 ? (
               <g>
                 <line
@@ -398,7 +683,52 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
               );
             })}
 
-            {/* Задачи */}
+            {/* Бары сводных полос (Epic / User Story) */}
+            {bands.map((band) => {
+              const col = bucketColor(band.kind);
+              return band.items.map((item, idx) => {
+                const x = hoursToX(item.start_hours);
+                const w = Math.max(2, hoursToX(item.end_hours - item.start_hours));
+                const y = bandRowY(band, idx) + 4;
+                const h = ROW_H - 8;
+                const isSelected = selectedKey === item.key;
+                return (
+                  <g
+                    key={`band-bar-${band.kind}-${item.key}`}
+                    onMouseEnter={(e) => {
+                      const svgEl = e.currentTarget.closest("svg")!;
+                      const rect = svgEl.getBoundingClientRect();
+                      setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, item });
+                    }}
+                    onMouseLeave={() => setTooltip(null)}
+                    style={{ cursor: "pointer" }}
+                    onClick={(e) => { e.stopPropagation(); handleBarClick(item); }}
+                  >
+                    <rect
+                      x={x} y={y} width={w} height={h} rx={4}
+                      fill={col.bg}
+                      stroke={isSelected ? col.text : col.border}
+                      strokeWidth={isSelected ? 2.5 : 1.5}
+                    />
+                    {w > 40 && (() => {
+                      const full = `${item.key} · ${item.summary} · ${item.hours.toFixed(0)}ч`;
+                      const maxChars = Math.max(3, Math.floor((w - 12) / 5.7));
+                      const text = full.length > maxChars ? full.slice(0, maxChars - 1) + "…" : full;
+                      return (
+                        <text
+                          x={x + 6} y={y + h / 2 + 4}
+                          fontSize={10} fill={col.text} fontWeight="700"
+                        >
+                          {text}
+                        </text>
+                      );
+                    })()}
+                  </g>
+                );
+              });
+            })}
+
+            {/* Задачи (детальная сетка) */}
             {owners.map((name, ownerIdx) => {
               const ownerItems = byOwner[name] ?? [];
               return ownerItems.map((item) => {
@@ -408,7 +738,12 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                 const h = ROW_H - 8;
                 const col = bucketColor(item.bucket);
 
-                const isSelected   = selectedKey === item.key;
+                const isSelected   = selectedKey !== null && (
+                  selectedKey === item.key ||
+                  selectedKey === item.parent_key ||
+                  selectedKey === item.story_key ||
+                  selectedKey === item.epic_key
+                );
                 const isDimmed     = selectedKey !== null && !isSelected && !item.is_pseudo;
 
                 return (
@@ -424,7 +759,6 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                     onClick={(e) => { e.stopPropagation(); handleBarClick(item); }}
                     opacity={isDimmed ? 0.25 : 1}
                   >
-                    {/* Обводка выделенных этапов */}
                     {isSelected && (
                       <rect
                         x={x - 3} y={y - 3}
@@ -519,15 +853,22 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
 
       {/* Легенда */}
       <div className="flex flex-wrap gap-2 px-4 py-2 border-t bg-gray-50 text-xs">
-        {Object.entries(BUCKET_COLORS).map(([bucket, col]) => (
-          <span
-            key={bucket}
-            className="flex items-center gap-1 px-2 py-0.5 rounded border"
-            style={{ background: col.bg, color: col.text, borderColor: col.border }}
-          >
-            {bucket}
-          </span>
-        ))}
+        {Object.entries(BUCKET_COLORS)
+          .filter(([bucket]) => {
+            if (bucket === "Story") return groupByStory;
+            if (bucket === "Epic") return groupByEpic;
+            if (bucket === "Консолид.") return groupByParent;
+            return true;
+          })
+          .map(([bucket, col]) => (
+            <span
+              key={bucket}
+              className="flex items-center gap-1 px-2 py-0.5 rounded border"
+              style={{ background: col.bg, color: col.text, borderColor: col.border }}
+            >
+              {bucket}
+            </span>
+          ))}
       </div>
     </div>
   );

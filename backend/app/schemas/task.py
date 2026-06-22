@@ -23,6 +23,7 @@ class TaskOut(BaseModel):
     hours_analyst: float | None
     hours_tester: float | None
     hours_developer: float | None
+    hours_designer: float | None = None
     hours_original: float | None
     # Ожидаемый итог спринта по pipeline (вычисляется при сборке спринта)
     sprint_expected_result: str | None = None

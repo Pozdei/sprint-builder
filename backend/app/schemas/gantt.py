@@ -42,6 +42,12 @@ class GanttItem(BaseModel):
     is_historical: bool = False   # True — реконструированная фаза из истории Jira
     phase_status: str | None = None  # статус Jira, в котором задача была в эту фазу
     phase_cost: float = 0.0  # стоимость этапа по окладу исполнителя
+    parent_key: str | None = None     # непосредственный родитель (свод «Консолидировано»)
+    parent_summary: str | None = None
+    story_key: str | None = None      # предок типа «История» (свод по User Story)
+    story_summary: str | None = None
+    epic_key: str | None = None       # предок типа «Эпик» (свод по эпикам)
+    epic_summary: str | None = None
 
 
 class StandupTask(BaseModel):

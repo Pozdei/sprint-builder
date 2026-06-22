@@ -17,6 +17,7 @@ from app.sprint.logic import (
     _enabled_roles_by_status,
     _find_direction,
     _has_real_estimate,
+    _role_allowed_buckets,
     estimate_hours_for_role,
 )
 
@@ -111,15 +112,6 @@ _STATUS_BUCKET_KEYWORDS: list[tuple[list[str], str, str]] = [
     (["анализ", "в работе", "новый", "создан"], "Анализ", "analyst"),
 ]
 
-# Что может делать каждый тип роли: prefix роли → допустимые bucket-категории.
-# Используется в историческом режиме чтобы не класть разработчика в Анализ и т.п.
-_ROLE_WORK_CATEGORIES: dict[str, frozenset[str]] = {
-    "analyst":   frozenset({"Анализ", "Тестирование"}),
-    "tester":    frozenset({"Тестирование"}),
-    "developer": frozenset({"Разработка", "Код-ревью"}),
-    "designer":  frozenset({"Дизайн", "Дизайн-ревью"}),
-}
-
 # Когда между сменой статуса и сменой assignee прошло меньше этого порога —
 # считаем их одновременными и берём assignee ПОСЛЕ смены (Jira-автоматика часто
 # проставляет статус и исполнителя с разницей в несколько секунд).
@@ -132,16 +124,6 @@ def _infer_bucket_from_status(status: str) -> tuple[str, str] | None:
     for keywords, bucket, role in _STATUS_BUCKET_KEYWORDS:
         if any(kw in s for kw in keywords):
             return bucket, role
-    return None
-
-
-def _role_allowed_buckets(role: str | None) -> frozenset[str] | None:
-    """Множество bucket-категорий, доступных роли. None = без ограничений."""
-    if not role:
-        return None
-    for prefix, cats in _ROLE_WORK_CATEGORIES.items():
-        if role.startswith(prefix):
-            return cats
     return None
 
 

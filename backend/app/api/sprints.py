@@ -147,6 +147,23 @@ def approve(
     return _to_out(sprint)
 
 
+@router.post("/{sprint_id}/reopen", response_model=SprintOut)
+def reopen(
+    sprint_id: int,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    try:
+        sprint = sprints_service.reopen_sprint(db, sprint_id, config.id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except SprintAccessDeniedError:
+        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
+    except SprintNotApprovedError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return _to_out(sprint)
+
+
 @router.post("/{sprint_id}/close", response_model=SprintOut)
 def close(
     sprint_id: int,

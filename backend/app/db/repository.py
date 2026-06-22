@@ -243,7 +243,8 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
 
     for field in ("name", "project_key", "sprint_field", "responsible_field",
                   "hours_per_person", "default_task_hours",
-                  "leader_hours", "leader_management_enabled", "developer_field"):
+                  "leader_hours", "leader_management_enabled", "developer_field",
+                  "designer_field", "tester_field"):
         if field in data:
             setattr(config, field, data[field])
 
@@ -326,6 +327,8 @@ def model_to_sprint_config_dict(config: models.Config) -> dict:
         "leader_hours": config.leader_hours,
         "leader_management_enabled": config.leader_management_enabled,
         "developer_field": config.developer_field or "",
+        "designer_field": config.designer_field or "",
+        "tester_field": config.tester_field or "",
         "team": team,
         "boards": {b.name: b.jira_board_id for b in config.boards},
         "extra_components": [c.name for c in config.components],

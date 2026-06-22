@@ -109,6 +109,14 @@ def approve(db: Session, sprint: models.Sprint) -> models.Sprint:
     return sprint
 
 
+def reopen(db: Session, sprint: models.Sprint) -> models.Sprint:
+    sprint.status = "draft"
+    sprint.approved_at = None
+    db.commit()
+    db.refresh(sprint)
+    return sprint
+
+
 def delete_sprint(db: Session, sprint: models.Sprint) -> None:
     db.delete(sprint)
     db.commit()

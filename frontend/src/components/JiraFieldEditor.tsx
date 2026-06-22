@@ -51,6 +51,12 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
   const [hoursDeveloper, setHoursDeveloper] = useState(
     task.hours_developer != null ? String(task.hours_developer) : "",
   );
+  const [hoursDesigner, setHoursDesigner] = useState(
+    task.hours_designer != null ? String(task.hours_designer) : "",
+  );
+  // «Часы дизайнера» показываем только для задач дизайн-пайплайна.
+  const showDesigner =
+    task.bucket === "Дизайн" || task.designer_id != null || task.hours_designer != null;
   const [developer, setDeveloper] = useState<JiraUserSearchResult | null>(null);
   const [developerDisplay, setDeveloperDisplay] = useState(
     task.developer_name ?? "",
@@ -72,6 +78,7 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
     if (hoursAnalyst !== "") update.hours_analyst = Number(hoursAnalyst);
     if (hoursTester !== "") update.hours_tester = Number(hoursTester);
     if (hoursDeveloper !== "") update.hours_developer = Number(hoursDeveloper);
+    if (showDesigner && hoursDesigner !== "") update.hours_designer = Number(hoursDesigner);
     if (developer) update.developer_account_id = developer.account_id;
 
     if (Object.keys(update).length === 0) {
@@ -122,7 +129,7 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
           </div>
 
           {/* Поля часов */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className={`grid gap-3 ${showDesigner ? "grid-cols-4" : "grid-cols-3"}`}>
             <HoursInput
               label="Часы аналитика"
               value={hoursAnalyst}
@@ -138,6 +145,13 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
               value={hoursDeveloper}
               onChange={setHoursDeveloper}
             />
+            {showDesigner && (
+              <HoursInput
+                label="Часы дизайнера"
+                value={hoursDesigner}
+                onChange={setHoursDesigner}
+              />
+            )}
           </div>
 
           {/* Разработчик */}

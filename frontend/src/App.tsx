@@ -71,8 +71,8 @@ function App() {
     }
     getMe()
       .then((u) => setUser(u))
-      .catch(() => {
-        setToken(null);
+      .catch((e) => {
+        if (e?.response?.status === 401) setToken(null);
         setUser(undefined);
       });
   }, []);

@@ -178,6 +178,18 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
       },
     },
     {
+      id: "hours_designer",
+      header: "Ч. дизайн.",
+      cell: (info) => {
+        const t = info.row.original;
+        if (t.is_pseudo) return null;
+        const v = t.hours_designer;
+        return v != null
+          ? <span className="text-xs">{Number(v).toFixed(1)}</span>
+          : <span className="text-xs text-red-300">—</span>;
+      },
+    },
+    {
       id: "developer_name",
       header: "Разработчик",
       cell: (info) => {

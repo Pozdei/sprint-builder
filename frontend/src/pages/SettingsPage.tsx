@@ -157,6 +157,24 @@ export function SettingsPage() {
               className="w-full px-2 py-1 border rounded font-mono text-sm"
             />
           </Field>
+          <Field label="Поле Дизайнер (customfield_)">
+            <input
+              type="text"
+              value={config.designer_field ?? ""}
+              onChange={(e) => update("designer_field", e.target.value)}
+              placeholder="customfield_XXXXX"
+              className="w-full px-2 py-1 border rounded font-mono text-sm"
+            />
+          </Field>
+          <Field label="Поле Тестировщик (customfield_)">
+            <input
+              type="text"
+              value={config.tester_field ?? ""}
+              onChange={(e) => update("tester_field", e.target.value)}
+              placeholder="customfield_XXXXX"
+              className="w-full px-2 py-1 border rounded font-mono text-sm"
+            />
+          </Field>
         </div>
       </Section>
 
@@ -242,8 +260,8 @@ export function SettingsPage() {
 
       <Section title="Поля часов в Jira по «категориям»">
         <p className="text-xs text-gray-500 mb-2">
-          analyst → Время аналитика, tester → Время тестировщика, developer → Время разработчика.
-          Используется для оценки часов по бакету.
+          analyst → Время аналитика, tester → Время тестировщика, developer → Время разработчика,
+          designer → Время дизайнера. Используется для оценки часов по бакету.
         </p>
         <DictEditor
           value={config.role_hours_fields}

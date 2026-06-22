@@ -134,6 +134,21 @@ def approve_sprint(db: Session, jira: JiraClient,
     return sprints_repository.approve(db, sprint)
 
 
+# -------------------- Возврат в драфт --------------------
+
+def reopen_sprint(db: Session, sprint_id: int, config_id: int) -> models.Sprint:
+    sprint = sprints_repository.get_sprint(db, sprint_id)
+    if not sprint:
+        raise LookupError(f"Sprint {sprint_id} не найден")
+    _check_access(sprint, config_id)
+    if sprint.status != "approved":
+        raise SprintNotApprovedError(
+            f"Sprint {sprint.sprint_num} имеет статус {sprint.status}, "
+            f"вернуть в драфт можно только approved."
+        )
+    return sprints_repository.reopen(db, sprint)
+
+
 # -------------------- Удаление --------------------
 
 def delete_draft(db: Session, sprint_id: int, config_id: int) -> None:

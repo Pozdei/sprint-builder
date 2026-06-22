@@ -23,6 +23,10 @@ def _build_fields_param(cfg: SprintConfig, sp_field: str | None) -> str:
     fields.append(cfg.responsible_field)
     if cfg.developer_field:
         fields.append(cfg.developer_field)
+    if cfg.designer_field:
+        fields.append(cfg.designer_field)
+    if cfg.tester_field:
+        fields.append(cfg.tester_field)
     return ",".join(fields)
 
 
@@ -122,6 +126,38 @@ _WORK_TYPE_INFO: dict[str, dict[str, str]] = {
 
 # Виды работ, которые порождаются ПОСЛЕ аллокации (когда знаем, что задача выполнится)
 _POST_ALLOC_WORK_TYPES = {"testing", "code_review", "design_review"}
+
+# Что может делать каждый тип роли: prefix роли → допустимые bucket-категории.
+# Используется чтобы не отдать «Тестирование»/«Анализ» разработчику, даже если
+# направление сконфигурировано неправильно (tester_role/analyst_role указывает
+# на несовместимую роль).
+_ROLE_WORK_CATEGORIES: dict[str, frozenset[str]] = {
+    "analyst":   frozenset({"Анализ", "Тестирование"}),
+    "tester":    frozenset({"Тестирование"}),
+    "developer": frozenset({"Разработка", "Код-ревью"}),
+    "designer":  frozenset({"Дизайн", "Дизайн-ревью"}),
+}
+
+
+def _role_allowed_buckets(role: str | None) -> frozenset[str] | None:
+    """Множество bucket-категорий, доступных роли. None = без ограничений."""
+    if not role:
+        return None
+    for prefix, cats in _ROLE_WORK_CATEGORIES.items():
+        if role.startswith(prefix):
+            return cats
+    return None
+
+
+def _safe_content_role(role: str, bucket: str) -> str:
+    """Если role не подходит для bucket (например, tester_role направления по
+    ошибке указывает на роль разработчика) — откатываемся на дефолтную
+    «analyst», которая совместима и с «Анализ», и с «Тестирование».
+    """
+    allowed = _role_allowed_buckets(role)
+    if allowed is not None and bucket not in allowed:
+        return "analyst"
+    return role
 
 
 def _default_hours_for(cfg: SprintConfig, role: str, status_name: str) -> float:
@@ -321,6 +357,42 @@ def _has_real_estimate(f: dict, bucket: str, cfg: SprintConfig,
     return False
 
 
+def _field_account_id(f: dict, field_id: str | None) -> str | None:
+    """accountId из персонального поля Jira (user-picker), либо None."""
+    if not field_id:
+        return None
+    val = f.get(field_id) or {}
+    if not isinstance(val, dict):
+        return None
+    return val.get("accountId") or None
+
+
+def _person_from_field(
+    f: dict, field_id: str | None, cfg: SprintConfig, default_role: str,
+) -> tuple[str | None, str, dict[str, dict]]:
+    """Владелец шага из персонального поля Jira («Дизайнер»/«Тестировщик»).
+
+    Если поле заполнено — берём указанного человека безусловно (как developer_field):
+    - человек в команде конфига → его фактическая роль и запись из team;
+    - иначе → синтетическая запись с displayName из Jira и default_role.
+
+    Возвращает (owner_id, role, role_team) или (None, default_role, {}) если поле пусто.
+    """
+    if not field_id:
+        return None, default_role, {}
+    val = f.get(field_id) or {}
+    if not isinstance(val, dict):
+        return None, default_role, {}
+    acc_id = val.get("accountId")
+    if not acc_id:
+        return None, default_role, {}
+    if acc_id in cfg.team:
+        role = cfg.team[acc_id].get("role") or default_role
+        return acc_id, role, {acc_id: cfg.team[acc_id]}
+    display = val.get("displayName") or acc_id
+    return acc_id, default_role, {acc_id: {"file_name": display, "role": default_role, "salary": 0}}
+
+
 def _extract_developer_name(f: dict, cfg: SprintConfig) -> str | None:
     """Имя разработчика из поля developer_field: сначала file_name из команды, потом displayName из Jira."""
     if not cfg.developer_field:
@@ -367,6 +439,7 @@ def _make_candidate(
         "hours_analyst": h_analyst,
         "hours_tester": h_tester,
         "hours_developer": h_developer,
+        "hours_designer": f.get(cfg.role_hours_fields.get("designer", "")) or None,
         "hours_original": orig_hours,
         "direction": direction,
         "labels": labels,
@@ -374,6 +447,8 @@ def _make_candidate(
         "assignee_id": assignee_id,
         "reporter_id": reporter_id,
         "developer_name": _extract_developer_name(f, cfg),
+        "designer_id": _field_account_id(f, cfg.designer_field),
+        "tester_id": _field_account_id(f, cfg.tester_field),
     }
 
 
@@ -400,6 +475,19 @@ def _process_issue_for_role(
     assignee_id, reporter_id, responsible_id = _extract_owners(f, cfg)
 
     owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
+
+    # Персональные поля Jira имеют приоритет для своих фаз:
+    # «Дизайнер» → шаг дизайна, «Тестировщик» → шаг тестирования.
+    field_override = False
+    if bucket == "Дизайн" and cfg.designer_field:
+        fid, _frole, fteam = _person_from_field(f, cfg.designer_field, cfg, role)
+        if fid:
+            owner_id, role_team, field_override = fid, fteam, True
+    elif bucket == "Тестирование" and cfg.tester_field:
+        fid, _frole, fteam = _person_from_field(f, cfg.tester_field, cfg, role)
+        if fid:
+            owner_id, role_team, field_override = fid, fteam, True
+
     if owner_id is None:
         return
 
@@ -409,7 +497,7 @@ def _process_issue_for_role(
         return
 
     formal_only = False
-    if role == "analyst" and assignee_id not in role_team:
+    if not field_override and role == "analyst" and assignee_id not in role_team:
         h_analyst, h_tester, _, _ = _extract_role_hours(f, cfg)
         formal_only = not h_analyst and not h_tester
 
@@ -425,18 +513,24 @@ def _process_issue_for_role(
 
 
 def _resolve_designer_for_direction(
-    direction: dict, cfg: SprintConfig,
+    f: dict, direction: dict, cfg: SprintConfig,
     team_by_role: dict[str, dict[str, dict]],
     assignee_id: str | None,
 ) -> tuple[str | None, dict[str, dict]]:
     """Определить владельца шага дизайна для задачи из направления.
 
     Порядок:
-    1. Assignee, если он в команде с ролью designer.
-    2. direction["designer_id"] — явно выбранный в настройках направления.
-    3. Единственный/первый в команде с ролью designer.
+    1. Поле Jira «Дизайнер» (designer_field) — безусловный приоритет.
+    2. Assignee, если он в команде с ролью designer.
+    3. direction["designer_id"] — явно выбранный в настройках направления.
+    4. Единственный/первый в команде с ролью designer.
     """
     role_team = team_by_role.get("designer") or _team_with_role(cfg, "designer")
+
+    # 1. Поле «Дизайнер» из Jira — приоритет (как developer_field для разработки).
+    fid, _frole, fteam = _person_from_field(f, cfg.designer_field, cfg, "designer")
+    if fid:
+        return fid, fteam
 
     if assignee_id and assignee_id in role_team:
         return assignee_id, role_team
@@ -496,6 +590,113 @@ def _resolve_developer_for_direction(
     return None, dev_role, role_team
 
 
+def _historical_tester_id(issue: dict) -> str | None:
+    """account_id того, кто был исполнителем, пока задача РЕАЛЬНО находилась в
+    статусе тестирования (по названию статуса — содержит «тест»).
+
+    Определяем по названию статуса, а не по бакету role_status_buckets: легаси-
+    маппинг analyst→Тестирование помечает «тест-фазой» и нетестовые статусы
+    (Код-ревью и т.п.), что дало бы ложного историчного тестировщика.
+    Возвращает исполнителя последней тест-фазы или None, если её не было.
+    """
+    if not issue.get("changelog", {}).get("histories"):
+        return None
+    from datetime import datetime, timedelta
+    from app.sprint.epic_history import (
+        _assignee_at, _assignee_transitions, _parse_jira_dt, _status_transitions,
+    )
+
+    f = issue["fields"]
+    created = _parse_jira_dt(f.get("created")) or datetime.now()
+    initial_status, transitions = _status_transitions(issue)
+    initial_assignee, assignee_changes = _assignee_transitions(issue)
+    current_assignee = (
+        (f.get("assignee") or {}).get("accountId"),
+        (f.get("assignee") or {}).get("displayName"),
+    )
+
+    segments: list[tuple[str, datetime]] = []
+    cur_status = initial_status or (f.get("status") or {}).get("name", "")
+    cur_start = created
+    for dt, to in transitions:
+        if dt > cur_start:
+            segments.append((cur_status, cur_start))
+        cur_status, cur_start = to, dt
+    segments.append((cur_status, cur_start))
+
+    grace = timedelta(seconds=300)
+    last_tester: str | None = None
+    for status, start_dt in segments:
+        if "тест" not in (status or "").lower():
+            continue
+        oid, _ = _assignee_at(
+            start_dt + grace, initial_assignee, assignee_changes, current_assignee,
+        )
+        if oid:
+            last_tester = oid
+    return last_tester
+
+
+def _config_tester(
+    direction: dict | None, tester_team: dict[str, dict],
+) -> str | None:
+    """Настроенный тестировщик направления, если роль тестировщика задана явно.
+
+    Возвращает tester_id из конфига (или первого в команде роли) только когда
+    direction.tester_role непустой; иначе None (дефолтный analyst-режим не трогаем).
+    """
+    raw = (direction.get("tester_role") or "").strip() if direction else ""
+    if not raw or not tester_team:
+        return None
+    tester_id = (direction.get("tester_id") or "").strip()
+    if tester_id and tester_id in tester_team:
+        return tester_id
+    return next(iter(tester_team))
+
+
+def _resolve_tester_for_direction(
+    issue: dict, direction: dict | None, cfg: SprintConfig,
+    team_by_role: dict[str, dict[str, dict]],
+    assignee_id: str | None, responsible_id: str | None, reporter_id: str | None,
+) -> tuple[str | None, str, dict[str, dict]]:
+    """Определить владельца шага тестирования для задачи направления.
+
+    Порядок (согласовано с пользователем):
+    1. Поле Jira «Тестировщик» (tester_field) — безусловный приоритет.
+    2. Историчный тестировщик из changelog — кто реально тестил задачу в прошлом.
+    3. Если роль тестировщика задана явно (tester_role != пусто) — настроенный
+       тестировщик этой роли (tester_id, иначе единственный/первый в команде).
+       Так будущие (ещё не тестированные) задачи получают тестировщика из конфига.
+    4. Дефолт (tester_role пуст → analyst) — assignee→responsible→reporter, т.е.
+       аналитик тестит свою задачу (старое поведение).
+
+    Возвращает (owner_id, role, role_team).
+    """
+    raw = (direction.get("tester_role") or "").strip() if direction else ""
+    role = _safe_content_role(raw or "analyst", "Тестирование")
+    role_team = team_by_role.get(role) or _team_with_role(cfg, role)
+
+    # 1. Поле «Тестировщик» из Jira — приоритет (как developer_field для разработки).
+    fid, frole, fteam = _person_from_field(issue["fields"], cfg.tester_field, cfg, role)
+    if fid:
+        return fid, frole, fteam
+
+    # 2. Историчный исполнитель тест-фазы.
+    hist_id = _historical_tester_id(issue)
+    if hist_id and hist_id in cfg.team:
+        hist_role = cfg.team[hist_id].get("role") or role
+        return hist_id, hist_role, {hist_id: cfg.team[hist_id]}
+
+    # 2. Явно заданная роль тестировщика → настроенный тестировщик из конфига.
+    cfg_tester = _config_tester(direction, role_team)
+    if cfg_tester:
+        return cfg_tester, role, role_team
+
+    # 3. Дефолт — цепочка владельцев задачи.
+    owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
+    return owner_id, role, role_team
+
+
 def _generate_direction_pre_candidates(
     issue: dict, status_name: str, direction: dict,
     labels: list, by_key_role: dict, cfg: SprintConfig,
@@ -542,14 +743,14 @@ def _generate_direction_pre_candidates(
         elif wt == "design":
             role = "designer"
             owner_id, role_team = _resolve_designer_for_direction(
-                direction, cfg, team_by_role, assignee_id,
+                f, direction, cfg, team_by_role, assignee_id,
             )
         elif wt == "testing":
-            role = direction.get("tester_role") or "analyst"
+            role = _safe_content_role(direction.get("tester_role") or "analyst", bucket)
             role_team = team_by_role.get(role) or _team_with_role(cfg, role)
             owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
         elif wt == "analytics":
-            role = direction.get("analyst_role") or "analyst"
+            role = _safe_content_role(direction.get("analyst_role") or "analyst", bucket)
             role_team = team_by_role.get(role) or _team_with_role(cfg, role)
             owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
         else:
@@ -619,6 +820,7 @@ def _add_pseudo_tasks(cfg: SprintConfig, target_sprint_num: int | None) -> list[
             "hours_analyst": None,
             "hours_tester": None,
             "hours_developer": None,
+            "hours_designer": None,
             "hours_original": None,
             "direction": None,
             "labels": [],
@@ -765,7 +967,7 @@ def _is_estimated(task: dict, cfg: SprintConfig) -> bool:
     if role_for_field == "tester":
         return bool(task.get("hours_tester"))
     if role_for_field == "designer":
-        return bool(task.get("hours_original"))
+        return bool(task.get("hours_designer") or task.get("hours_original"))
     if role_for_field == "developer":
         return bool(task.get("hours_developer"))
     return False
@@ -1030,7 +1232,10 @@ def derive_pipeline_tasks(
 
             for wt in post_alloc_order:
                 if wt == "testing":
-                    tester_role = (direction.get("tester_role") or "analyst") if direction else "analyst"
+                    tester_role = _safe_content_role(
+                        (direction.get("tester_role") or "analyst") if direction else "analyst",
+                        "Тестирование",
+                    )
                     test_cand_key = (key, tester_role, "Тестирование")
                     if test_cand_key not in allocated_keys:
                         task_tester_id = (task.get("tester_id") or "").strip()
@@ -1046,6 +1251,9 @@ def derive_pipeline_tasks(
                                 task.get("reporter_id"),
                                 tester_team,
                             )
+                            # Явно заданная роль тестировщика → настроенный из конфига
+                            if owner_id is None:
+                                owner_id = _config_tester(direction, tester_team)
                         if owner_id:
                             d = _make_derived(
                                 task, tester_role, "Тестирование",
@@ -1077,7 +1285,10 @@ def derive_pipeline_tasks(
                 has_testing = True
 
             if has_testing:
-                tester_role = (direction.get("tester_role") or "analyst") if direction else "analyst"
+                tester_role = _safe_content_role(
+                    (direction.get("tester_role") or "analyst") if direction else "analyst",
+                    "Тестирование",
+                )
                 tester_team = _team_with_role(cfg, tester_role)
                 test_cand_key = (key, tester_role, "Тестирование")
                 if test_cand_key not in allocated_keys:
@@ -1088,6 +1299,9 @@ def derive_pipeline_tasks(
                         task.get("reporter_id"),
                         tester_team,
                     )
+                    # Явно заданная роль тестировщика → настроенный из конфига
+                    if owner_id is None:
+                        owner_id = _config_tester(direction, tester_team)
                     if owner_id:
                         d = _make_derived(
                             task, tester_role, "Тестирование",

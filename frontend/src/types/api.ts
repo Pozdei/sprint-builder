@@ -26,6 +26,7 @@ export interface TaskOut {
   hours_analyst?: number | null;
   hours_tester?: number | null;
   hours_developer?: number | null;
+  hours_designer?: number | null;
   hours_original?: number | null;
   hours_is_default?: boolean;
   overflow_reason?: string | null;
@@ -114,6 +115,13 @@ export interface EpicForecastResponse {
   warnings: string[];
   gantt_start?: string | null;
   today_hours?: number | null;
+  current_sprint?: CurrentSprint | null;
+}
+
+export interface CurrentSprint {
+  sprint_num: number | null;
+  start_date: string;
+  end_date: string;
 }
 
 export interface StandupTask {
@@ -160,6 +168,12 @@ export interface GanttItem {
   is_historical?: boolean;
   phase_status?: string | null;
   phase_cost?: number;
+  parent_key?: string | null;
+  parent_summary?: string | null;
+  story_key?: string | null;
+  story_summary?: string | null;
+  epic_key?: string | null;
+  epic_summary?: string | null;
 }
 
 export interface TaskDependency {
@@ -274,6 +288,8 @@ export interface ConfigOut {
   leader_hours: number;
   leader_management_enabled: boolean;
   developer_field: string;
+  designer_field: string;
+  tester_field: string;
   team: Record<string, TeamMemberOut>;
   boards: Record<string, number>;
   extra_components: string[];
@@ -298,6 +314,8 @@ export interface ConfigUpdate {
   leader_hours?: number;
   leader_management_enabled?: boolean;
   developer_field?: string;
+  designer_field?: string;
+  tester_field?: string;
   team?: Record<string, { jira_name: string; file_name: string; role: string }>;
   boards?: Record<string, number>;
   extra_components?: string[];

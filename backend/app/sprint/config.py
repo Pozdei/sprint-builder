@@ -22,6 +22,9 @@ class SprintConfig:
     leader_management_enabled: bool = True
     # Customfield Jira «Разработчик» — например "customfield_10200"; пустая строка = не задано
     developer_field: str = ""
+    # Customfield Jira «Дизайнер» / «Тестировщик» — персональные поля задачи; "" = не задано
+    designer_field: str = ""
+    tester_field: str = ""
 
     # Команда: {accountId: {jira_name, file_name, role, id}}
     team: dict[str, dict] = field(default_factory=dict)
@@ -62,6 +65,8 @@ def from_dict(data: dict) -> SprintConfig:
         leader_hours=data.get("leader_hours", 20.0),
         leader_management_enabled=data.get("leader_management_enabled", True),
         developer_field=data.get("developer_field", ""),
+        designer_field=data.get("designer_field", ""),
+        tester_field=data.get("tester_field", ""),
         team=data.get("team", {}),
         boards=data.get("boards", {}),
         extra_components=data.get("extra_components", []),

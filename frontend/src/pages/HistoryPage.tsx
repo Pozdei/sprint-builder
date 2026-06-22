@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  approveSprint,
+  approveSprint, reopenSprint,
   closeSprint,
   deleteSprint,
   downloadSprintXlsx,
@@ -125,7 +125,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   const [detail, setDetail] = useState<SprintOut | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"approve" | "delete" | "download" | "close" | null>(null);
+  const [busy, setBusy] = useState<"approve" | "reopen" | "delete" | "download" | "close" | null>(null);
   const [showStandup, setShowStandup] = useState(false);
 
   // Гант
@@ -171,6 +171,26 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
       setDetail(updated);
       onChanged();
       toast.success(`Sprint ${updated.sprint_num} утверждён`);
+    } catch (e) {
+      toast.error(extractError(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleReopen = async () => {
+    if (!detail) return;
+    const ok = window.confirm(
+      `Вернуть Sprint ${detail.sprint_num} в драфт?\n\n` +
+      `Статус изменится на draft, дата утверждения будет сброшена.`
+    );
+    if (!ok) return;
+    setBusy("reopen");
+    try {
+      const updated = await reopenSprint(detail.id);
+      setDetail(updated);
+      onChanged();
+      toast.success(`Sprint ${updated.sprint_num} возвращён в драфт`);
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -318,6 +338,13 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                     )}
                     {isApproved && (
                       <>
+                        <button
+                          onClick={handleReopen}
+                          disabled={busy !== null}
+                          className="bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
+                        >
+                          {busy === "reopen" ? "Возвращаю…" : "Вернуть в драфт"}
+                        </button>
                         <button
                           onClick={() => setShowStandup(true)}
                           disabled={busy !== null}

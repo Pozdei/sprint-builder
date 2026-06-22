@@ -83,6 +83,8 @@ class ConfigOut(BaseModel):
     leader_hours: float
     leader_management_enabled: bool
     developer_field: str
+    designer_field: str = ""
+    tester_field: str = ""
 
     # team приходит как dict {accountId: TeamMemberOut}
     team: dict[str, TeamMemberOut]
@@ -118,6 +120,8 @@ class ConfigUpdate(BaseModel):
     leader_hours: float | None = None
     leader_management_enabled: bool | None = None
     developer_field: str | None = None
+    designer_field: str | None = None
+    tester_field: str | None = None
 
     team: dict[str, TeamMemberIn] | None = None
     boards: dict[str, int] | None = None

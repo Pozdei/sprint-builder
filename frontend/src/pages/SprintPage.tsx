@@ -206,11 +206,13 @@ export function SprintPage({ jiraReady }: Props) {
         hours_analyst:   update.hours_analyst   ?? t.hours_analyst,
         hours_tester:    update.hours_tester    ?? t.hours_tester,
         hours_developer: update.hours_developer ?? t.hours_developer,
+        hours_designer:  update.hours_designer  ?? t.hours_designer,
         developer_name:  devName ?? t.developer_name,
         hours_is_default:
           update.hours_analyst != null ||
           update.hours_tester != null ||
-          update.hours_developer != null
+          update.hours_developer != null ||
+          update.hours_designer != null
             ? false
             : t.hours_is_default,
       };

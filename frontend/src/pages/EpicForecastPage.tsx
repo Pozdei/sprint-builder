@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   addEpicDependency, downloadEpicForecastXlsx, fetchEpicDependencies,
-  fetchEpicForecast, fetchEpicSnapshots, removeEpicDependency,
+  fetchEpicForecast, fetchEpicSnapshots, listSprints, removeEpicDependency,
 } from "../api/client";
 import { DependencyPanel } from "../components/DependencyPanel";
 import { EstimateModal } from "../components/EstimateModal";
@@ -13,7 +13,7 @@ import { VacationPanel } from "../components/VacationPanel";
 import { extractError } from "../lib/api-error";
 import { daysUntil, fmtDateLong, fmtNum, fmtRub, todayISO } from "../lib/format";
 import { loadRecentEpics, pushRecentEpic, removeRecentEpic } from "../lib/recent-epics";
-import type { CostBreakdownItem, EpicForecastResponse, EpicForecastSnapshot, GanttItem, TaskDependency } from "../types/api";
+import type { CostBreakdownItem, EpicForecastResponse, EpicForecastSnapshot, GanttItem, SprintSummary, TaskDependency } from "../types/api";
 
 export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const toast = useToast();
@@ -28,34 +28,53 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
 
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
   const [showRoi,       setShowRoi]       = useState(false);
+  const [costOpen,      setCostOpen]      = useState(false);
   const [showDeps,      setShowDeps]      = useState(false);
   const [showVacations, setShowVacations] = useState(false);
   const [epicDeps,      setEpicDeps]      = useState<TaskDependency[]>([]);
   const [snapshots,     setSnapshots]     = useState<EpicForecastSnapshot[]>([]);
   const [useHistory,    setUseHistory]    = useState(false);
+  const [byStory,       setByStory]       = useState(false);
+  const [byEpic,        setByEpic]        = useState(false);
+  const [byParent,      setByParent]      = useState(false);
   const [recentEpics,   setRecentEpics]   = useState<string[]>(() => loadRecentEpics());
 
-  // overrideKey — если передан (клик по чипсу), считаем сразу по нему, не дожидаясь setState.
+  // Утверждённые спринты текущего конфига — альтернативный источник задач
+  const [approvedSprints, setApprovedSprints] = useState<SprintSummary[]>([]);
+  const [sprintId,        setSprintId]        = useState<number | null>(null);
+
+  useEffect(() => {
+    listSprints()
+      .then((all) => setApprovedSprints(all.filter((s) => s.status === "approved")))
+      .catch(() => {});
+  }, []);
+
+  // overrideKey — если передан (клик по чипсу), считаем сразу по нему в режиме эпика.
   const handleForecast = async (overrideKey?: string) => {
+    // Спринт-режим: только когда выбран спринт и не кликнут чипс эпика
+    const sprint = overrideKey == null
+      ? approvedSprints.find((s) => s.id === sprintId) ?? null
+      : null;
     const key = (overrideKey ?? epicKey).trim().toUpperCase();
-    if (!key) return;
-    if (overrideKey) setEpicKey(key);
+    if (!sprint && !key) return;
+    if (overrideKey) { setEpicKey(key); setSprintId(null); }
     setLoading(true);
     setResult(null);
     try {
-      const [data, deps] = await Promise.all([
-        fetchEpicForecast(key, startDate, hoursPerDay, useHistory),
-        fetchEpicDependencies(key),
-      ]);
+      const data = await fetchEpicForecast(
+        sprint ? "" : key, startDate, hoursPerDay, useHistory, sprint?.id,
+      );
       setResult(data);
-      setEpicDeps(deps);
-      // Снапшоты загружаем после forecast (бэкенд уже сохранил новый)
-      fetchEpicSnapshots(key).then(setSnapshots).catch(() => {});
-      setRecentEpics(pushRecentEpic(key));
+      // Ключ для зависимостей/снапшотов: эпик — сам ключ, спринт — "sprint-N" (data.epic_key)
+      const depKey = data.epic_key;
+      fetchEpicDependencies(depKey).then(setEpicDeps).catch(() => setEpicDeps([]));
+      fetchEpicSnapshots(depKey).then(setSnapshots).catch(() => {});
+      if (!sprint) setRecentEpics(pushRecentEpic(key));
+      const label = sprint ? `Спринт ${sprint.sprint_num}` : data.epic_key;
       toast.success(
         data.completion_date
-          ? `${data.epic_key}: прогноз построен — ${fmtDateLong(data.completion_date)}`
-          : `${data.epic_key}: прогноз построен`,
+          ? `${label}: прогноз построен — ${fmtDateLong(data.completion_date)}`
+          : `${label}: прогноз построен`,
       );
     } catch (e: unknown) {
       toast.error(extractError(e));
@@ -71,8 +90,8 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
       <div className="mb-6">
         <h1 className="text-xl font-bold text-gray-800 mb-1">Прогноз реализации</h1>
         <p className="text-sm text-gray-500">
-          Введите ключ эпика или задачи — система рассчитает расписание
-          оставшихся этапов и предскажет дату завершения.
+          Введите ключ родителя (эпик / стори / задача) или выберите спринт — система
+          рассчитает расписание оставшихся этапов и предскажет дату завершения.
         </p>
       </div>
 
@@ -80,15 +99,42 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
       <div className="bg-white rounded-xl border shadow-sm p-5 mb-6">
         <div className="flex flex-wrap gap-4 items-end">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Ключ эпика</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">По родителю (эпик / стори)</label>
             <input
               type="text"
               value={epicKey}
-              onChange={(e) => setEpicKey(e.target.value)}
+              onChange={(e) => { setEpicKey(e.target.value); if (e.target.value.trim()) setSprintId(null); }}
               onKeyDown={(e) => e.key === "Enter" && handleForecast()}
-              placeholder="SHN-1947 или SHN-2353"
-              className="px-3 py-2 border rounded-lg text-sm font-mono w-40 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              placeholder="напр. SHN-3969"
+              disabled={sprintId !== null}
+              className="px-3 py-2 border rounded-lg text-sm font-mono w-40 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-100 disabled:text-gray-400"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">или утверждённый спринт</label>
+            <select
+              value={sprintId ?? ""}
+              disabled={approvedSprints.length === 0}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSprintId(v ? Number(v) : null);
+                if (v) setEpicKey("");
+              }}
+              className="px-3 py-2 border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              {approvedSprints.length === 0 ? (
+                <option value="">нет утверждённых спринтов</option>
+              ) : (
+                <>
+                  <option value="">— по родителю —</option>
+                  {approvedSprints.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      Спринт {s.sprint_num} ({s.tasks_count} задач)
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Старт расчёта</label>
@@ -111,7 +157,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
           </div>
           <button
             onClick={() => handleForecast()}
-            disabled={loading || !epicKey.trim()}
+            disabled={loading || (!epicKey.trim() && sprintId === null)}
             className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300
                        text-white font-semibold px-5 py-2 rounded-lg text-sm transition"
           >
@@ -246,45 +292,67 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                 ))}
               </div>
               {result.stats.total_cost > 0 && (
-                <div className="mt-3 bg-blue-50 rounded-xl px-4 py-2.5 flex items-center gap-3 flex-wrap">
-                  <span className="text-xs text-blue-500">Стоимость проекта</span>
-                  <span className="text-2xl font-bold text-blue-700">
-                    {fmtRub(result.stats.total_cost)}
-                  </span>
-                  <span className="text-xs text-blue-400">по окладам команды</span>
-                  <div className="ml-auto flex items-center gap-3">
-                    <button
-                      onClick={() => setShowRoi(true)}
-                      className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1.5 transition"
+                <div className="mt-3">
+                  {/* Аккордеон стоимости — раскрывается по клику */}
+                  <button
+                    onClick={() => setCostOpen((v) => !v)}
+                    className="w-full flex items-center gap-2 bg-blue-50 hover:bg-blue-100 rounded-xl px-4 py-2.5 text-left transition"
+                  >
+                    <svg
+                      viewBox="0 0 20 20" fill="currentColor"
+                      className={`w-4 h-4 text-blue-400 transition-transform ${costOpen ? "rotate-90" : ""}`}
                     >
-                      Посчитать ROI
-                    </button>
-                    {isAdmin && (
-                      <button
-                        onClick={() => setShowCostBreakdown(true)}
-                        className="text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2"
-                      >
-                        Подробный расчёт
-                      </button>
+                      <path fillRule="evenodd" d="M7.3 5.3a1 1 0 011.4 0l4 4a1 1 0 010 1.4l-4 4a1 1 0 01-1.4-1.4L10.6 10 7.3 6.7a1 1 0 010-1.4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-sm font-medium text-blue-600">Стоимость проекта</span>
+                    {!costOpen && (
+                      <span className="text-xs text-blue-400 ml-auto">показать расчёт</span>
                     )}
-                  </div>
-                </div>
-              )}
-              {result.today_hours != null && (
-                <div className="mt-2 flex items-center gap-3 flex-wrap text-sm">
-                  <span className="inline-flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-                    <span className="text-xs text-gray-500">Потрачено</span>
-                    <span className="font-semibold text-gray-700">{fmtRub(result.stats.spent_cost ?? 0)}</span>
-                    <span className="text-xs text-gray-400">· {fmtNum(result.stats.spent_hours ?? 0, 1)} ч</span>
-                  </span>
-                  <span className="inline-flex items-center gap-2 bg-indigo-50 rounded-lg px-3 py-1.5">
-                    <span className="text-xs text-indigo-500">Осталось</span>
-                    <span className="font-semibold text-indigo-700">{fmtRub(result.stats.remaining_cost ?? 0)}</span>
-                    <span className="text-xs text-indigo-400">· {fmtNum(result.stats.remaining_hours ?? 0, 1)} ч</span>
-                  </span>
-                  <span className="text-xs text-gray-400">
-                    левее красной линии на диаграмме — факт по истории Jira
-                  </span>
+                  </button>
+
+                  {costOpen && (
+                    <>
+                      <div className="mt-2 bg-blue-50 rounded-xl px-4 py-2.5 flex items-center gap-3 flex-wrap">
+                        <span className="text-2xl font-bold text-blue-700">
+                          {fmtRub(result.stats.total_cost)}
+                        </span>
+                        <span className="text-xs text-blue-400">по окладам команды</span>
+                        <div className="ml-auto flex items-center gap-3">
+                          <button
+                            onClick={() => setShowRoi(true)}
+                            className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1.5 transition"
+                          >
+                            Посчитать ROI
+                          </button>
+                          {isAdmin && (
+                            <button
+                              onClick={() => setShowCostBreakdown(true)}
+                              className="text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2"
+                            >
+                              Подробный расчёт
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {result.today_hours != null && (
+                        <div className="mt-2 flex items-center gap-3 flex-wrap text-sm">
+                          <span className="inline-flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+                            <span className="text-xs text-gray-500">Потрачено</span>
+                            <span className="font-semibold text-gray-700">{fmtRub(result.stats.spent_cost ?? 0)}</span>
+                            <span className="text-xs text-gray-400">· {fmtNum(result.stats.spent_hours ?? 0, 1)} ч</span>
+                          </span>
+                          <span className="inline-flex items-center gap-2 bg-indigo-50 rounded-lg px-3 py-1.5">
+                            <span className="text-xs text-indigo-500">Осталось</span>
+                            <span className="font-semibold text-indigo-700">{fmtRub(result.stats.remaining_cost ?? 0)}</span>
+                            <span className="text-xs text-indigo-400">· {fmtNum(result.stats.remaining_hours ?? 0, 1)} ч</span>
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            левее красной линии на диаграмме — факт по истории Jira
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -334,6 +402,39 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                   >
                     Отпуска
                   </button>
+                  <button
+                    onClick={() => setByEpic((v) => !v)}
+                    title="Добавить сверху сводную полосу с суммарной длительностью каждого эпика"
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
+                      byEpic
+                        ? "bg-violet-50 border-violet-300 text-violet-700"
+                        : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    Свод по Epic
+                  </button>
+                  <button
+                    onClick={() => setByStory((v) => !v)}
+                    title="Сводная полоса по родительской задаче с типом «История» (аналог свода по эпику)"
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
+                      byStory
+                        ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                        : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    Свод по User Story
+                  </button>
+                  <button
+                    onClick={() => setByParent((v) => !v)}
+                    title="Кластеры связанных между собой задач (по issue-link'ам Blocks/Relates/Duplicate и т.п.); одиночные задачи не показываются"
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
+                      byParent
+                        ? "bg-teal-50 border-teal-300 text-teal-700"
+                        : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    Консолидировано
+                  </button>
                   {result.stats.default_hours_count > 0 && (
                     <button
                       onClick={() => setShowEstimates(true)}
@@ -356,6 +457,10 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                 dependencies={epicDeps}
                 onTaskClick={setSelectedKey}
                 todayHours={result.today_hours}
+                groupByStory={byStory}
+                groupByEpic={byEpic}
+                groupByParent={byParent}
+                sprintInfo={result.current_sprint}
               />
             </>
           ) : (
@@ -394,12 +499,12 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
           {showDeps && result && (
             <DependencyPanel
               ganttItems={result.gantt_items}
-              onFetchDeps={() => fetchEpicDependencies(epicKey.trim().toUpperCase())}
-              onAddDep={(dep) => addEpicDependency(epicKey.trim().toUpperCase(), dep)}
-              onRemoveDep={(dep) => removeEpicDependency(epicKey.trim().toUpperCase(), dep)}
+              onFetchDeps={() => fetchEpicDependencies(result.epic_key)}
+              onAddDep={(dep) => addEpicDependency(result.epic_key, dep)}
+              onRemoveDep={(dep) => removeEpicDependency(result.epic_key, dep)}
               onClose={() => setShowDeps(false)}
               onChanged={() => {
-                fetchEpicDependencies(epicKey.trim().toUpperCase()).then(setEpicDeps);
+                fetchEpicDependencies(result.epic_key).then(setEpicDeps);
                 handleForecast();
               }}
             />

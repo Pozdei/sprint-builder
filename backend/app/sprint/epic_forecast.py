@@ -26,6 +26,8 @@ from app.sprint.logic import (
     _resolve_designer_for_direction,
     _resolve_developer_for_direction,
     _resolve_owner,
+    _resolve_tester_for_direction,
+    _safe_content_role,
     _team_with_role,
     estimate_hours_for_role,
     extract_max_sprint_number,
@@ -105,9 +107,16 @@ def _generate_all_remaining_stages(
     dev_lead   = _find_lead_owner(cfg, "developer_lead")
     design_lead = _find_lead_owner(cfg, "designer_lead")
 
+    explicit_tester = bool((direction.get("tester_role") or "").strip())
     for pos, wt in enumerate(work_types):
-        if pos <= start_from:
+        if pos < start_from:
             continue
+        if pos == start_from:
+            # Текущая стадия уже учтена в current-stage — пропускаем. Исключение:
+            # тестирование с выделенным тестировщиком (его легаси analyst-кандидат
+            # подавлён в collect_epic_remaining_work) — генерируем здесь.
+            if not (wt == "testing" and explicit_tester):
+                continue
 
         info = _WORK_TYPE_INFO.get(wt)
         if not info:
@@ -125,14 +134,15 @@ def _generate_all_remaining_stages(
         elif wt == "design":
             role = "designer"
             owner_id, role_team = _resolve_designer_for_direction(
-                direction, cfg, team_by_role, assignee_id,
+                f, direction, cfg, team_by_role, assignee_id,
             )
         elif wt == "testing":
-            role = direction.get("tester_role") or "analyst"
-            role_team = team_by_role.get(role) or _team_with_role(cfg, role)
-            owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
+            owner_id, role, role_team = _resolve_tester_for_direction(
+                issue, direction, cfg, team_by_role,
+                assignee_id, responsible_id, reporter_id,
+            )
         elif wt == "analytics":
-            role = direction.get("analyst_role") or "analyst"
+            role = _safe_content_role(direction.get("analyst_role") or "analyst", bucket)
             role_team = team_by_role.get(role) or _team_with_role(cfg, role)
             owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
         elif wt == "code_review":
@@ -180,6 +190,7 @@ def _generate_all_remaining_stages(
             "hours_analyst": h_analyst,
             "hours_tester": h_tester,
             "hours_developer": h_developer,
+            "hours_designer": f.get(cfg.role_hours_fields.get("designer", "")) or None,
             "hours_original": orig_hours,
             "direction": direction["name"],
             "labels": labels,
@@ -245,8 +256,14 @@ def collect_epic_remaining_work(
         if direction and direction_name:
             # Для задач направления — фильтруем по dev_role
             direction_dev_role = direction.get("dev_role") or "developer"
+            # Если у направления явно задан тестировщик — подавляем легаси-кандидата
+            # «аналитик тестит» (role_status_buckets мапит analyst→Тестирование почти
+            # для всех статусов). Тестирование сгенерирует выделенный тестировщик ниже.
+            explicit_tester = bool((direction.get("tester_role") or "").strip())
             for role, bucket in role_buckets:
                 if bucket == "Разработка" and role != direction_dev_role:
+                    continue
+                if bucket == "Тестирование" and explicit_tester:
                     continue
                 _process_issue_for_role(
                     issue, role, bucket, team_by_role.get(role, {}),

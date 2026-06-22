@@ -77,6 +77,10 @@ class Config(Base):
     leader_management_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # Поле Jira «Разработчик» — customfield_XXXXX; пустая строка = не задано
     developer_field: Mapped[str] = mapped_column(String(50), default="")
+    # Поле Jira «Дизайнер» — customfield_XXXXX; пустая строка = не задано
+    designer_field: Mapped[str] = mapped_column(String(50), default="")
+    # Поле Jira «Тестировщик» — customfield_XXXXX; пустая строка = не задано
+    tester_field: Mapped[str] = mapped_column(String(50), default="")
 
     team_members: Mapped[list["TeamMember"]] = relationship(
         cascade="all, delete-orphan", back_populates="config"

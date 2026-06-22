@@ -110,6 +110,11 @@ export async function approveSprint(id: number): Promise<SprintOut> {
   return r.data;
 }
 
+export async function reopenSprint(id: number): Promise<SprintOut> {
+  const r = await api.post(`/api/sprints/${id}/reopen`);
+  return r.data;
+}
+
 export async function closeSprint(id: number): Promise<SprintOut> {
   const r = await api.post(`/api/sprints/${id}/close`);
   return r.data;
@@ -124,10 +129,12 @@ export async function fetchEpicForecast(
   startDate: string,
   hoursPerDay: number = 8,
   useHistory: boolean = false,
+  sprintId?: number,
 ): Promise<import("../types/api").EpicForecastResponse> {
   const r = await api.get("/api/epic/forecast", {
     params: {
-      key,
+      key: key || undefined,
+      sprint_id: sprintId,
       start_date: startDate,
       hours_per_day: hoursPerDay,
       use_history: useHistory || undefined,
