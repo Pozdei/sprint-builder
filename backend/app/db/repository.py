@@ -216,9 +216,7 @@ def upsert_directions(db: Session, config: models.Config,
                 name=item["name"],
                 labels=item.get("labels", []),
                 work_types=item.get("work_types", []),
-                dev_role=item.get("dev_role") or None,
-                tester_role=item.get("tester_role") or None,
-                analyst_role=item.get("analyst_role") or None,
+                role_overrides=item.get("role_overrides") or {},
                 designer_id=item.get("designer_id") or None,
             )
         )
@@ -370,9 +368,7 @@ def model_to_sprint_config_dict(config: models.Config) -> dict:
                 "name": d.name,
                 "labels": d.labels,
                 "work_types": d.work_types,
-                "dev_role":     d.dev_role or "",
-                "tester_role":  d.tester_role or "",
-                "analyst_role": d.analyst_role or "",
+                "role_overrides": d.role_overrides or {},
                 "designer_id":  d.designer_id or "",
             }
             for d in config.directions
@@ -497,6 +493,68 @@ def remove_epic_dependency(
         db.flush()
 
 
+# -------------------- Employee root tasks --------------------
+
+def list_root_tasks(
+    db: Session, config_id: int, epic_key: str,
+) -> list[models.EmployeeRootTask]:
+    return list(db.scalars(
+        select(models.EmployeeRootTask)
+        .where(
+            models.EmployeeRootTask.config_id == config_id,
+            models.EmployeeRootTask.epic_key == epic_key,
+        )
+    ).all())
+
+
+def set_root_task(
+    db: Session, config_id: int, epic_key: str, owner_id: str, task_key: str,
+) -> list[models.EmployeeRootTask]:
+    existing = db.scalar(
+        select(models.EmployeeRootTask)
+        .where(
+            models.EmployeeRootTask.config_id == config_id,
+            models.EmployeeRootTask.epic_key == epic_key,
+            models.EmployeeRootTask.owner_id == owner_id,
+        )
+    )
+    if existing:
+        existing.task_key = task_key
+    else:
+        db.add(models.EmployeeRootTask(
+            config_id=config_id, epic_key=epic_key, owner_id=owner_id, task_key=task_key,
+        ))
+    db.flush()
+    return list_root_tasks(db, config_id, epic_key)
+
+
+def remove_root_task(
+    db: Session, config_id: int, epic_key: str, owner_id: str,
+) -> None:
+    existing = db.scalar(
+        select(models.EmployeeRootTask)
+        .where(
+            models.EmployeeRootTask.config_id == config_id,
+            models.EmployeeRootTask.epic_key == epic_key,
+            models.EmployeeRootTask.owner_id == owner_id,
+        )
+    )
+    if existing:
+        db.delete(existing)
+        db.flush()
+
+
+def cleanup_stale_root_tasks(
+    db: Session, config_id: int, epic_key: str,
+    valid_keys: set[str], terminal_keys: set[str],
+) -> None:
+    """Снять якорь, если задача исчезла из выборки или стала терминальной (п.1.3 ТЗ)."""
+    for rt in list_root_tasks(db, config_id, epic_key):
+        if rt.task_key not in valid_keys or rt.task_key in terminal_keys:
+            db.delete(rt)
+    db.flush()
+
+
 # -------------------- Epic forecast snapshots --------------------
 
 def upsert_epic_snapshot(
@@ -588,6 +646,60 @@ def delete_epic_snapshot(
             models.EpicForecastSnapshot.config_id == config_id,
         )
     )
+    if not snap:
+        return False
+    db.delete(snap)
+    db.flush()
+    return True
+
+
+# -------------------- Снимки Ганта эпика (прогноз) --------------------
+# Тот же механизм, что и sprint_gantt_snapshots для спринтов (см. sprints_repository),
+# но привязан к (config_id, epic_key) вместо sprint_id.
+
+def create_epic_gantt_snapshot(
+    db: Session, config_id: int, epic_key: str, gantt_start: str, hours_per_day: float,
+    gantt_items: list[dict], label: str | None = None,
+) -> models.SprintGanttSnapshot:
+    snap = models.SprintGanttSnapshot(
+        config_id=config_id, epic_key=epic_key, gantt_start=gantt_start,
+        hours_per_day=hours_per_day, gantt_items=gantt_items, label=label,
+    )
+    db.add(snap)
+    db.flush()
+    return snap
+
+
+def list_epic_gantt_snapshots(
+    db: Session, config_id: int, epic_key: str,
+) -> list[models.SprintGanttSnapshot]:
+    return list(db.scalars(
+        select(models.SprintGanttSnapshot)
+        .where(
+            models.SprintGanttSnapshot.config_id == config_id,
+            models.SprintGanttSnapshot.epic_key == epic_key,
+        )
+        .order_by(models.SprintGanttSnapshot.captured_at.desc())
+    ).all())
+
+
+def get_epic_gantt_snapshot(
+    db: Session, config_id: int, epic_key: str, snapshot_id: int,
+) -> models.SprintGanttSnapshot | None:
+    return db.scalar(
+        select(models.SprintGanttSnapshot)
+        .where(
+            models.SprintGanttSnapshot.id == snapshot_id,
+            models.SprintGanttSnapshot.config_id == config_id,
+            models.SprintGanttSnapshot.epic_key == epic_key,
+        )
+    )
+
+
+def delete_epic_gantt_snapshot(
+    db: Session, config_id: int, epic_key: str, snapshot_id: int,
+) -> bool:
+    snap = get_epic_gantt_snapshot(db, config_id, epic_key, snapshot_id)
     if not snap:
         return False
     db.delete(snap)

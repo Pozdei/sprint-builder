@@ -105,6 +105,20 @@ export interface CostBreakdownItem {
   cost: number;
 }
 
+export type MissingRole = "responsible" | "developer" | "designer" | "tester";
+
+export interface MissingAssigneeItem {
+  key: string;
+  url: string;
+  summary: string;
+  direction: string | null;
+  missing: MissingRole[];
+  responsible_id: string | null;
+  developer_id: string | null;
+  designer_id: string | null;
+  tester_id: string | null;
+}
+
 export interface EpicForecastResponse {
   epic_key: string;
   epic_summary: string;
@@ -116,6 +130,7 @@ export interface EpicForecastResponse {
   gantt_start?: string | null;
   today_hours?: number | null;
   current_sprint?: CurrentSprint | null;
+  missing_assignees: MissingAssigneeItem[];
 }
 
 export interface CurrentSprint {
@@ -179,6 +194,23 @@ export interface GanttItem {
 export interface TaskDependency {
   from_key: string;
   to_key: string;
+}
+
+export interface RootTaskOut {
+  owner_id: string;
+  task_key: string;
+}
+
+export interface GanttSnapshotSummary {
+  id: number;
+  captured_at: string;
+  label: string | null;
+  gantt_start: string;
+  hours_per_day: number;
+}
+
+export interface GanttSnapshotDetail extends GanttSnapshotSummary {
+  gantt_items: GanttItem[];
 }
 
 export interface EmployeeVacation {
@@ -270,10 +302,9 @@ export interface DirectionOut {
   name: string;
   labels: string[];
   work_types: string[];
-  dev_role:     string;
-  tester_role:  string;
-  analyst_role: string;
-  designer_id:  string;
+  /** work_type -> имя роли; пусто/нет ключа = системный дефолт */
+  role_overrides: Record<string, string>;
+  designer_id: string;
 }
 
 export interface ConfigOut {

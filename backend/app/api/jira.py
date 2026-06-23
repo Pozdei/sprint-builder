@@ -48,6 +48,21 @@ def update_issue_fields(
             raise HTTPException(status_code=400, detail="Поле 'Разработчик' не настроено в конфиге")
         fields[cfg.developer_field] = {"accountId": body.developer_account_id}
 
+    if body.designer_account_id is not None:
+        if not cfg.designer_field:
+            raise HTTPException(status_code=400, detail="Поле 'Дизайнер' не настроено в конфиге")
+        fields[cfg.designer_field] = {"accountId": body.designer_account_id}
+
+    if body.tester_account_id is not None:
+        if not cfg.tester_field:
+            raise HTTPException(status_code=400, detail="Поле 'Тестировщик' не настроено в конфиге")
+        fields[cfg.tester_field] = {"accountId": body.tester_account_id}
+
+    if body.responsible_account_id is not None:
+        if not cfg.responsible_field:
+            raise HTTPException(status_code=400, detail="Поле 'Аналитик' не настроено в конфиге")
+        fields[cfg.responsible_field] = {"accountId": body.responsible_account_id}
+
     if not fields:
         return
 

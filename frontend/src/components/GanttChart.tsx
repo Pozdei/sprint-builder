@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { triggerDownload } from "../lib/download";
+import { groupBy } from "../lib/group-by";
 import type { GanttItem, TaskDependency } from "../types/api";
 
 const HOUR_PX_DEFAULT = 12;
@@ -22,15 +23,20 @@ interface Props {
   groupByParent?: boolean;
   /** Активный спринт — рисуем вертикальные границы спринтов и их номера. */
   sprintInfo?: { sprint_num: number | null; start_date: string; end_date: string } | null;
+  /** owner_id → task_key — стартовые задачи сотрудников, отмечаются якорем 📌 на баре. */
+  rootTasks?: Record<string, string>;
 }
 
 const BUCKET_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  "Анализ":       { bg: "#fef3c7", text: "#92400e", border: "#d97706" },
-  "Разработка":   { bg: "#d1fae5", text: "#065f46", border: "#059669" },
+  "Анализ":          { bg: "#fef3c7", text: "#92400e", border: "#d97706" },
+  "Разработка":      { bg: "#d1fae5", text: "#065f46", border: "#059669" },
+  "Разработка фронт": { bg: "#bbf7d0", text: "#14532d", border: "#22c55e" },
+  "Разработка бек":   { bg: "#c7d2fe", text: "#312e81", border: "#6366f1" },
   "Код-ревью":    { bg: "#a7f3d0", text: "#064e3b", border: "#047857" },
   "Тестирование": { bg: "#dbeafe", text: "#1e3a5f", border: "#2563eb" },
   "Дизайн":       { bg: "#fce7f3", text: "#831843", border: "#db2777" },
   "Дизайн-ревью": { bg: "#f5d0fe", text: "#581c87", border: "#a855f7" },
+  "Релиз":        { bg: "#fef9c3", text: "#713f12", border: "#ca8a04" },
   "Руководство":  { bg: "#ede9fe", text: "#4c1d95", border: "#7c3aed" },
   "Отсутствие":   { bg: "#f3f4f6", text: "#374151", border: "#9ca3af" },
   "Отпуск":       { bg: "#fff7ed", text: "#9a3412", border: "#f97316" },
@@ -48,6 +54,28 @@ const BAND_GAP = 16;   // px разделитель между секциями 
 
 function bucketColor(bucket: string) {
   return BUCKET_COLORS[bucket] ?? DEFAULT_COLOR;
+}
+
+/** Для бакета «Разработка» различаем фронт/бек по роли исполнителя (developer_frontend / developer_backend). */
+function devBucketLabel(item: GanttItem): string {
+  if (item.bucket !== "Разработка") return item.bucket;
+  const r = (item.role || "").toLowerCase();
+  if (r.includes("frontend") || r.includes("фронт")) return "Разработка фронт";
+  if (r.includes("backend") || r.includes("бэк") || r.includes("бек")) return "Разработка бек";
+  return item.bucket;
+}
+
+/** Короткая подпись бакета для бара (чтобы не уезжать за пределы прямоугольника). */
+function shortBucketLabel(bucket: string): string {
+  if (bucket === "Разработка фронт") return "Фронт";
+  if (bucket === "Разработка бек") return "Бек";
+  return bucket;
+}
+
+/** Обрезать подпись бара под его пиксельную ширину (~5.7px/символ при fontSize=10). */
+function truncateForBar(full: string, w: number, padding: number): string {
+  const maxChars = Math.max(3, Math.floor((w - padding) / 5.7));
+  return full.length > maxChars ? full.slice(0, maxChars - 1) + "…" : full;
 }
 
 /** Человекочитаемая роль по имени роли из конфига (analyst/Tester/developer_lead/…). */
@@ -103,8 +131,11 @@ function aggregateBars(
   }
   return order.map((k) => {
     const g = groups[k];
-    const startItem = g.reduce((a, b) => (a.start_hours < b.start_hours ? a : b));
-    const endItem = g.reduce((a, b) => (a.end_hours > b.end_hours ? a : b));
+    // Веха «Релиз» не растягивает сводную полосу — на своде она не отображается.
+    const nonRelease = g.filter((i) => i.bucket !== "Релиз");
+    const spanItems = nonRelease.length ? nonRelease : g;
+    const startItem = spanItems.reduce((a, b) => (a.start_hours < b.start_hours ? a : b));
+    const endItem = spanItems.reduce((a, b) => (a.end_hours > b.end_hours ? a : b));
     const summary = g.map(summaryOf).find(Boolean) || g[0].summary || k;
     // URL самой группы (стори/эпика), а не дочерней задачи: подменяем ключ в /browse/<key>
     const sampleUrl = g.find((i) => i.url)?.url || "";
@@ -128,7 +159,7 @@ function aggregateBars(
   });
 }
 
-export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], onTaskClick, todayHours, groupByStory = false, groupByEpic = false, groupByParent = false, sprintInfo = null }: Props) {
+export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], onTaskClick, todayHours, groupByStory = false, groupByEpic = false, groupByParent = false, sprintInfo = null, rootTasks = {} }: Props) {
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [hourPx, setHourPx] = useState(HOUR_PX_DEFAULT);
@@ -190,6 +221,64 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     }
     return m;
   }, [items]);
+
+  // Задачи, чей ТЕКУЩИЙ реальный статус в Jira — «готово к релизу» / «перенесено
+  // на PROD», но сама задача ещё не выполнена. Это последняя историчная фаза с
+  // bucket «Релиз», которая ещё не закрылась (её конец совпадает с «сейчас»).
+  const pendingRelease = useMemo(() => {
+    if (todayHours == null) return [];
+    return items.filter(
+      (i) => i.bucket === "Релиз" && i.is_historical && i.end_hours >= todayHours - 0.05,
+    );
+  }, [items, todayHours]);
+
+  const pendingByOwner = useMemo(
+    () => groupBy(pendingRelease, (i) => i.owner_file_name),
+    [pendingRelease],
+  );
+
+  // Все вехи «Релиз» исполнителя (и прогнозные, и фактические) — катить можно
+  // сразу пачкой, это не часы работы, а секунды. Поэтому на детальной сетке не
+  // раскладываем их по индивидуальным датам — сворачиваем в одну полоску на
+  // старте графика со списком задач по наведению.
+  const releaseByOwner = useMemo(
+    () => groupBy(items.filter((i) => i.bucket === "Релиз"), (i) => i.owner_file_name),
+    [items],
+  );
+
+  // Один и тот же ключ задачи годится для поиска и в Story-, и в Epic-, и в
+  // Консолид.-полосах — ключи Jira уникальны в рамках проекта.
+  const pendingByGroupKey = useMemo(() => {
+    const m: Record<string, GanttItem[]> = {};
+    for (const it of pendingRelease) {
+      for (const k of [it.story_key, it.epic_key, it.parent_key]) {
+        if (!k) continue;
+        (m[k] ??= []).push(it);
+      }
+    }
+    return m;
+  }, [pendingRelease]);
+
+  const [badgePopover, setBadgePopover] = useState<
+    { title: string; items: GanttItem[] } | null
+  >(null);
+
+  const renderReleaseBadge = (pending: GanttItem[], title: string) => {
+    if (!pending.length) return null;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setBadgePopover({ title, items: pending });
+        }}
+        title={`${pending.length} ${pending.length === 1 ? "задача" : "задачи"} готовы к релизу / на проде — но не выполнены`}
+        className="inline-flex items-center gap-0.5 px-1 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-400 hover:bg-amber-200 leading-tight shrink-0"
+      >
+        🚀{pending.length}
+      </button>
+    );
+  };
 
   // Роль исполнителя — наиболее частая роль среди его задач
   const ownerRole = useMemo(() => {
@@ -299,10 +388,15 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
   }, [sprintInfo, dateLabels, startDate]);
 
   // Вычисляем координаты стрелок зависимостей (нижний грид)
+  // В своде по User Story стрелки путают — там видна только агрегированная стори,
+  // а не реальные задачи-исполнители, между которыми проведена связь.
   const depArrows = useMemo(() => {
+    if (groupByStory) return [];
     return dependencies.flatMap((dep) => {
-      const fromItems = items.filter((i) => i.key === dep.from_key && !i.is_pseudo);
-      const toItems = items.filter((i) => i.key === dep.to_key && !i.is_pseudo);
+      // Веха «Релиз» больше не рисуется отдельным баром в детальной сетке (см.
+      // ниже) — если стрелка целится в неё, рисовать её некуда, пропускаем.
+      const fromItems = items.filter((i) => i.key === dep.from_key && !i.is_pseudo && i.bucket !== "Релиз");
+      const toItems = items.filter((i) => i.key === dep.to_key && !i.is_pseudo && i.bucket !== "Релиз");
       if (!fromItems.length || !toItems.length) return [];
 
       const fromItem = fromItems.reduce((a, b) => (a.end_hours > b.end_hours ? a : b));
@@ -319,7 +413,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
 
       return [{ x1, y1, x2, y2, key: `${dep.from_key}→${dep.to_key}` }];
     });
-  }, [dependencies, items, owners]);
+  }, [dependencies, items, owners, groupByStory]);
 
   const handleExportSvg = () => {
     const svgEl = svgRef.current;
@@ -498,10 +592,13 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                     className="flex flex-col justify-center px-3 border-b"
                     title={`${s.key} · ${s.summary}`}
                   >
-                    <span
-                      className="text-sm font-semibold truncate leading-tight"
-                      style={{ color: col.text }}
-                    >{s.key}</span>
+                    <span className="flex items-center gap-1">
+                      <span
+                        className="text-sm font-semibold truncate leading-tight"
+                        style={{ color: col.text }}
+                      >{s.key}</span>
+                      {renderReleaseBadge(pendingByGroupKey[s.key] ?? [], `${s.key} · ${s.summary}`)}
+                    </span>
                     <span
                       className="text-[10px] truncate leading-tight"
                       style={{ color: col.border }}
@@ -525,7 +622,10 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
               className="flex flex-col justify-center px-3 border-b"
               title={ownerRole[name] ? `${name} · ${ownerRole[name]}` : name}
             >
-              <span className="text-sm font-medium text-gray-700 truncate leading-tight">{name}</span>
+              <span className="flex items-center gap-1">
+                <span className="text-sm font-medium text-gray-700 truncate leading-tight">{name}</span>
+                {renderReleaseBadge(pendingByOwner[name] ?? [], name)}
+              </span>
               {ownerRole[name] && (
                 <span className="text-[10px] text-gray-400 truncate leading-tight">
                   {ownerRole[name]}
@@ -710,33 +810,28 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                       stroke={isSelected ? col.text : col.border}
                       strokeWidth={isSelected ? 2.5 : 1.5}
                     />
-                    {w > 40 && (() => {
-                      const full = `${item.key} · ${item.summary} · ${item.hours.toFixed(0)}ч`;
-                      const maxChars = Math.max(3, Math.floor((w - 12) / 5.7));
-                      const text = full.length > maxChars ? full.slice(0, maxChars - 1) + "…" : full;
-                      return (
-                        <text
-                          x={x + 6} y={y + h / 2 + 4}
-                          fontSize={10} fill={col.text} fontWeight="700"
-                        >
-                          {text}
-                        </text>
-                      );
-                    })()}
+                    {w > 40 && (
+                      <text
+                        x={x + 6} y={y + h / 2 + 4}
+                        fontSize={10} fill={col.text} fontWeight="700"
+                      >
+                        {truncateForBar(`${item.key} · ${item.summary} · ${item.hours.toFixed(0)}ч`, w, 12)}
+                      </text>
+                    )}
                   </g>
                 );
               });
             })}
 
-            {/* Задачи (детальная сетка) */}
+            {/* Задачи (детальная сетка) — веха «Релиз» сюда не попадает, см. ниже */}
             {owners.map((name, ownerIdx) => {
-              const ownerItems = byOwner[name] ?? [];
+              const ownerItems = (byOwner[name] ?? []).filter((i) => i.bucket !== "Релиз");
               return ownerItems.map((item) => {
                 const x = hoursToX(item.start_hours);
                 const w = Math.max(2, hoursToX(item.end_hours - item.start_hours));
                 const y = ownerY(ownerIdx) + 4;
                 const h = ROW_H - 8;
-                const col = bucketColor(item.bucket);
+                const col = bucketColor(devBucketLabel(item));
 
                 const isSelected   = selectedKey !== null && (
                   selectedKey === item.key ||
@@ -745,6 +840,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                   selectedKey === item.epic_key
                 );
                 const isDimmed     = selectedKey !== null && !isSelected && !item.is_pseudo;
+                const isRootTask   = !item.is_pseudo && rootTasks[item.owner_id] === item.key;
 
                 return (
                   <g
@@ -788,14 +884,54 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                         fill={col.text}
                         fontWeight={isSelected ? "700" : "600"}
                       >
-                        {item.key.startsWith("__")
-                          ? item.bucket
-                          : w > 80 ? `${item.key} · ${item.bucket}` : item.key}
+                        {truncateForBar(
+                          item.key.startsWith("__")
+                            ? item.bucket
+                            : w > 80 ? `${item.key} · ${shortBucketLabel(devBucketLabel(item))}` : item.key,
+                          w, 10,
+                        )}
+                      </text>
+                    )}
+                    {isRootTask && (
+                      <text x={x - 1} y={y + 9} fontSize={11}>
+                        <title>Стартовая задача</title>
+                        📌
                       </text>
                     )}
                   </g>
                 );
               });
+            })}
+
+            {/* Свёрнутая веха «Релиз»: маленький флажок на исполнителя на старте
+                графика (в зазоре над строкой, не на самом баре — чтобы не
+                перекрывать задачи), список задач — по клику (карточка, как у
+                бейджа 🚀). Не привязана к расчётным датам — релиз не занимает
+                времени по часам, выкатить можно пачкой в любой момент. */}
+            {owners.map((name, ownerIdx) => {
+              const releaseItems = releaseByOwner[name];
+              if (!releaseItems || !releaseItems.length) return null;
+              const x = hoursToX(todayHours ?? 0);
+              const yTop = ownerY(ownerIdx) + 4;
+              const col = bucketColor("Релиз");
+              return (
+                <g
+                  key={`release-marker-${name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setBadgePopover({ title: `Релиз · ${name}`, items: releaseItems });
+                  }}
+                  style={{ cursor: "pointer" }}
+                >
+                  <rect x={x - 7} y={yTop - 14} width={14} height={14} fill="transparent" />
+                  <path
+                    d={`M${x - 5},${yTop - 9} L${x + 5},${yTop - 9} L${x},${yTop} Z`}
+                    fill={col.border}
+                    stroke={col.text}
+                    strokeWidth={0.5}
+                  />
+                </g>
+              );
             })}
           </svg>
 
@@ -819,11 +955,11 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                 <span
                   className="px-1.5 py-0.5 rounded text-xs font-medium"
                   style={{
-                    background: bucketColor(tooltip.item.bucket).bg,
-                    color: bucketColor(tooltip.item.bucket).text,
+                    background: bucketColor(devBucketLabel(tooltip.item)).bg,
+                    color: bucketColor(devBucketLabel(tooltip.item)).text,
                   }}
                 >
-                  {tooltip.item.bucket}
+                  {devBucketLabel(tooltip.item)}
                 </span>
                 <span className="text-gray-300">{tooltip.item.hours.toFixed(1)} ч</span>
                 {tooltip.item.is_historical && (
@@ -851,6 +987,57 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
         </div>
       </div>
 
+      {/* Попап бейджа «готово к релизу / на проде, не выполнено» — список по статусам.
+          Центрированное окно, а не дропдаун от точки клика — иначе при клике в
+          нижней части графика список рисовался за пределами видимой области. */}
+      {badgePopover && (
+        <div
+          className="fixed inset-0 z-30 bg-black/30 flex items-center justify-center p-4"
+          onClick={() => setBadgePopover(null)}
+        >
+          <div
+            className="bg-white border border-gray-200 shadow-2xl rounded-lg p-4 text-xs w-full max-w-md max-h-[70vh] overflow-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="font-semibold text-gray-800 text-sm truncate">{badgePopover.title}</div>
+              <button
+                type="button"
+                onClick={() => setBadgePopover(null)}
+                className="text-gray-400 hover:text-gray-600 leading-none px-1 text-lg"
+              >×</button>
+            </div>
+            {Object.entries(
+              groupBy(badgePopover.items, (i) => i.phase_status || (i.is_historical ? "факт" : "прогноз")),
+            ).map(([status, list]) => (
+              <div key={status} className="mb-3 last:mb-0">
+                <div className="text-amber-700 font-semibold text-[11px] mb-1">
+                  {status} · {list.length}
+                </div>
+                <ul className="space-y-1">
+                  {list.map((it) => (
+                    <li key={it.key} className="flex items-center gap-2">
+                      <a
+                        href={it.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 hover:underline font-medium whitespace-nowrap"
+                      >{it.key}</a>
+                      <span className="text-gray-500 truncate">{it.summary}</span>
+                      {!it.is_historical && (
+                        <span className="text-gray-400 whitespace-nowrap">
+                          {it.end.slice(8, 10)}.{it.end.slice(5, 7)}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Легенда */}
       <div className="flex flex-wrap gap-2 px-4 py-2 border-t bg-gray-50 text-xs">
         {Object.entries(BUCKET_COLORS)
@@ -858,6 +1045,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
             if (bucket === "Story") return groupByStory;
             if (bucket === "Epic") return groupByEpic;
             if (bucket === "Консолид.") return groupByParent;
+            if (bucket === "Разработка") return false; // показываем только фронт/бек-разбивку
             return true;
           })
           .map(([bucket, col]) => (

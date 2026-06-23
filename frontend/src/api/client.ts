@@ -2,8 +2,8 @@ import axios from "axios";
 import { triggerDownload } from "../lib/download";
 import type {
   BuildAndSaveResponse, ClosedTaskData, ConfigOut, ConfigUpdate, EmployeeVacation,
-  LoginResponse, OwnerStat, SprintBuildResponse, SprintOut, SprintSummary,
-  TaskDependency, TaskOut, UserOut,
+  GanttSnapshotDetail, GanttSnapshotSummary, LoginResponse, OwnerStat, RootTaskOut,
+  SprintBuildResponse, SprintOut, SprintSummary, TaskDependency, TaskOut, UserOut,
 } from "../types/api";
 
 const envUrl = import.meta.env.VITE_API_URL;
@@ -187,6 +187,75 @@ export async function fetchGantt(
   return r.data;
 }
 
+// -------------------- Снимки Ганта спринта --------------------
+
+export async function saveGanttSnapshot(
+  sprintId: number,
+  ganttStart: string,
+  hoursPerDay: number,
+  ganttItems: import("../types/api").GanttItem[],
+  label?: string,
+): Promise<GanttSnapshotSummary> {
+  const r = await api.post(`/api/sprints/${sprintId}/gantt/snapshots`, {
+    gantt_start: ganttStart,
+    hours_per_day: hoursPerDay,
+    gantt_items: ganttItems,
+    label: label || undefined,
+  });
+  return r.data;
+}
+
+export async function listGanttSnapshots(sprintId: number): Promise<GanttSnapshotSummary[]> {
+  const r = await api.get(`/api/sprints/${sprintId}/gantt/snapshots`);
+  return r.data;
+}
+
+export async function getGanttSnapshot(
+  sprintId: number, snapshotId: number,
+): Promise<GanttSnapshotDetail> {
+  const r = await api.get(`/api/sprints/${sprintId}/gantt/snapshots/${snapshotId}`);
+  return r.data;
+}
+
+export async function deleteGanttSnapshot(sprintId: number, snapshotId: number): Promise<void> {
+  await api.delete(`/api/sprints/${sprintId}/gantt/snapshots/${snapshotId}`);
+}
+
+// -------------------- Снимки Ганта эпика (прогноз) --------------------
+// Тот же механизм, что и снимки Ганта спринта выше, но привязан к epic_key.
+
+export async function saveEpicGanttSnapshot(
+  epicKey: string,
+  ganttStart: string,
+  hoursPerDay: number,
+  ganttItems: import("../types/api").GanttItem[],
+  label?: string,
+): Promise<GanttSnapshotSummary> {
+  const r = await api.post(`/api/epic/gantt/snapshots`, {
+    gantt_start: ganttStart,
+    hours_per_day: hoursPerDay,
+    gantt_items: ganttItems,
+    label: label || undefined,
+  }, { params: { epic_key: epicKey } });
+  return r.data;
+}
+
+export async function listEpicGanttSnapshots(epicKey: string): Promise<GanttSnapshotSummary[]> {
+  const r = await api.get(`/api/epic/gantt/snapshots`, { params: { epic_key: epicKey } });
+  return r.data;
+}
+
+export async function getEpicGanttSnapshot(
+  epicKey: string, snapshotId: number,
+): Promise<GanttSnapshotDetail> {
+  const r = await api.get(`/api/epic/gantt/snapshots/${snapshotId}`, { params: { epic_key: epicKey } });
+  return r.data;
+}
+
+export async function deleteEpicGanttSnapshot(epicKey: string, snapshotId: number): Promise<void> {
+  await api.delete(`/api/epic/gantt/snapshots/${snapshotId}`, { params: { epic_key: epicKey } });
+}
+
 // -------------------- Epic Snapshots --------------------
 
 export async function fetchEpicSnapshots(
@@ -227,6 +296,28 @@ export async function addEpicDependency(epicKey: string, dep: TaskDependency): P
 
 export async function removeEpicDependency(epicKey: string, dep: TaskDependency): Promise<void> {
   await api.delete("/api/epic/dependencies", { data: dep, params: { epic_key: epicKey } });
+}
+
+// -------------------- Стартовые задачи (root tasks) --------------------
+
+export async function fetchRootTasks(epicKey: string): Promise<RootTaskOut[]> {
+  const r = await api.get("/api/epic/root-tasks", { params: { epic_key: epicKey } });
+  return r.data;
+}
+
+export async function setRootTask(
+  epicKey: string, ownerId: string, taskKey: string,
+): Promise<RootTaskOut[]> {
+  const r = await api.post(
+    "/api/epic/root-tasks",
+    { owner_id: ownerId, task_key: taskKey },
+    { params: { epic_key: epicKey } },
+  );
+  return r.data;
+}
+
+export async function removeRootTask(epicKey: string, ownerId: string): Promise<void> {
+  await api.delete("/api/epic/root-tasks", { params: { epic_key: epicKey, owner_id: ownerId } });
 }
 
 // -------------------- Vacations --------------------

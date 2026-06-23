@@ -150,3 +150,48 @@ def close_sprint(db: Session, sprint: models.Sprint,
     db.commit()
     db.refresh(sprint)
     return sprint
+
+
+# -------------------- Снимки Ганта --------------------
+
+def create_gantt_snapshot(
+    db: Session, sprint_id: int, gantt_start: str, hours_per_day: float,
+    gantt_items: list[dict], label: str | None = None,
+) -> models.SprintGanttSnapshot:
+    snap = models.SprintGanttSnapshot(
+        sprint_id=sprint_id, gantt_start=gantt_start, hours_per_day=hours_per_day,
+        gantt_items=gantt_items, label=label,
+    )
+    db.add(snap)
+    db.commit()
+    db.refresh(snap)
+    return snap
+
+
+def list_gantt_snapshots(db: Session, sprint_id: int) -> list[models.SprintGanttSnapshot]:
+    return list(db.scalars(
+        select(models.SprintGanttSnapshot)
+        .where(models.SprintGanttSnapshot.sprint_id == sprint_id)
+        .order_by(models.SprintGanttSnapshot.captured_at.desc())
+    ).all())
+
+
+def get_gantt_snapshot(
+    db: Session, sprint_id: int, snapshot_id: int,
+) -> models.SprintGanttSnapshot | None:
+    return db.scalar(
+        select(models.SprintGanttSnapshot)
+        .where(
+            models.SprintGanttSnapshot.id == snapshot_id,
+            models.SprintGanttSnapshot.sprint_id == sprint_id,
+        )
+    )
+
+
+def delete_gantt_snapshot(db: Session, sprint_id: int, snapshot_id: int) -> bool:
+    snap = get_gantt_snapshot(db, sprint_id, snapshot_id)
+    if not snap:
+        return False
+    db.delete(snap)
+    db.commit()
+    return True

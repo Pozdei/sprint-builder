@@ -23,6 +23,45 @@ interface Props {
   jiraReady: boolean;
 }
 
+function IconRefresh() {
+  return (
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 0 1 15.5-6.36M21 12a9 9 0 0 1-15.5 6.36" />
+      <path d="M18 3v4.5h-4.5M6 21v-4.5h4.5" />
+    </svg>
+  );
+}
+function IconDownload() {
+  return (
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v12m0 0-4-4m4 4 4-4" />
+      <path d="M4 19h16" />
+    </svg>
+  );
+}
+function IconBolt() {
+  return (
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="currentColor">
+      <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />
+    </svg>
+  );
+}
+function IconEdit() {
+  return (
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+function IconCheck() {
+  return (
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="m20 6-11 11-5-5" />
+    </svg>
+  );
+}
+
 export function SprintPage({ jiraReady }: Props) {
   const toast = useToast();
   const [candidates, setCandidates] = useState<TaskOut[] | null>(null);
@@ -249,39 +288,45 @@ export function SprintPage({ jiraReady }: Props) {
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
       {!editing && (
-        <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4 rounded-xl border border-gray-200 bg-white shadow-sm p-2.5">
           <button
             onClick={handleLoadCandidates}
             disabled={loadingCandidates || !jiraReady}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-semibold px-4 py-2 rounded-lg transition"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
           >
+            <IconRefresh />
             {loadingCandidates ? "Загружаю…" : candidates ? "Обновить кандидатов" : "Загрузить кандидатов"}
           </button>
 
           <button
             onClick={handleDownloadCandidates}
             disabled={!candidates || downloadingC}
-            className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 text-white font-semibold px-4 py-2 rounded-lg transition"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
           >
+            <IconDownload />
             {downloadingC ? "Скачиваю…" : "Скачать кандидатов"}
           </button>
 
-          <div className="flex-1" />
+          <div className="w-px self-stretch bg-gray-200 mx-1" />
 
           <button
             onClick={handleBuildSprint}
             disabled={!candidates || loadingSprint}
-            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white font-semibold px-4 py-2 rounded-lg transition"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 shadow-sm transition"
           >
+            <IconBolt />
             {loadingSprint ? "Формирую и сохраняю…" : "Сформировать спринт"}
           </button>
+
+          <div className="flex-1" />
 
           {sprint && sprint.status === "draft" && allocated && (
             <button
               onClick={() => setEditing(true)}
-              className="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold px-4 py-2 rounded-lg transition"
               title="Изменить состав вручную"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 shadow-sm transition"
             >
+              <IconEdit />
               Редактировать состав
             </button>
           )}
@@ -289,8 +334,9 @@ export function SprintPage({ jiraReady }: Props) {
           <button
             onClick={handleDownloadSprint}
             disabled={!allocated || downloadingS}
-            className="bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-semibold px-4 py-2 rounded-lg transition"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
           >
+            <IconDownload />
             {downloadingS ? "Скачиваю…" : "Скачать спринт"}
           </button>
 
@@ -298,8 +344,9 @@ export function SprintPage({ jiraReady }: Props) {
             <button
               onClick={handleApprove}
               disabled={approving}
-              className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 text-white font-semibold px-4 py-2 rounded-lg transition"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 disabled:bg-gray-300 shadow-sm transition"
             >
+              <IconCheck />
               {approving ? "Утверждаю…" : "Утвердить"}
             </button>
           )}
@@ -426,6 +473,7 @@ export function SprintPage({ jiraReady }: Props) {
           onSaved={handleJiraSaved}
         />
       )}
+
     </div>
   );
 }

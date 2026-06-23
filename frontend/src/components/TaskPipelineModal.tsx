@@ -34,9 +34,10 @@ function bucketRank(bucket: string): number {
 }
 
 export function TaskPipelineModal({ taskKey, allItems, onClose }: Props) {
-  // Все этапы этой задачи, отсортированные по порядку pipeline (потом по start_hours)
+  // Этапы задачи — либо по точному ключу, либо (для сводных баров Epic/User
+  // Story/Консолидировано) все этапы всех задач группы по story_key/epic_key/parent_key.
   const stages = allItems
-    .filter((it) => it.key === taskKey)
+    .filter((it) => it.key === taskKey || it.story_key === taskKey || it.epic_key === taskKey || it.parent_key === taskKey)
     .sort((a, b) =>
       bucketRank(a.bucket) !== bucketRank(b.bucket)
         ? bucketRank(a.bucket) - bucketRank(b.bucket)
@@ -45,10 +46,22 @@ export function TaskPipelineModal({ taskKey, allItems, onClose }: Props) {
 
   if (stages.length === 0) return null;
 
+  // Группа (Epic/Story/Консолидировано) — taskKey сам не встречается среди ключей задач.
+  const isGroup = !stages.some((s) => s.key === taskKey);
   const first = stages[0];
-  const last  = stages[stages.length - 1];
+  const last  = stages.reduce((a, b) => (a.end_hours > b.end_hours ? a : b));
   const totalHours = stages.reduce((s, it) => s + it.hours, 0);
   const direction = first.direction;
+
+  const groupSummary = isGroup
+    ? stages.find((s) => s.story_key === taskKey)?.story_summary
+      ?? stages.find((s) => s.epic_key === taskKey)?.epic_summary
+      ?? stages.find((s) => s.parent_key === taskKey)?.parent_summary
+      ?? ""
+    : first.summary;
+  const groupUrl = isGroup && first.url
+    ? first.url.replace(/\/browse\/[^/]+$/, `/browse/${taskKey}`)
+    : first.url;
 
   // Дата завершения = конец последнего этапа
   const completionDate = new Date(last.end).toLocaleDateString("ru-RU", {
@@ -68,9 +81,9 @@ export function TaskPipelineModal({ taskKey, allItems, onClose }: Props) {
         <div className="px-5 py-4 border-b flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              {first.url ? (
+              {groupUrl ? (
                 <a
-                  href={first.url}
+                  href={groupUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="font-mono font-bold text-blue-600 hover:underline text-base"
@@ -80,14 +93,14 @@ export function TaskPipelineModal({ taskKey, allItems, onClose }: Props) {
               ) : (
                 <span className="font-mono font-bold text-gray-800 text-base">{taskKey}</span>
               )}
-              {direction && (
+              {!isGroup && direction && (
                 <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
                   {direction}
                 </span>
               )}
             </div>
             <p className="text-sm text-gray-600 mt-0.5 leading-tight">
-              {first.summary}
+              {groupSummary}
             </p>
           </div>
           <button
@@ -115,7 +128,7 @@ export function TaskPipelineModal({ taskKey, allItems, onClose }: Props) {
                 const col = BUCKET_COLORS[stage.bucket] ?? DEFAULT_COLOR;
                 const isLast = i === stages.length - 1;
                 return (
-                  <div key={`${stage.bucket}-${stage.start_hours}`} className="flex gap-3">
+                  <div key={`${stage.key}-${stage.bucket}-${stage.start_hours}`} className="flex gap-3">
                     {/* Dot */}
                     <div className="flex-none flex flex-col items-center pt-1">
                       <div className={`w-5 h-5 rounded-full border-2 border-white shadow ${col.dot} z-10`} />
@@ -131,6 +144,18 @@ export function TaskPipelineModal({ taskKey, allItems, onClose }: Props) {
                           {stage.hours.toFixed(1)} ч
                         </span>
                       </div>
+                      {isGroup && (
+                        <div className="text-xs text-gray-500 mt-0.5 truncate">
+                          {stage.url ? (
+                            <a href={stage.url} target="_blank" rel="noreferrer" className="font-mono text-blue-600 hover:underline">
+                              {stage.key}
+                            </a>
+                          ) : (
+                            <span className="font-mono">{stage.key}</span>
+                          )}
+                          {" · "}{stage.summary}
+                        </div>
+                      )}
                       <div className="flex items-center justify-between mt-1 flex-wrap gap-x-3">
                         <span className="text-xs text-gray-600">
                           👤 {stage.owner_file_name}

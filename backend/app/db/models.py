@@ -124,6 +124,9 @@ class Config(Base):
     epic_snapshots: Mapped[list["EpicForecastSnapshot"]] = relationship(
         cascade="all, delete-orphan", back_populates="config"
     )
+    root_tasks: Mapped[list["EmployeeRootTask"]] = relationship(
+        cascade="all, delete-orphan", back_populates="config"
+    )
 
 
 # -------------------- Team --------------------
@@ -288,10 +291,8 @@ class ConfigDirection(Base):
     name: Mapped[str] = mapped_column(String(100))
     labels: Mapped[list] = mapped_column(JSON)       # список Jira-меток, например ["Backend"]
     work_types: Mapped[list] = mapped_column(JSON)   # упорядоченный список: ["analytics","development","testing"]
-    # Роли для этого направления; пусто = системный дефолт ("developer"/"analyst")
-    dev_role:     Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
-    tester_role:  Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
-    analyst_role: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    # work_type -> имя роли; пусто/нет ключа = системный дефолт (см. _WORK_TYPE_INFO)
+    role_overrides: Mapped[dict] = mapped_column(JSON, default=dict)
     designer_id:  Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
 
     config: Mapped["Config"] = relationship(back_populates="directions")
@@ -345,6 +346,30 @@ class EpicTaskDependency(Base):
     to_key: Mapped[str] = mapped_column(String(50))
 
     config: Mapped["Config"] = relationship(back_populates="epic_dependencies")
+
+
+class EmployeeRootTask(Base):
+    """Стартовая (корневая) задача сотрудника — Start-Start якорь в очереди Ганта.
+
+    epic_key — реальный ключ эпика/задачи Jira либо псевдо-ключ "sprint-N" для
+    прогноза по утверждённому спринту (см. EpicTaskDependency).
+    """
+
+    __tablename__ = "employee_root_tasks"
+    __table_args__ = (
+        UniqueConstraint("config_id", "epic_key", "owner_id",
+                         name="uq_root_task_owner"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    config_id: Mapped[int] = mapped_column(ForeignKey("configs.id", ondelete="CASCADE"))
+    epic_key: Mapped[str] = mapped_column(String(50))
+    owner_id: Mapped[str] = mapped_column(String(100))
+    task_key: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                  server_default=func.now())
+
+    config: Mapped["Config"] = relationship(back_populates="root_tasks")
 
 
 class EpicForecastSnapshot(Base):
@@ -414,6 +439,11 @@ class Sprint(Base):
         back_populates="sprint",
         order_by="SprintTask.position",
     )
+    gantt_snapshots: Mapped[list["SprintGanttSnapshot"]] = relationship(
+        cascade="all, delete-orphan",
+        back_populates="sprint",
+        order_by="SprintGanttSnapshot.captured_at",
+    )
 
 
 class SprintTask(Base):
@@ -429,3 +459,35 @@ class SprintTask(Base):
     closed_task_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     sprint: Mapped[Sprint] = relationship(back_populates="tasks")
+
+
+class SprintGanttSnapshot(Base):
+    """Статичный снимок Ганта — фиксирует план на момент сохранения.
+
+    Привязан либо к спринту (sprint_id), либо к эпику прогноза (config_id + epic_key) —
+    ровно один из двух контекстов заполнен. Единый механизм снимков для истории
+    спринтов и для прогноза реализации.
+    """
+
+    __tablename__ = "sprint_gantt_snapshots"
+    __table_args__ = (
+        Index("ix_sprint_gantt_snapshots_sprint", "sprint_id"),
+        Index("ix_sprint_gantt_snapshots_epic", "config_id", "epic_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sprint_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sprints.id", ondelete="CASCADE"), nullable=True,
+    )
+    config_id: Mapped[int | None] = mapped_column(
+        ForeignKey("configs.id", ondelete="CASCADE"), nullable=True,
+    )
+    epic_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                   server_default=func.now())
+    label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    gantt_start: Mapped[str] = mapped_column(String(10))   # "YYYY-MM-DD"
+    hours_per_day: Mapped[float] = mapped_column(Float)
+    gantt_items: Mapped[list[dict]] = mapped_column(JSON)
+
+    sprint: Mapped[Sprint | None] = relationship(back_populates="gantt_snapshots")

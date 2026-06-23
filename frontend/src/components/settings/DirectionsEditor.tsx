@@ -7,6 +7,28 @@ export const WORK_TYPE_LABELS: Record<string, string> = {
   code_review:   "Код-ревью",
   design_review: "Дизайн-ревью",
   testing:       "Тестирование",
+  release:       "Релиз",
+};
+
+// Зеркало backend _WORK_TYPE_INFO (app/sprint/logic.py) — только для отображения.
+const WORK_TYPE_INFO: Record<string, { role: string; bucket: string }> = {
+  analytics:     { role: "analyst",        bucket: "Анализ" },
+  development:   { role: "developer",      bucket: "Разработка" },
+  testing:       { role: "analyst",        bucket: "Тестирование" },
+  design:        { role: "designer",       bucket: "Дизайн" },
+  code_review:   { role: "developer_lead", bucket: "Код-ревью" },
+  design_review: { role: "designer_lead",  bucket: "Дизайн-ревью" },
+  release:       { role: "developer_lead", bucket: "Релиз" },
+};
+
+// Виды работ, для которых backend учитывает переопределение роли (role_overrides).
+const OVERRIDABLE_WORK_TYPES = new Set(["development", "testing", "analytics"]);
+
+// "developer" в _WORK_TYPE_INFO — не настоящая роль, а обобщённое имя для любой
+// роли разработчика (developer_backend/frontend/lead) — её нет в списке ролей конфига,
+// поэтому даём отдельную человекочитаемую подпись.
+const GENERIC_ROLE_LABELS: Record<string, string> = {
+  developer: "любой разработчик",
 };
 
 const ALL_WORK_TYPES = Object.keys(WORK_TYPE_LABELS);
@@ -23,10 +45,24 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
   const contentRoleOptions = roles.filter((r) => !r.is_lead && r.name !== "designer" && !r.name.startsWith("developer"));
   const designerMembers    = Object.entries(team).filter(([, m]) => m.role === "designer");
 
+  const roleDisplayName = (roleName: string | undefined): string => {
+    if (!roleName) return "—";
+    return roles.find((r) => r.name === roleName)?.display_name
+      ?? GENERIC_ROLE_LABELS[roleName]
+      ?? roleName;
+  };
+
   const updateField = (i: number, field: keyof DirectionOut, val: unknown) => {
     const next = [...value];
     next[i] = { ...next[i], [field]: val };
     onChange(next);
+  };
+
+  const updateOverride = (dirIdx: number, wt: string, role: string) => {
+    const overrides = { ...(value[dirIdx].role_overrides ?? {}) };
+    if (role) overrides[wt] = role;
+    else delete overrides[wt];
+    updateField(dirIdx, "role_overrides", overrides);
   };
 
   // --- work_types ordered list controls ---
@@ -62,10 +98,8 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
         name: "",
         labels: [],
         work_types: ["analytics", "development", "code_review", "testing"],
-        dev_role:     "",
-        tester_role:  "",
-        analyst_role: "",
-        designer_id:  "",
+        role_overrides: {},
+        designer_id: "",
       },
     ]);
   };
@@ -103,66 +137,6 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
               >
                 ×
               </button>
-            </div>
-
-            {/* Роли направления */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {/* dev_role */}
-              <div>
-                <label className="block text-xs text-gray-500 mb-0.5">
-                  Роль разработчика
-                </label>
-                <select
-                  value={dir.dev_role}
-                  onChange={(e) => updateField(i, "dev_role", e.target.value)}
-                  className="w-full px-2 py-1 border rounded text-sm"
-                >
-                  <option value="">developer (дефолт)</option>
-                  {devRoleOptions.map((r) => (
-                    <option key={r.name} value={r.name}>
-                      {r.display_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* tester_role */}
-              <div>
-                <label className="block text-xs text-gray-500 mb-0.5">
-                  Роль тестера
-                </label>
-                <select
-                  value={dir.tester_role}
-                  onChange={(e) => updateField(i, "tester_role", e.target.value)}
-                  className="w-full px-2 py-1 border rounded text-sm"
-                >
-                  <option value="">analyst (дефолт)</option>
-                  {contentRoleOptions.map((r) => (
-                    <option key={r.name} value={r.name}>
-                      {r.display_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* analyst_role */}
-              <div>
-                <label className="block text-xs text-gray-500 mb-0.5">
-                  Роль аналитика
-                </label>
-                <select
-                  value={dir.analyst_role}
-                  onChange={(e) => updateField(i, "analyst_role", e.target.value)}
-                  className="w-full px-2 py-1 border rounded text-sm"
-                >
-                  <option value="">analyst (дефолт)</option>
-                  {contentRoleOptions.map((r) => (
-                    <option key={r.name} value={r.name}>
-                      {r.display_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
 
             {/* Дизайнер — только если design в pipeline */}
@@ -209,49 +183,86 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
               />
             </div>
 
-            {/* Виды работ — упорядоченный список */}
+            {/* Pipeline видов работ + роли — единая таблица */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">
-                Pipeline видов работ (порядок важен)
+                Pipeline видов работ и роли (порядок важен)
               </label>
-              <div className="space-y-1">
-                {dir.work_types.map((wt, wi) => (
-                  <div
-                    key={wt}
-                    className="flex items-center gap-1 bg-white border rounded px-2 py-1 text-sm"
-                  >
-                    <span className="w-4 text-xs text-gray-400 text-right select-none">
-                      {wi + 1}.
-                    </span>
-                    <span className="flex-1 font-medium">
-                      {WORK_TYPE_LABELS[wt] ?? wt}
-                    </span>
-                    <span className="text-xs text-gray-400 font-mono">{wt}</span>
-                    <button
-                      onClick={() => moveUp(i, wi)}
-                      disabled={wi === 0}
-                      className="px-1 text-gray-400 hover:text-gray-700 disabled:opacity-20"
-                      title="Вверх"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      onClick={() => moveDown(i, wi)}
-                      disabled={wi === dir.work_types.length - 1}
-                      className="px-1 text-gray-400 hover:text-gray-700 disabled:opacity-20"
-                      title="Вниз"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      onClick={() => removeWt(i, wi)}
-                      className="px-1 text-red-400 hover:text-red-600"
-                      title="Удалить шаг"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+              <p className="text-xs text-gray-400 mb-1">
+                В колонке «Роль»: выпадашка — можно закрепить за этим направлением свою
+                роль вместо системной по умолчанию; обычный текст — роль фиксированная,
+                переопределить нельзя.
+              </p>
+              <div className="border rounded overflow-hidden bg-white">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100 text-xs text-gray-500">
+                    <tr>
+                      <th className="text-left px-2 py-1 w-6">#</th>
+                      <th className="text-left px-2 py-1">Вид работ</th>
+                      <th className="text-left px-2 py-1">Бакет</th>
+                      <th className="text-left px-2 py-1">Роль</th>
+                      <th className="px-2 py-1 w-20" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dir.work_types.map((wt, wi) => {
+                      const info = WORK_TYPE_INFO[wt];
+                      const overridable = OVERRIDABLE_WORK_TYPES.has(wt);
+                      const roleOptions = wt === "development" ? devRoleOptions : contentRoleOptions;
+                      const defaultRoleLabel = roleDisplayName(info?.role);
+                      return (
+                        <tr key={wt} className="border-t">
+                          <td className="px-2 py-1 text-gray-400">{wi + 1}</td>
+                          <td className="px-2 py-1 font-medium">{WORK_TYPE_LABELS[wt] ?? wt}</td>
+                          <td className="px-2 py-1 text-gray-500">{info?.bucket ?? "—"}</td>
+                          <td className="px-2 py-1">
+                            {overridable ? (
+                              <select
+                                value={dir.role_overrides?.[wt] ?? ""}
+                                onChange={(e) => updateOverride(i, wt, e.target.value)}
+                                className="w-full px-1.5 py-0.5 border rounded text-sm"
+                              >
+                                <option value="">{defaultRoleLabel} (по умолчанию)</option>
+                                {roleOptions.map((r) => (
+                                  <option key={r.name} value={r.name}>
+                                    {r.display_name}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="text-gray-500">{defaultRoleLabel}</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => moveUp(i, wi)}
+                              disabled={wi === 0}
+                              className="px-1 text-gray-400 hover:text-gray-700 disabled:opacity-20"
+                              title="Вверх"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              onClick={() => moveDown(i, wi)}
+                              disabled={wi === dir.work_types.length - 1}
+                              className="px-1 text-gray-400 hover:text-gray-700 disabled:opacity-20"
+                              title="Вниз"
+                            >
+                              ↓
+                            </button>
+                            <button
+                              onClick={() => removeWt(i, wi)}
+                              className="px-1 text-red-400 hover:text-red-600"
+                              title="Удалить шаг"
+                            >
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               {available.length > 0 && (

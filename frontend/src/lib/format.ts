@@ -25,6 +25,16 @@ export function fmtDateDotted(iso: string): string {
   return `${d}.${m}.${y}`;
 }
 
+const _dtFmt = new Intl.DateTimeFormat("ru-RU", {
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit",
+});
+
+/** Дата и время: `02.01.2026, 14:30`. На вход — полный ISO-таймстамп. */
+export function fmtDateTime(iso: string): string {
+  return _dtFmt.format(new Date(iso));
+}
+
 /** Количество календарных дней от сегодня до даты (отрицательное — в прошлом). */
 export function daysUntil(isoDate: string): number {
   const today = new Date();

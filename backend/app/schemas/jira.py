@@ -9,6 +9,9 @@ class IssueFieldsUpdate(BaseModel):
     hours_developer: float | None = None
     hours_designer: float | None = None
     developer_account_id: str | None = None
+    designer_account_id: str | None = None
+    tester_account_id: str | None = None
+    responsible_account_id: str | None = None
 
 
 class JiraUserOut(BaseModel):

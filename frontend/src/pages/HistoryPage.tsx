@@ -1,22 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   approveSprint, reopenSprint,
   closeSprint,
+  deleteGanttSnapshot,
   deleteSprint,
   downloadSprintXlsx,
   fetchGantt,
   fetchSprintDependencies,
+  getGanttSnapshot,
   getSprint,
+  listGanttSnapshots,
   listSprints,
+  saveGanttSnapshot,
 } from "../api/client";
 import { extractError } from "../lib/api-error";
 import { ClosedSprintView } from "../components/ClosedSprintView";
 import { useToast } from "../components/Toast";
 import { GanttChart } from "../components/GanttChart";
+import { GanttSnapshotBanner, GanttSnapshotControls } from "../components/GanttSnapshotControls";
 import { OwnerStats } from "../components/OwnerStats";
 import { SprintTable } from "../components/SprintTable";
 import { StandupModal } from "../components/StandupModal";
-import type { GanttItem, SprintOut, SprintStatus, SprintSummary } from "../types/api";
+import { useGanttSnapshots, type GanttSnapshotApi } from "../hooks/useGanttSnapshots";
+import { useRootTasks } from "../hooks/useRootTasks";
+import { fmtDateTime } from "../lib/format";
+import type {
+  GanttItem,
+  SprintOut, SprintStatus, SprintSummary,
+} from "../types/api";
 
 export function HistoryPage() {
   const [items, setItems] = useState<SprintSummary[] | null>(null);
@@ -137,6 +148,18 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   const [ganttItems, setGanttItems] = useState<GanttItem[] | null>(null);
   const [ganttLoading, setGanttLoading] = useState(false);
   const [showGantt, setShowGantt] = useState(false);
+  const rootTasksHook = useRootTasks(detail ? `sprint-${detail.sprint_num}` : null);
+
+  // Снимки Ганта — единый механизм с прогнозом по эпику (см. GanttSnapshotControls/useGanttSnapshots)
+  const sprintId = detail?.id;
+  const snapshotApi = useMemo<GanttSnapshotApi>(() => ({
+    list: () => (sprintId != null ? listGanttSnapshots(sprintId) : Promise.resolve([])),
+    create: (s, h, items, label) =>
+      sprintId != null ? saveGanttSnapshot(sprintId, s, h, items, label) : Promise.reject(new Error("no sprint")),
+    get: (id) => (sprintId != null ? getGanttSnapshot(sprintId, id) : Promise.reject(new Error("no sprint"))),
+    remove: (id) => (sprintId != null ? deleteGanttSnapshot(sprintId, id) : Promise.reject(new Error("no sprint"))),
+  }), [sprintId]);
+  const snap = useGanttSnapshots(snapshotApi, sprintId ?? null);
 
   useEffect(() => {
     if (!expanded || detail) return;
@@ -273,6 +296,40 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
     }
   };
 
+  const handleSaveSnapshot = async () => {
+    if (!ganttItems) return;
+    try {
+      const summary = await snap.save(ganttDate, hoursPerDay, ganttItems);
+      toast.success(`Снимок Ганта сохранён (${fmtDateTime(summary.captured_at)})`);
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  };
+
+  const handleSnapshotChange = async (value: string) => {
+    try {
+      await snap.select(value === "current" ? "current" : Number(value));
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  };
+
+  const handleDeleteSnapshot = async (id: number) => {
+    const ok = window.confirm("Удалить этот снимок Ганта?");
+    if (!ok) return;
+    try {
+      await snap.remove(id);
+      toast.success("Снимок удалён");
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  };
+
+  const isHistorical = snap.selectedId !== "current";
+  const displayedItems = isHistorical ? snap.detail?.gantt_items ?? null : ganttItems;
+  const displayedStart = isHistorical ? snap.detail?.gantt_start ?? ganttDate : ganttDate;
+  const displayedHours = isHistorical ? snap.detail?.hours_per_day ?? hoursPerDay : hoursPerDay;
+
   const isDraft = summary.status === "draft";
   const isApproved = summary.status === "approved";
   const isClosed = summary.status === "closed";
@@ -287,12 +344,12 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
         <td className="px-4 py-2">
           <StatusBadge status={summary.status} />
         </td>
-        <td className="px-4 py-2 text-gray-600">{formatDate(summary.created_at)}</td>
+        <td className="px-4 py-2 text-gray-600">{fmtDateTime(summary.created_at)}</td>
         <td className="px-4 py-2 text-gray-600">
-          {summary.approved_at ? formatDate(summary.approved_at) : "—"}
+          {summary.approved_at ? fmtDateTime(summary.approved_at) : "—"}
         </td>
         <td className="px-4 py-2 text-gray-600">
-          {summary.closed_at ? formatDate(summary.closed_at) : "—"}
+          {summary.closed_at ? fmtDateTime(summary.closed_at) : "—"}
         </td>
         <td className="px-4 py-2">{summary.tasks_count}</td>
         <td className="px-4 py-2 text-gray-400">{expanded ? "▾" : "▸"}</td>
@@ -409,16 +466,37 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                           >
                             {ganttLoading ? "Считаю…" : "Построить"}
                           </button>
+                          <GanttSnapshotControls
+                            snapshots={snap.snapshots}
+                            selectedId={snap.selectedId}
+                            saving={snap.saving}
+                            canSave={!!ganttItems}
+                            onSave={handleSaveSnapshot}
+                            onSelect={handleSnapshotChange}
+                          />
                         </>
                       )}
                     </div>
 
-                    {showGantt && ganttItems && ganttItems.length > 0 && (
+                    {showGantt && isHistorical && (
+                      <GanttSnapshotBanner
+                        snapshot={snap.detail}
+                        onDelete={() => handleDeleteSnapshot(snap.selectedId as number)}
+                        onReturn={() => handleSnapshotChange("current")}
+                      />
+                    )}
+
+                    {showGantt && snap.detailLoading && (
+                      <div className="mt-3 text-gray-500 text-sm">Загрузка снимка…</div>
+                    )}
+
+                    {showGantt && !snap.detailLoading && displayedItems && displayedItems.length > 0 && (
                       <div className="mt-3">
                         <GanttChart
-                          items={ganttItems}
-                          startDate={ganttDate}
-                          hoursPerDay={hoursPerDay}
+                          items={displayedItems}
+                          startDate={displayedStart}
+                          hoursPerDay={displayedHours}
+                          rootTasks={isHistorical ? {} : rootTasksHook.map}
                         />
                       </div>
                     )}
@@ -436,13 +514,4 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
       )}
     </>
   );
-}
-
-const _dtFmt = new Intl.DateTimeFormat("ru-RU", {
-  year: "numeric", month: "2-digit", day: "2-digit",
-  hour: "2-digit", minute: "2-digit",
-});
-
-function formatDate(iso: string): string {
-  return _dtFmt.format(new Date(iso));
 }

@@ -1,19 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  addEpicDependency, downloadEpicForecastXlsx, fetchEpicDependencies,
-  fetchEpicForecast, fetchEpicSnapshots, listSprints, removeEpicDependency,
+  addEpicDependency, deleteEpicGanttSnapshot, downloadEpicForecastXlsx, fetchEpicDependencies,
+  fetchEpicForecast, fetchEpicSnapshots, fetchRootTasks, getEpicGanttSnapshot, listEpicGanttSnapshots,
+  listSprints, removeEpicDependency, removeRootTask, saveEpicGanttSnapshot, setRootTask,
 } from "../api/client";
 import { DependencyPanel } from "../components/DependencyPanel";
 import { EstimateModal } from "../components/EstimateModal";
 import { ForecastTrendChart } from "../components/ForecastTrendChart";
 import { GanttChart } from "../components/GanttChart";
+import { GanttSnapshotBanner, GanttSnapshotControls } from "../components/GanttSnapshotControls";
+import { MissingAssigneesPanel } from "../components/MissingAssigneesPanel";
 import { TaskPipelineModal } from "../components/TaskPipelineModal";
+import { TodayExportModal } from "../components/TodayExportModal";
 import { useToast } from "../components/Toast";
 import { VacationPanel } from "../components/VacationPanel";
+import { useGanttSnapshots, type GanttSnapshotApi } from "../hooks/useGanttSnapshots";
+import { useRootTasks } from "../hooks/useRootTasks";
 import { extractError } from "../lib/api-error";
-import { daysUntil, fmtDateLong, fmtNum, fmtRub, todayISO } from "../lib/format";
+import { daysUntil, fmtDateLong, fmtDateTime, fmtNum, fmtRub, todayISO } from "../lib/format";
 import { loadRecentEpics, pushRecentEpic, removeRecentEpic } from "../lib/recent-epics";
-import type { CostBreakdownItem, EpicForecastResponse, EpicForecastSnapshot, GanttItem, SprintSummary, TaskDependency } from "../types/api";
+import type {
+  CostBreakdownItem, EpicForecastResponse, EpicForecastSnapshot, GanttItem,
+  MissingAssigneeItem, MissingRole, SprintSummary, TaskDependency,
+} from "../types/api";
 
 export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const toast = useToast();
@@ -37,6 +46,9 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const [byStory,       setByStory]       = useState(false);
   const [byEpic,        setByEpic]        = useState(false);
   const [byParent,      setByParent]      = useState(false);
+  const [missingAssignees, setMissingAssignees] = useState<MissingAssigneeItem[]>([]);
+  const [showMissingOnly,  setShowMissingOnly]  = useState(false);
+  const [showTodayExport,  setShowTodayExport]  = useState(false);
   const [recentEpics,   setRecentEpics]   = useState<string[]>(() => loadRecentEpics());
 
   // Утверждённые спринты текущего конфига — альтернативный источник задач
@@ -65,7 +77,9 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
         sprint ? "" : key, startDate, hoursPerDay, useHistory, sprint?.id,
       );
       setResult(data);
-      // Ключ для зависимостей/снапшотов: эпик — сам ключ, спринт — "sprint-N" (data.epic_key)
+      setMissingAssignees(data.missing_assignees);
+      setShowMissingOnly(false);
+      // Ключ для зависимостей/снапшотов/стартовых задач: эпик — сам ключ, спринт — "sprint-N" (data.epic_key)
       const depKey = data.epic_key;
       fetchEpicDependencies(depKey).then(setEpicDeps).catch(() => setEpicDeps([]));
       fetchEpicSnapshots(depKey).then(setSnapshots).catch(() => {});
@@ -84,6 +98,59 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
   };
 
   const days = result?.completion_date ? daysUntil(result.completion_date) : null;
+
+  // Снимки Ганта — единый механизм с историей спринтов (см. GanttSnapshotControls/useGanttSnapshots)
+  const epicScopeKey = result?.epic_key ?? null;
+  const ganttSnapshotApi = useMemo<GanttSnapshotApi>(() => ({
+    list: () => (epicScopeKey != null ? listEpicGanttSnapshots(epicScopeKey) : Promise.resolve([])),
+    create: (s, h, items, label) =>
+      epicScopeKey != null ? saveEpicGanttSnapshot(epicScopeKey, s, h, items, label) : Promise.reject(new Error("no epic")),
+    get: (id) => (epicScopeKey != null ? getEpicGanttSnapshot(epicScopeKey, id) : Promise.reject(new Error("no epic"))),
+    remove: (id) => (epicScopeKey != null ? deleteEpicGanttSnapshot(epicScopeKey, id) : Promise.reject(new Error("no epic"))),
+  }), [epicScopeKey]);
+  const ganttSnap = useGanttSnapshots(ganttSnapshotApi, epicScopeKey);
+  const rootTasksHook = useRootTasks(epicScopeKey);
+
+  const isHistoricalGantt = ganttSnap.selectedId !== "current";
+  const liveGanttStart = result?.gantt_start ?? startDate;
+  const displayedGanttItems = isHistoricalGantt
+    ? ganttSnap.detail?.gantt_items ?? null
+    : result?.gantt_items ?? null;
+  const displayedGanttStart = isHistoricalGantt
+    ? ganttSnap.detail?.gantt_start ?? liveGanttStart
+    : liveGanttStart;
+  const displayedGanttHours = isHistoricalGantt
+    ? ganttSnap.detail?.hours_per_day ?? hoursPerDay
+    : hoursPerDay;
+
+  const handleSaveGanttSnapshot = async () => {
+    if (!result?.gantt_items?.length) return;
+    try {
+      const summary = await ganttSnap.save(liveGanttStart, hoursPerDay, result.gantt_items);
+      toast.success(`Снимок Ганта сохранён (${fmtDateTime(summary.captured_at)})`);
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  };
+
+  const handleGanttSnapshotChange = async (value: string) => {
+    try {
+      await ganttSnap.select(value === "current" ? "current" : Number(value));
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  };
+
+  const handleDeleteGanttSnapshot = async (id: number) => {
+    const ok = window.confirm("Удалить этот снимок Ганта?");
+    if (!ok) return;
+    try {
+      await ganttSnap.remove(id);
+      toast.success("Снимок удалён");
+    } catch (e) {
+      toast.error(extractError(e));
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
@@ -382,86 +449,162 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                   Клик — все этапы · двойной — Jira
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
+                  <GanttSnapshotControls
+                    snapshots={ganttSnap.snapshots}
+                    selectedId={ganttSnap.selectedId}
+                    saving={ganttSnap.saving}
+                    canSave={result.gantt_items.length > 0}
+                    onSave={handleSaveGanttSnapshot}
+                    onSelect={handleGanttSnapshotChange}
+                  />
                   <button
-                    onClick={() => { setShowDeps((v) => !v); setShowVacations(false); }}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
-                      showDeps
-                        ? "bg-red-50 border-red-300 text-red-700"
-                        : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                    }`}
+                    onClick={() => setShowTodayExport(true)}
+                    title="Текстовая выгрузка задач, активных сегодня, по направлениям"
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
                   >
-                    Зависимости{epicDeps.length > 0 ? ` (${epicDeps.length})` : ""}
+                    📤 Выгрузка на сегодня
                   </button>
                   <button
-                    onClick={() => { setShowVacations((v) => !v); setShowDeps(false); }}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
-                      showVacations
-                        ? "bg-orange-50 border-orange-300 text-orange-700"
-                        : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                    onClick={() => {
+                      setShowMissingOnly((v) => !v);
+                      setShowDeps(false);
+                      setShowVacations(false);
+                    }}
+                    className={`flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border transition ${
+                      showMissingOnly
+                        ? "bg-rose-100 border-rose-400 text-rose-800"
+                        : "bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100"
                     }`}
                   >
-                    Отпуска
-                  </button>
-                  <button
-                    onClick={() => setByEpic((v) => !v)}
-                    title="Добавить сверху сводную полосу с суммарной длительностью каждого эпика"
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
-                      byEpic
-                        ? "bg-violet-50 border-violet-300 text-violet-700"
-                        : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                    }`}
-                  >
-                    Свод по Epic
-                  </button>
-                  <button
-                    onClick={() => setByStory((v) => !v)}
-                    title="Сводная полоса по родительской задаче с типом «История» (аналог свода по эпику)"
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
-                      byStory
-                        ? "bg-indigo-50 border-indigo-300 text-indigo-700"
-                        : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                    }`}
-                  >
-                    Свод по User Story
-                  </button>
-                  <button
-                    onClick={() => setByParent((v) => !v)}
-                    title="Кластеры связанных между собой задач (по issue-link'ам Blocks/Relates/Duplicate и т.п.); одиночные задачи не показываются"
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
-                      byParent
-                        ? "bg-teal-50 border-teal-300 text-teal-700"
-                        : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                    }`}
-                  >
-                    Консолидировано
-                  </button>
-                  {result.stats.default_hours_count > 0 && (
-                    <button
-                      onClick={() => setShowEstimates(true)}
-                      className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5
-                                 bg-amber-50 border border-amber-300 text-amber-700
-                                 hover:bg-amber-100 rounded-lg transition"
-                    >
-                      <span className="w-5 h-5 bg-amber-400 text-white rounded-full text-xs flex items-center justify-center font-bold">
-                        {result.stats.default_hours_count}
+                    {missingAssignees.length > 0 && (
+                      <span className="w-5 h-5 bg-rose-500 text-white rounded-full text-xs flex items-center justify-center font-bold">
+                        {missingAssignees.length}
                       </span>
-                      Без оценок
-                    </button>
+                    )}
+                    Без исполнителей
+                  </button>
+                  {!showMissingOnly && (
+                    <>
+                      <div className="w-px h-6 bg-gray-200" />
+
+                      {/* Зависимости / Отпуска — взаимоисключающие оверлей-панели */}
+                      <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden divide-x divide-gray-300">
+                        <SegmentButton
+                          active={showDeps}
+                          activeClass="bg-red-50 text-red-700"
+                          onClick={() => { setShowDeps((v) => !v); setShowVacations(false); }}
+                        >
+                          🔗 Зависимости{epicDeps.length > 0 ? ` (${epicDeps.length})` : ""}
+                        </SegmentButton>
+                        <SegmentButton
+                          active={showVacations}
+                          activeClass="bg-orange-50 text-orange-700"
+                          onClick={() => { setShowVacations((v) => !v); setShowDeps(false); }}
+                        >
+                          🏖️ Отпуска
+                        </SegmentButton>
+                      </div>
+
+                      <div className="w-px h-6 bg-gray-200" />
+
+                      {/* Своды: Epic / User Story / Консолидировано — независимые тумблеры,
+                          можно включать одновременно */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-gray-400">Свод:</span>
+                        <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden divide-x divide-gray-300">
+                          <SegmentButton
+                            active={byEpic}
+                            activeClass="bg-violet-50 text-violet-700"
+                            onClick={() => setByEpic((v) => !v)}
+                            title="Добавить сверху сводную полосу с суммарной длительностью каждого эпика"
+                          >
+                            Epic
+                          </SegmentButton>
+                          <SegmentButton
+                            active={byStory}
+                            activeClass="bg-indigo-50 text-indigo-700"
+                            onClick={() => setByStory((v) => !v)}
+                            title="Сводная полоса по родительской задаче с типом «История» (аналог свода по эпику)"
+                          >
+                            User Story
+                          </SegmentButton>
+                          <SegmentButton
+                            active={byParent}
+                            activeClass="bg-teal-50 text-teal-700"
+                            onClick={() => setByParent((v) => !v)}
+                            title="Кластеры связанных между собой задач (по issue-link'ам Blocks/Relates/Duplicate и т.п.); одиночные задачи не показываются"
+                          >
+                            Консолидировано
+                          </SegmentButton>
+                        </div>
+                      </div>
+                      {result.stats.default_hours_count > 0 && (
+                        <button
+                          onClick={() => setShowEstimates(true)}
+                          className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5
+                                     bg-amber-50 border border-amber-300 text-amber-700
+                                     hover:bg-amber-100 rounded-lg transition"
+                        >
+                          <span className="w-5 h-5 bg-amber-400 text-white rounded-full text-xs flex items-center justify-center font-bold">
+                            {result.stats.default_hours_count}
+                          </span>
+                          Без оценок
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
-              <GanttChart
-                items={result.gantt_items}
-                startDate={result.gantt_start ?? startDate}
-                hoursPerDay={hoursPerDay}
-                dependencies={epicDeps}
-                onTaskClick={setSelectedKey}
-                todayHours={result.today_hours}
-                groupByStory={byStory}
-                groupByEpic={byEpic}
-                groupByParent={byParent}
-                sprintInfo={result.current_sprint}
-              />
+
+              {isHistoricalGantt ? (
+                <>
+                  <GanttSnapshotBanner
+                    snapshot={ganttSnap.detail}
+                    onDelete={() => handleDeleteGanttSnapshot(ganttSnap.selectedId as number)}
+                    onReturn={() => handleGanttSnapshotChange("current")}
+                  />
+                  {ganttSnap.detailLoading ? (
+                    <div className="text-gray-500 text-sm py-4">Загрузка снимка…</div>
+                  ) : displayedGanttItems && displayedGanttItems.length > 0 && (
+                    <GanttChart
+                      items={displayedGanttItems}
+                      startDate={displayedGanttStart}
+                      hoursPerDay={displayedGanttHours}
+                      todayHours={result.today_hours}
+                      groupByStory={byStory}
+                      groupByEpic={byEpic}
+                      groupByParent={byParent}
+                      sprintInfo={result.current_sprint}
+                      rootTasks={{}}
+                    />
+                  )}
+                </>
+              ) : showMissingOnly ? (
+                <MissingAssigneesPanel
+                  items={missingAssignees}
+                  onAssigned={(key: string, role: MissingRole) => {
+                    setMissingAssignees((prev) =>
+                      prev
+                        .map((m) => (m.key === key ? { ...m, missing: m.missing.filter((r) => r !== role) } : m))
+                        .filter((m) => m.missing.length > 0),
+                    );
+                  }}
+                />
+              ) : (
+                <GanttChart
+                  items={result.gantt_items}
+                  startDate={result.gantt_start ?? startDate}
+                  hoursPerDay={hoursPerDay}
+                  dependencies={epicDeps}
+                  onTaskClick={setSelectedKey}
+                  todayHours={result.today_hours}
+                  groupByStory={byStory}
+                  groupByEpic={byEpic}
+                  groupByParent={byParent}
+                  sprintInfo={result.current_sprint}
+                  rootTasks={rootTasksHook.map}
+                />
+              )}
             </>
           ) : (
             <div className="text-center text-gray-400 py-10">
@@ -502,9 +645,13 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
               onFetchDeps={() => fetchEpicDependencies(result.epic_key)}
               onAddDep={(dep) => addEpicDependency(result.epic_key, dep)}
               onRemoveDep={(dep) => removeEpicDependency(result.epic_key, dep)}
+              onFetchRootTasks={() => fetchRootTasks(result.epic_key)}
+              onSetRootTask={(ownerId, taskKey) => setRootTask(result.epic_key, ownerId, taskKey)}
+              onRemoveRootTask={(ownerId) => removeRootTask(result.epic_key, ownerId)}
               onClose={() => setShowDeps(false)}
               onChanged={() => {
                 fetchEpicDependencies(result.epic_key).then(setEpicDeps);
+                rootTasksHook.reload();
                 handleForecast();
               }}
             />
@@ -532,6 +679,13 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
             <RoiModal
               totalCost={result.stats.total_cost}
               onClose={() => setShowRoi(false)}
+            />
+          )}
+
+          {showTodayExport && result && (
+            <TodayExportModal
+              items={result.gantt_items}
+              onClose={() => setShowTodayExport(false)}
             />
           )}
         </>
@@ -563,6 +717,29 @@ const METRIC_ICONS = {
     </svg>
   ),
 };
+
+/** Кнопка внутри сегментированной группы тулбара (Зависимости/Отпуска, Свод:…). */
+function SegmentButton({
+  active, activeClass, onClick, title, children,
+}: {
+  active: boolean;
+  activeClass: string;
+  onClick: () => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition ${
+        active ? activeClass : "text-gray-600 hover:bg-gray-50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
 
 /** Скелетон-заглушка на время расчёта прогноза. */
 function ForecastSkeleton() {

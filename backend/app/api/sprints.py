@@ -9,7 +9,10 @@ from app.api.deps import current_config
 from app.db import models, repository, sprints_repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
-from app.schemas.gantt import GanttItem, StandupExecutor, TaskDependency
+from app.schemas.gantt import (
+    GanttItem, GanttSnapshotCreate, GanttSnapshotDetail, GanttSnapshotSummary,
+    StandupExecutor, TaskDependency,
+)
 from app.schemas.sprints import (
     ClosedTaskData, IntrusionRecord, SaveDraftRequest, SetTasksRequest,
     SprintOut, SprintSummary,
@@ -218,12 +221,83 @@ def get_gantt(
 ):
     sprint = _get_sprint_or_404(db, sprint_id, config.id)
     vac_dicts = repository.vacations_to_dicts(repository.list_vacations(db, config.id))
+    root_tasks = {
+        r.owner_id: r.task_key
+        for r in repository.list_root_tasks(db, config.id, f"sprint-{sprint.sprint_num}")
+    }
     return compute_gantt_schedule(
         [t.task_data for t in sprint.tasks],
         sprint.config_snapshot, start_date, hours_per_day,
         dependencies=sprint.task_dependencies or [],
         vacations=vac_dicts,
+        root_tasks=root_tasks,
     )
+
+
+# -------------------- Снимки Ганта --------------------
+
+@router.post("/{sprint_id}/gantt/snapshots", response_model=GanttSnapshotSummary, status_code=201)
+def create_gantt_snapshot(
+    sprint_id: int,
+    body: GanttSnapshotCreate,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    snap = sprints_repository.create_gantt_snapshot(
+        db, sprint.id, body.gantt_start, body.hours_per_day,
+        [item.model_dump() for item in body.gantt_items], body.label,
+    )
+    return GanttSnapshotSummary(
+        id=snap.id, captured_at=snap.captured_at.isoformat(),
+        label=snap.label, gantt_start=snap.gantt_start, hours_per_day=snap.hours_per_day,
+    )
+
+
+@router.get("/{sprint_id}/gantt/snapshots", response_model=list[GanttSnapshotSummary])
+def list_gantt_snapshots(
+    sprint_id: int,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    return [
+        GanttSnapshotSummary(
+            id=s.id, captured_at=s.captured_at.isoformat(),
+            label=s.label, gantt_start=s.gantt_start, hours_per_day=s.hours_per_day,
+        )
+        for s in sprints_repository.list_gantt_snapshots(db, sprint.id)
+    ]
+
+
+@router.get("/{sprint_id}/gantt/snapshots/{snapshot_id}", response_model=GanttSnapshotDetail)
+def get_gantt_snapshot(
+    sprint_id: int,
+    snapshot_id: int,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    snap = sprints_repository.get_gantt_snapshot(db, sprint.id, snapshot_id)
+    if not snap:
+        raise HTTPException(status_code=404, detail=f"Снимок {snapshot_id} не найден")
+    return GanttSnapshotDetail(
+        id=snap.id, captured_at=snap.captured_at.isoformat(),
+        label=snap.label, gantt_start=snap.gantt_start, hours_per_day=snap.hours_per_day,
+        gantt_items=snap.gantt_items,
+    )
+
+
+@router.delete("/{sprint_id}/gantt/snapshots/{snapshot_id}", status_code=204)
+def delete_gantt_snapshot(
+    sprint_id: int,
+    snapshot_id: int,
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    if not sprints_repository.delete_gantt_snapshot(db, sprint.id, snapshot_id):
+        raise HTTPException(status_code=404, detail=f"Снимок {snapshot_id} не найден")
 
 
 # -------------------- Dependencies CRUD --------------------

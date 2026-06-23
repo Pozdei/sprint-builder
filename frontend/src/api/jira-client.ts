@@ -14,6 +14,9 @@ export interface IssueFieldsUpdate {
   hours_developer?: number | null;
   hours_designer?: number | null;
   developer_account_id?: string | null;
+  designer_account_id?: string | null;
+  tester_account_id?: string | null;
+  responsible_account_id?: string | null;
 }
 
 export async function updateJiraIssueFields(

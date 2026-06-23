@@ -19,10 +19,11 @@ _WORK_TYPE_TO_BUCKET = {
     "design":        "Дизайн",
     "code_review":   "Код-ревью",
     "design_review": "Дизайн-ревью",
+    "release":       "Релиз",
 }
 
 _DEFAULT_BUCKET_PIPELINE = [
-    "Анализ", "Дизайн", "Разработка", "Код-ревью", "Дизайн-ревью", "Тестирование",
+    "Анализ", "Дизайн", "Разработка", "Код-ревью", "Дизайн-ревью", "Тестирование", "Релиз",
 ]
 
 WORK_START_HOUR = 9
@@ -154,11 +155,15 @@ def _schedule_real_tasks(
     hours_per_day: float,
     cross_task_deps: dict[str, list[str]] | None = None,
     vacation_blocks: dict[str, list[tuple[float, float]]] | None = None,
+    root_tasks: dict[str, str] | None = None,
 ) -> tuple[dict[tuple, tuple[float, float]], dict[str, float]]:
     """Event-driven scheduling для реальных задач.
 
     cross_task_deps: from_key → [to_key, ...] — FS-зависимости между задачами.
     vacation_blocks: owner_id → [(start_h, end_h), ...] — заблокированное время.
+    root_tasks: owner_id → task_key — стартовая (корневая) задача исполнителя:
+    встаёт первой в его очереди (Start-Start), не нарушая pipeline-зависимости —
+    если она ещё не готова к старту, очередь продолжает работу по приоритету.
 
     Возвращает:
     - scheduled: (key, bucket) → (start_h, end_h)
@@ -167,6 +172,7 @@ def _schedule_real_tasks(
     dir_pipelines = _build_direction_pipelines(config_snapshot)
     cross_deps = cross_task_deps or {}
     vac = vacation_blocks or {}
+    roots = root_tasks or {}
 
     task_by_id: dict[tuple, dict] = {(t["key"], t["bucket"]): t for t in real_tasks}
 
@@ -190,13 +196,19 @@ def _schedule_real_tasks(
         return pipeline_for(task)
 
     def last_stage_of_key(key: str) -> tuple | None:
-        """Последний bucket ключа key в его pipeline."""
+        """Последний РАБОЧИЙ bucket ключа key в его pipeline (для кросс-задачных
+        FS-зависимостей). Веха «Релиз» всегда стоит последней в pipeline, но это
+        не работа, а сигнал готовности — её время не должно блокировать старт
+        зависимых задач (зависимый может стартовать сразу по готовности
+        реального этапа, не дожидаясь формального релиза предшественника)."""
         stages = [(k, b) for k, b in task_by_id if k == key]
         if not stages:
             return None
         sample_task = task_by_id[stages[0]]
         pl = pipeline_for(sample_task)
         for bucket in reversed(pl):
+            if bucket == "Релиз":
+                continue
             if (key, bucket) in task_by_id:
                 return (key, bucket)
         return stages[-1]
@@ -247,12 +259,22 @@ def _schedule_real_tasks(
             return 0.0
         return max(finish_times.get(p, 0.0) for p in preds)
 
-    # Очереди задач по исполнителям (сортировка по приоритету)
+    # Очереди задач по исполнителям (сортировка по приоритету).
+    # Веха «Релиз» — не работа, которая встаёт в очередь и занимает время
+    # исполнителя, а сигнал готовности: катить можно сразу, как только готов
+    # предшествующий этап (обычно — Тестирование), независимо от того, чем
+    # человек занят параллельно. Поэтому она не участвует в очереди/курсоре
+    # владельца — планируется отдельно, сразу по готовности зависимостей.
     person_tasks: dict[str, list[dict]] = defaultdict(list)
     for t in real_tasks:
+        if t["bucket"] == "Релиз":
+            continue
         person_tasks[t["owner_id"]].append(t)
     for pid in person_tasks:
         person_tasks[pid].sort(key=lambda x: (x.get("priority") or 9999, x.get("key", "")))
+        root_key = roots.get(pid)
+        if root_key:
+            person_tasks[pid].sort(key=lambda x: x.get("key") != root_key)
 
     scheduled: dict[tuple, tuple[float, float]] = {}
     finish_times: dict[tuple, float] = {}
@@ -283,6 +305,22 @@ def _schedule_real_tasks(
     for person_id in person_tasks:
         enqueue_next(person_id, 0.0)
 
+    # Вехи «Релиз», которым уже ничего не мешает (предшественник не входит в
+    # этот батч — например, уже отыграл своё в прошлом) — сразу в очередь.
+    for t in real_tasks:
+        if t["bucket"] != "Релиз":
+            continue
+        tid = (t["key"], t["bucket"])
+        if all_preds_done(tid):
+            heapq.heappush(event_q, (
+                dep_end_h(tid),
+                t.get("priority") or 9999,
+                t.get("key", ""),
+                t["bucket"],
+                t["owner_id"],
+                tid,
+            ))
+
     while event_q:
         earliest, _prio, _key, _bucket, person_id, tid = heapq.heappop(event_q)
         if tid in scheduled:
@@ -293,17 +331,18 @@ def _schedule_real_tasks(
         if not all_preds_done(tid):
             continue
 
+        is_release = t["bucket"] == "Релиз"
         person_vac = vac.get(person_id, [])
         de = dep_end_h(tid)
-        start_h = _skip_blocks(max(person_cursor[person_id], de), person_vac)
+        start_h = _skip_blocks(de if is_release else max(person_cursor[person_id], de), person_vac)
         hours = max(t.get("hours") or 0.0, 0.0)
         end_h = _work_end(start_h, hours, person_vac)
 
         scheduled[tid] = (start_h, end_h)
         finish_times[tid] = end_h
-        person_cursor[person_id] = end_h
-
-        enqueue_next(person_id, end_h)
+        if not is_release:
+            person_cursor[person_id] = end_h
+            enqueue_next(person_id, end_h)
 
         for dep_tid in dependents.get(tid, []):
             dep_t = task_by_id.get(dep_tid)
@@ -313,7 +352,9 @@ def _schedule_real_tasks(
                 other = dep_t["owner_id"]
                 other_vac = vac.get(other, [])
                 other_de = dep_end_h(dep_tid)
-                other_start = _skip_blocks(max(person_cursor[other], other_de), other_vac)
+                dep_is_release = dep_t["bucket"] == "Релиз"
+                other_base = other_de if dep_is_release else max(person_cursor[other], other_de)
+                other_start = _skip_blocks(other_base, other_vac)
                 heapq.heappush(event_q, (
                     other_start,
                     dep_t.get("priority") or 9999,
@@ -461,11 +502,13 @@ def compute_gantt_schedule(
     hours_per_day: float = 8.0,
     dependencies: list[dict] | None = None,
     vacations: list[dict] | None = None,
+    root_tasks: dict[str, str] | None = None,
 ) -> list[dict]:
     """Рассчитать расписание Ганта.
 
     dependencies: список {from_key, to_key} — FS-зависимости.
     vacations: список {owner_id, start_date, end_date} — отпуска сотрудников.
+    root_tasks: owner_id → task_key — стартовая задача исполнителя (Start-Start).
 
     Каждый элемент результата:
       start / end — ISO datetime
@@ -494,6 +537,7 @@ def compute_gantt_schedule(
         real_tasks, config_snapshot, hours_per_day,
         cross_task_deps=dict(cross_task_deps),
         vacation_blocks=vac_blocks,
+        root_tasks=root_tasks,
     )
 
     real_items: list[dict] = []

@@ -19,6 +19,7 @@ from app.sprint.logic import (
     _extract_developer_name,
     _extract_owners,
     _extract_role_hours,
+    _field_account_id,
     _find_direction,
     _find_lead_owner,
     _find_pipeline_position,
@@ -26,7 +27,9 @@ from app.sprint.logic import (
     _resolve_designer_for_direction,
     _resolve_developer_for_direction,
     _resolve_owner,
+    _resolve_release_owner,
     _resolve_tester_for_direction,
+    _role_override,
     _safe_content_role,
     _team_with_role,
     estimate_hours_for_role,
@@ -107,7 +110,7 @@ def _generate_all_remaining_stages(
     dev_lead   = _find_lead_owner(cfg, "developer_lead")
     design_lead = _find_lead_owner(cfg, "designer_lead")
 
-    explicit_tester = bool((direction.get("tester_role") or "").strip())
+    explicit_tester = bool(_role_override(direction, "testing"))
     for pos, wt in enumerate(work_types):
         if pos < start_from:
             continue
@@ -142,7 +145,7 @@ def _generate_all_remaining_stages(
                 assignee_id, responsible_id, reporter_id,
             )
         elif wt == "analytics":
-            role = _safe_content_role(direction.get("analyst_role") or "analyst", bucket)
+            role = _safe_content_role(_role_override(direction, "analytics") or "analyst", bucket)
             role_team = team_by_role.get(role) or _team_with_role(cfg, role)
             owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
         elif wt == "code_review":
@@ -157,6 +160,13 @@ def _generate_all_remaining_stages(
             dl_id, dl_info = design_lead
             owner_id, role = dl_id, "designer_lead"
             role_team = {dl_id: dl_info}
+        elif wt == "release":
+            dev_id = _field_account_id(f, cfg.developer_field)
+            owner = _resolve_release_owner(dev_id, _extract_developer_name(f, cfg), cfg, dev_lead)
+            if owner is None:
+                continue
+            owner_id, role, owner_name = owner
+            role_team = {owner_id: cfg.team[owner_id]} if owner_id in cfg.team else {owner_id: {"file_name": owner_name}}
         else:
             role = info["role"]
             role_team = team_by_role.get(role) or _team_with_role(cfg, role)
@@ -254,12 +264,12 @@ def collect_epic_remaining_work(
         # Текущий шаг (если статус в role_status_buckets)
         role_buckets = status_to_roles.get(status_name, [])
         if direction and direction_name:
-            # Для задач направления — фильтруем по dev_role
-            direction_dev_role = direction.get("dev_role") or "developer"
+            # Для задач направления — фильтруем по роли разработчика направления
+            direction_dev_role = _role_override(direction, "development") or "developer"
             # Если у направления явно задан тестировщик — подавляем легаси-кандидата
             # «аналитик тестит» (role_status_buckets мапит analyst→Тестирование почти
             # для всех статусов). Тестирование сгенерирует выделенный тестировщик ниже.
-            explicit_tester = bool((direction.get("tester_role") or "").strip())
+            explicit_tester = bool(_role_override(direction, "testing"))
             for role, bucket in role_buckets:
                 if bucket == "Разработка" and role != direction_dev_role:
                     continue
@@ -364,6 +374,7 @@ def _build_with_history(
     dependencies: list[dict] | None,
     vacations: list[dict] | None,
     config_snapshot: dict,
+    root_tasks: dict[str, str] | None = None,
 ) -> dict:
     """Историчный режим: прошлые фазы из changelog + прогноз остатка на одной шкале."""
     now_dt = datetime.now()
@@ -403,6 +414,7 @@ def _build_with_history(
     forecast_items = compute_gantt_schedule(
         work_items, config_snapshot, today, hours_per_day,
         dependencies=dependencies or [], vacations=vacations or [],
+        root_tasks=root_tasks,
     )
     for it in forecast_items:
         it["start_hours"] = round(it["start_hours"] + today_offset, 3)
@@ -475,6 +487,7 @@ def build_epic_forecast(
     dependencies: list[dict] | None = None,
     vacations: list[dict] | None = None,
     use_history: bool = False,
+    root_tasks: dict[str, str] | None = None,
 ) -> dict:
     """Рассчитать прогноз реализации эпика.
 
@@ -493,7 +506,6 @@ def build_epic_forecast(
                 "name": d.get("name"),
                 "labels": d.get("labels", []),
                 "work_types": d.get("work_types", []),
-                "dev_role": d.get("dev_role", ""),
             }
             for d in cfg.directions
         ],
@@ -503,6 +515,7 @@ def build_epic_forecast(
         return _build_with_history(
             issues, cfg, sp_field, base_url, hours_per_day,
             dependencies, vacations, config_snapshot,
+            root_tasks=root_tasks,
         )
 
     work_items, counters = collect_epic_remaining_work(
@@ -533,6 +546,7 @@ def build_epic_forecast(
         work_items, config_snapshot, start_date, hours_per_day,
         dependencies=dependencies or [],
         vacations=vacations or [],
+        root_tasks=root_tasks,
     )
     _annotate_phase_costs(gantt_items, cfg)
 

@@ -8,6 +8,11 @@ class TaskDependency(BaseModel):
     to_key: str
 
 
+class RootTaskOut(BaseModel):
+    owner_id: str
+    task_key: str
+
+
 class EmployeeVacationIn(BaseModel):
     jira_account_id: str
     display_name: str
@@ -48,6 +53,25 @@ class GanttItem(BaseModel):
     story_summary: str | None = None
     epic_key: str | None = None       # предок типа «Эпик» (свод по эпикам)
     epic_summary: str | None = None
+
+
+class GanttSnapshotSummary(BaseModel):
+    id: int
+    captured_at: str   # ISO datetime
+    label: str | None = None
+    gantt_start: str
+    hours_per_day: float
+
+
+class GanttSnapshotDetail(GanttSnapshotSummary):
+    gantt_items: list[GanttItem]
+
+
+class GanttSnapshotCreate(BaseModel):
+    gantt_start: str
+    hours_per_day: float
+    gantt_items: list[GanttItem]
+    label: str | None = None
 
 
 class StandupTask(BaseModel):

@@ -12,11 +12,14 @@ from app.api.deps import current_config
 from app.db import models, repository, sprints_repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
-from app.schemas.gantt import GanttItem, TaskDependency
+from app.schemas.gantt import (
+    GanttItem, GanttSnapshotCreate, GanttSnapshotDetail, GanttSnapshotSummary,
+    RootTaskOut, TaskDependency,
+)
 from app.sprint.config import from_dict
 from app.sprint.epic_forecast import build_epic_forecast
 from app.sprint.excel import build_epic_forecast_xlsx
-from app.sprint.logic import find_story_points_field
+from app.sprint.logic import compute_missing_assignees, find_story_points_field
 
 router = APIRouter(prefix="/epic", tags=["epic"])
 
@@ -30,6 +33,11 @@ _BASE_FORECAST_FIELDS = (
 class EpicDependencyRequest(BaseModel):
     from_key: str
     to_key: str
+
+
+class RootTaskRequest(BaseModel):
+    owner_id: str
+    task_key: str
 
 
 class EpicSnapshotOut(BaseModel):
@@ -95,6 +103,41 @@ def remove_epic_dependency(
     db.commit()
 
 
+@router.get("/root-tasks", response_model=list[RootTaskOut])
+def get_root_tasks(
+    epic_key: str = Query(...),
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    return [
+        RootTaskOut(owner_id=r.owner_id, task_key=r.task_key)
+        for r in repository.list_root_tasks(db, config.id, epic_key)
+    ]
+
+
+@router.post("/root-tasks", response_model=list[RootTaskOut], status_code=201)
+def set_root_task(
+    body: RootTaskRequest,
+    epic_key: str = Query(...),
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    rows = repository.set_root_task(db, config.id, epic_key, body.owner_id, body.task_key)
+    db.commit()
+    return [RootTaskOut(owner_id=r.owner_id, task_key=r.task_key) for r in rows]
+
+
+@router.delete("/root-tasks", status_code=204)
+def remove_root_task(
+    owner_id: str = Query(...),
+    epic_key: str = Query(...),
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    repository.remove_root_task(db, config.id, epic_key, owner_id)
+    db.commit()
+
+
 @router.get("/snapshots", response_model=list[EpicSnapshotOut])
 def get_epic_snapshots(
     epic_key: str = Query(...),
@@ -129,6 +172,70 @@ def pin_epic_snapshot(
     return _snapshot_to_out(snap)
 
 
+# -------------------- Снимки Ганта (полный, как в истории спринтов) --------------------
+
+@router.post("/gantt/snapshots", response_model=GanttSnapshotSummary, status_code=201)
+def create_epic_gantt_snapshot(
+    body: GanttSnapshotCreate,
+    epic_key: str = Query(...),
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    snap = repository.create_epic_gantt_snapshot(
+        db, config.id, epic_key, body.gantt_start, body.hours_per_day,
+        [item.model_dump() for item in body.gantt_items], body.label,
+    )
+    db.commit()
+    return GanttSnapshotSummary(
+        id=snap.id, captured_at=snap.captured_at.isoformat(),
+        label=snap.label, gantt_start=snap.gantt_start, hours_per_day=snap.hours_per_day,
+    )
+
+
+@router.get("/gantt/snapshots", response_model=list[GanttSnapshotSummary])
+def list_epic_gantt_snapshots(
+    epic_key: str = Query(...),
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    return [
+        GanttSnapshotSummary(
+            id=s.id, captured_at=s.captured_at.isoformat(),
+            label=s.label, gantt_start=s.gantt_start, hours_per_day=s.hours_per_day,
+        )
+        for s in repository.list_epic_gantt_snapshots(db, config.id, epic_key)
+    ]
+
+
+@router.get("/gantt/snapshots/{snapshot_id}", response_model=GanttSnapshotDetail)
+def get_epic_gantt_snapshot(
+    snapshot_id: int,
+    epic_key: str = Query(...),
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    snap = repository.get_epic_gantt_snapshot(db, config.id, epic_key, snapshot_id)
+    if not snap:
+        raise HTTPException(status_code=404, detail=f"Снимок {snapshot_id} не найден")
+    return GanttSnapshotDetail(
+        id=snap.id, captured_at=snap.captured_at.isoformat(),
+        label=snap.label, gantt_start=snap.gantt_start, hours_per_day=snap.hours_per_day,
+        gantt_items=snap.gantt_items,
+    )
+
+
+@router.delete("/gantt/snapshots/{snapshot_id}", status_code=204)
+def delete_epic_gantt_snapshot(
+    snapshot_id: int,
+    epic_key: str = Query(...),
+    config: models.Config = Depends(current_config),
+    db: Session = Depends(get_db),
+):
+    if not repository.delete_epic_gantt_snapshot(db, config.id, epic_key, snapshot_id):
+        raise HTTPException(status_code=404, detail=f"Снимок {snapshot_id} не найден")
+    db.commit()
+
+
 class EpicStats(BaseModel):
     total_issues: int
     done_issues: int
@@ -156,6 +263,18 @@ class CurrentSprint(BaseModel):
     end_date: str     # YYYY-MM-DD
 
 
+class MissingAssigneeItem(BaseModel):
+    key: str
+    url: str
+    summary: str
+    direction: str | None = None
+    missing: list[str]              # роли без исполнителя: "responsible"/"developer"/"designer"/"tester"
+    responsible_id: str | None = None
+    developer_id: str | None = None
+    designer_id: str | None = None
+    tester_id: str | None = None
+
+
 class EpicForecastResponse(BaseModel):
     epic_key: str
     epic_summary: str
@@ -167,6 +286,7 @@ class EpicForecastResponse(BaseModel):
     gantt_start: str | None = None   # начало шкалы Ганта (для истор. режима — origin)
     today_hours: float | None = None  # рабочие часы от начала шкалы до «сегодня»
     current_sprint: CurrentSprint | None = None  # активный спринт (для границ на Ганте)
+    missing_assignees: list[MissingAssigneeItem] = []
 
 
 def _fetch_issue_children(
@@ -732,12 +852,32 @@ def epic_forecast(
         epic_deps = repository.list_epic_dependencies(db, cfg_model.id, key)
         dependencies = [{"from_key": d.from_key, "to_key": d.to_key} for d in epic_deps]
 
+    # Стартовые задачи (п.1 ТЗ): автоснятие якорей на пропавшие/терминальные задачи,
+    # затем подгружаем актуальный список owner_id → task_key для расписания.
+    terminal_set = set(cfg.terminal_statuses)
+    issue_status_by_key = {
+        iss["key"]: (iss.get("fields", {}).get("status") or {}).get("name", "")
+        for iss in issues
+    }
+    repository.cleanup_stale_root_tasks(
+        db, cfg_model.id, effective_key,
+        valid_keys=set(issue_status_by_key.keys()),
+        terminal_keys={k for k, s in issue_status_by_key.items() if s in terminal_set},
+    )
+    root_tasks = {
+        r.owner_id: r.task_key
+        for r in repository.list_root_tasks(db, cfg_model.id, effective_key)
+    }
+
     result = build_epic_forecast(
         issues, cfg, sp_field, base_url, start_date, hours_per_day,
         dependencies=dependencies,
         vacations=vacations,
         use_history=use_history,
+        root_tasks=root_tasks,
     )
+
+    missing_assignees = compute_missing_assignees(issues, cfg, base_url)
 
     # Иерархия стори/эпик для сводных полос — поднимаемся по дереву родителей
     _annotate_hierarchy(result["gantt_items"], issues)
@@ -775,6 +915,7 @@ def epic_forecast(
         gantt_start=result.get("gantt_start"),
         today_hours=result.get("today_hours"),
         current_sprint=CurrentSprint(**current_sprint) if current_sprint else None,
+        missing_assignees=[MissingAssigneeItem(**m) for m in missing_assignees],
     )
 
 

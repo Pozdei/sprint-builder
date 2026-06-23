@@ -45,9 +45,7 @@ class DirectionOut(BaseModel):
     name: str
     labels: list[str]
     work_types: list[str]
-    dev_role:     str = ""
-    tester_role:  str = ""   # роль тестера; пусто = "analyst"
-    analyst_role: str = ""   # роль аналитика; пусто = "analyst"
+    role_overrides: dict[str, str] = {}   # work_type -> имя роли; пусто = системный дефолт
     designer_id:  str = ""   # accountId дизайнера; пусто = автовыбор по роли
 
 

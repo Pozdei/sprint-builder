@@ -110,9 +110,10 @@ _BUCKET_TO_ROLE_HOURS_FIELD = {
     "Разработка":   "developer",
 }
 
-# Бакеты ревью: время определяется только настроенным дефолтом (role_status_default_hours),
-# никакие поля задачи (timeoriginalestimate, sp, hours_developer) не учитываются.
-_REVIEW_BUCKETS = {"Код-ревью", "Дизайн-ревью"}
+# Бакеты ревью/вехи: время определяется только настроенным дефолтом
+# (role_status_default_hours), никакие поля задачи (timeoriginalestimate, sp,
+# hours_developer) не учитываются. «Релиз» — финальная веха пайплайна разработки.
+_REVIEW_BUCKETS = {"Код-ревью", "Дизайн-ревью", "Релиз"}
 
 # Маппинг вида работы → роль + бакет
 _WORK_TYPE_INFO: dict[str, dict[str, str]] = {
@@ -122,19 +123,27 @@ _WORK_TYPE_INFO: dict[str, dict[str, str]] = {
     "design":        {"role": "designer",        "bucket": "Дизайн"},
     "code_review":   {"role": "developer_lead",  "bucket": "Код-ревью"},
     "design_review": {"role": "designer_lead",   "bucket": "Дизайн-ревью"},
+    "release":       {"role": "developer_lead",  "bucket": "Релиз"},
 }
 
 # Виды работ, которые порождаются ПОСЛЕ аллокации (когда знаем, что задача выполнится)
-_POST_ALLOC_WORK_TYPES = {"testing", "code_review", "design_review"}
+_POST_ALLOC_WORK_TYPES = {"testing", "code_review", "design_review", "release"}
+
+
+def _role_override(direction: dict | None, work_type: str) -> str:
+    """Роль направления для work_type, заданная пользователем вместо системного дефолта."""
+    if not direction:
+        return ""
+    return ((direction.get("role_overrides") or {}).get(work_type) or "").strip()
 
 # Что может делать каждый тип роли: prefix роли → допустимые bucket-категории.
 # Используется чтобы не отдать «Тестирование»/«Анализ» разработчику, даже если
-# направление сконфигурировано неправильно (tester_role/analyst_role указывает
+# направление сконфигурировано неправильно (role_overrides указывает
 # на несовместимую роль).
 _ROLE_WORK_CATEGORIES: dict[str, frozenset[str]] = {
     "analyst":   frozenset({"Анализ", "Тестирование"}),
     "tester":    frozenset({"Тестирование"}),
-    "developer": frozenset({"Разработка", "Код-ревью"}),
+    "developer": frozenset({"Разработка", "Код-ревью", "Релиз"}),
     "designer":  frozenset({"Дизайн", "Дизайн-ревью"}),
 }
 
@@ -150,7 +159,7 @@ def _role_allowed_buckets(role: str | None) -> frozenset[str] | None:
 
 
 def _safe_content_role(role: str, bucket: str) -> str:
-    """Если role не подходит для bucket (например, tester_role направления по
+    """Если role не подходит для bucket (например, role_overrides направления по
     ошибке указывает на роль разработчика) — откатываемся на дефолтную
     «analyst», которая совместима и с «Анализ», и с «Тестирование».
     """
@@ -186,7 +195,12 @@ def estimate_hours_for_role(fields: dict, role: str, bucket: str,
 
     Для ревью-бакетов (Код-ревью, Дизайн-ревью) шаги 1–3 пропускаются:
     время ревью не зависит от оценки разработки — только дефолт из настроек.
+
+    «Релиз» — не работа, а сигнал готовности (см. _REVIEW_BUCKETS), часы всегда 0:
+    веха не должна попадать в плановые часы / стоимость / суммы по сводным полосам.
     """
+    if bucket == "Релиз":
+        return 0.0
     if bucket in _REVIEW_BUCKETS:
         # Ищем дефолт по имени бакета (= Jira-статус ревью в настройках),
         # а не по текущему статусу задачи — он не релевантен для генерируемых шагов
@@ -250,6 +264,79 @@ def _find_pipeline_position(status_name: str, work_types: list[str],
     return -1
 
 
+# Поле направления work_types → роли, обязательные для этого пайплайна.
+# Конфигурируется через уже существующий work_types направления, без новых полей конфига.
+_WORK_TYPES_TO_REQUIRED_ROLES: dict[str, list[str]] = {
+    "design": ["responsible", "designer"],
+    "development": ["responsible", "developer", "tester"],
+}
+
+# Роль → атрибут SprintConfig с id персонального поля Jira.
+_ROLE_TO_CONFIG_FIELD: dict[str, str] = {
+    "responsible": "responsible_field",
+    "developer": "developer_field",
+    "designer": "designer_field",
+    "tester": "tester_field",
+}
+
+
+def compute_missing_assignees(issues: list[dict], cfg: SprintConfig, base_url: str) -> list[dict]:
+    """Задачи направлений design/development без хотя бы одного исполнителя пайплайна.
+
+    Правило берётся из work_types направления задачи (см. _find_direction):
+    design → нужны аналитик и дизайнер; development → нужны аналитик, разработчик
+    и тестировщик. Роли, для которых в конфиге не настроено поле Jira, не проверяются.
+    Закрытые задачи (terminal_statuses) и задачи без определённого направления
+    пропускаются.
+    """
+    terminal = set(cfg.terminal_statuses)
+    result: list[dict] = []
+
+    for issue in issues:
+        f = issue.get("fields", {})
+        status_name = (f.get("status") or {}).get("name", "")
+        if status_name in terminal:
+            continue
+
+        direction = _find_direction(f.get("labels") or [], cfg)
+        if not direction:
+            continue
+
+        needed: list[str] = []
+        for wt in direction.get("work_types", []):
+            for role in _WORK_TYPES_TO_REQUIRED_ROLES.get(wt, []):
+                if role not in needed:
+                    needed.append(role)
+        needed = [r for r in needed if getattr(cfg, _ROLE_TO_CONFIG_FIELD[r])]
+        if not needed:
+            continue
+
+        current: dict[str, str | None] = {}
+        missing: list[str] = []
+        for role in needed:
+            field_id = getattr(cfg, _ROLE_TO_CONFIG_FIELD[role])
+            acc_id = _field_account_id(f, field_id)
+            current[role] = acc_id
+            if not acc_id:
+                missing.append(role)
+        if not missing:
+            continue
+
+        result.append({
+            "key": issue["key"],
+            "url": f"{base_url}/browse/{issue['key']}",
+            "summary": f.get("summary", ""),
+            "direction": direction.get("name"),
+            "missing": missing,
+            "responsible_id": current.get("responsible"),
+            "developer_id": current.get("developer"),
+            "designer_id": current.get("designer"),
+            "tester_id": current.get("tester"),
+        })
+
+    return result
+
+
 def _find_lead_owner(cfg: SprintConfig,
                      lead_role: str) -> tuple[str, dict] | None:
     """Первый включённый лид заданной роли. Возвращает (account_id, info) или None."""
@@ -262,6 +349,30 @@ def _find_lead_owner(cfg: SprintConfig,
     for acc_id, info in cfg.team.items():
         if info.get("role") in lead_names:
             return acc_id, info
+    return None
+
+
+def _resolve_release_owner(
+    dev_id: str | None, dev_name: str | None, cfg: SprintConfig,
+    dev_lead: tuple[str, dict] | None,
+) -> tuple[str, str, str] | None:
+    """Владелец будущей/пост-аллокационной вехи «Релиз»: приоритет — человек из поля
+    «Разработчик», иначе лид разработки. Роль кандидата всегда "developer_lead" — так
+    заведены дефолтные часы (role_status_default_hours), вне зависимости от реальной
+    роли человека из поля «Разработчик» (developer/_frontend/_backend).
+
+    Используется для шагов, которые ещё не наступили (генерируются заранее) — для
+    шага, уже стоящего в текущем статусе задачи, роль берётся иначе (см.
+    _process_issue_for_role: там в Ганте фигурирует фактическая роль разработчика).
+
+    Возвращает (owner_id, role, file_name) или None.
+    """
+    if dev_id:
+        name = cfg.team[dev_id]["file_name"] if dev_id in cfg.team else (dev_name or dev_id)
+        return dev_id, "developer_lead", name
+    if dev_lead:
+        lead_id, lead_info = dev_lead
+        return lead_id, "developer_lead", lead_info["file_name"]
     return None
 
 
@@ -447,6 +558,7 @@ def _make_candidate(
         "assignee_id": assignee_id,
         "reporter_id": reporter_id,
         "developer_name": _extract_developer_name(f, cfg),
+        "developer_id": _field_account_id(f, cfg.developer_field),
         "designer_id": _field_account_id(f, cfg.designer_field),
         "tester_id": _field_account_id(f, cfg.tester_field),
     }
@@ -487,6 +599,18 @@ def _process_issue_for_role(
         fid, _frole, fteam = _person_from_field(f, cfg.tester_field, cfg, role)
         if fid:
             owner_id, role_team, field_override = fid, fteam, True
+    elif bucket == "Релиз":
+        # Веха «Релиз»: приоритет — человек из поля «Разработчик», иначе лид разработки.
+        # Роль берём фактическую (frole), а не дефолтную «лид» — релизит себя сам
+        # разработчик, и в Ганте он должен отображаться разработчиком, а не лидом.
+        fid, frole, fteam = _person_from_field(f, cfg.developer_field, cfg, role)
+        if fid:
+            owner_id, role, role_team, field_override = fid, frole, fteam, True
+        else:
+            lead = _find_lead_owner(cfg, "developer_lead")
+            if lead:
+                lead_id, lead_info = lead
+                owner_id, role_team, field_override = lead_id, {lead_id: lead_info}, True
 
     if owner_id is None:
         return
@@ -559,7 +683,7 @@ def _resolve_developer_for_direction(
 
     Возвращает (owner_id, actual_role, role_team).
     """
-    dev_role = direction.get("dev_role") or "developer"
+    dev_role = _role_override(direction, "development") or "developer"
     role_team = team_by_role.get(dev_role) or _team_with_role(cfg, dev_role)
 
     # 1. Поле «Разработчик» из Jira — безусловный приоритет.
@@ -643,9 +767,9 @@ def _config_tester(
     """Настроенный тестировщик направления, если роль тестировщика задана явно.
 
     Возвращает tester_id из конфига (или первого в команде роли) только когда
-    direction.tester_role непустой; иначе None (дефолтный analyst-режим не трогаем).
+    role_overrides["testing"] непустой; иначе None (дефолтный analyst-режим не трогаем).
     """
-    raw = (direction.get("tester_role") or "").strip() if direction else ""
+    raw = _role_override(direction, "testing")
     if not raw or not tester_team:
         return None
     tester_id = (direction.get("tester_id") or "").strip()
@@ -664,15 +788,15 @@ def _resolve_tester_for_direction(
     Порядок (согласовано с пользователем):
     1. Поле Jira «Тестировщик» (tester_field) — безусловный приоритет.
     2. Историчный тестировщик из changelog — кто реально тестил задачу в прошлом.
-    3. Если роль тестировщика задана явно (tester_role != пусто) — настроенный
-       тестировщик этой роли (tester_id, иначе единственный/первый в команде).
+    3. Если роль тестировщика задана явно (role_overrides["testing"] != пусто) —
+       настроенный тестировщик этой роли (tester_id, иначе единственный/первый в команде).
        Так будущие (ещё не тестированные) задачи получают тестировщика из конфига.
-    4. Дефолт (tester_role пуст → analyst) — assignee→responsible→reporter, т.е.
-       аналитик тестит свою задачу (старое поведение).
+    4. Дефолт (role_overrides["testing"] пуст → analyst) — assignee→responsible→reporter,
+       т.е. аналитик тестит свою задачу (старое поведение).
 
     Возвращает (owner_id, role, role_team).
     """
-    raw = (direction.get("tester_role") or "").strip() if direction else ""
+    raw = _role_override(direction, "testing")
     role = _safe_content_role(raw or "analyst", "Тестирование")
     role_team = team_by_role.get(role) or _team_with_role(cfg, role)
 
@@ -746,11 +870,11 @@ def _generate_direction_pre_candidates(
                 f, direction, cfg, team_by_role, assignee_id,
             )
         elif wt == "testing":
-            role = _safe_content_role(direction.get("tester_role") or "analyst", bucket)
+            role = _safe_content_role(_role_override(direction, "testing") or "analyst", bucket)
             role_team = team_by_role.get(role) or _team_with_role(cfg, role)
             owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
         elif wt == "analytics":
-            role = _safe_content_role(direction.get("analyst_role") or "analyst", bucket)
+            role = _safe_content_role(_role_override(direction, "analytics") or "analyst", bucket)
             role_team = team_by_role.get(role) or _team_with_role(cfg, role)
             owner_id = _resolve_owner(role, assignee_id, responsible_id, reporter_id, role_team)
         else:
@@ -903,10 +1027,10 @@ def collect_candidates(client: JiraClient, cfg: SprintConfig) -> tuple[list[dict
 
             # Стандартные кандидаты по role_status_buckets
             role_buckets = status_to_roles.get(status_name, [])
-            direction_dev_role = (direction.get("dev_role") or "developer") if direction else None
+            direction_dev_role = (_role_override(direction, "development") or "developer") if direction else None
             for role, bucket in role_buckets:
-                # Для бакета «Разработка»: если у задачи есть направление с dev_role,
-                # пропускаем роли разработчика, не совпадающие с dev_role направления.
+                # Для бакета «Разработка»: если у направления задан role_overrides["development"],
+                # пропускаем роли разработчика, не совпадающие с этой ролью направления.
                 if direction and bucket == "Разработка" and direction_dev_role and role != direction_dev_role:
                     continue
                 _process_issue_for_role(
@@ -1087,7 +1211,7 @@ def compute_sprint_expected_results(
 
     # Дефолтный порядок бакетов (без явного направления)
     _DEFAULT_BUCKET_ORDER = [
-        "Анализ", "Дизайн", "Разработка", "Код-ревью", "Дизайн-ревью", "Тестирование",
+        "Анализ", "Дизайн", "Разработка", "Код-ревью", "Дизайн-ревью", "Тестирование", "Релиз",
     ]
 
     # Группируем: key → список (bucket, is_partial)
@@ -1160,11 +1284,12 @@ def _tester_hours(task: dict, tester_role: str, cfg: SprintConfig) -> float:
 def derive_pipeline_tasks(
     allocated: list[dict], cfg: SprintConfig,
 ) -> list[dict]:
-    """Породить задачи тестирования, код-ревью и дизайн-ревью из выполненных задач.
+    """Породить задачи тестирования, код-ревью, дизайн-ревью и релиза из выполненных задач.
 
     Для каждой non-partial задачи разработчика (bucket=Разработка):
       - Если направление включает «testing» → добавить задачу тестирования аналитику.
       - Всегда → добавить задачу код-ревью лиду разработки.
+      - Если направление включает «release» → добавить веху релиза (см. _add_release).
 
     Для каждой non-partial задачи дизайнера (bucket=Дизайн):
       - Всегда → добавить задачу дизайн-ревью лиду дизайна.
@@ -1185,7 +1310,7 @@ def derive_pipeline_tasks(
     # Все роли разработчика из конфига направлений (developer, developer_frontend, ...)
     all_dev_roles: set[str] = {"developer"}
     for _d in cfg.directions:
-        _dr = (_d.get("dev_role") or "").strip()
+        _dr = _role_override(_d, "development")
         if _dr:
             all_dev_roles.add(_dr)
 
@@ -1204,6 +1329,33 @@ def derive_pipeline_tasks(
             "priority": None,
         })
         return t
+
+    # Веха «Релиз»: ключ задачи уже мог получить релиз через настоящий статус
+    # (bucket="Релиз" в allocated) — дедуп тут по key, а не по (key, role, bucket),
+    # так как итоговая роль владельца динамическая (поле «Разработчик» → лид разработки).
+    released_keys: set[str] = {
+        t["key"] for t in allocated
+        if not t.get("is_pseudo") and t.get("bucket") == "Релиз"
+    }
+
+    def _release_owner(task: dict) -> tuple[str, str, str] | None:
+        dev_id = (task.get("developer_id") or "").strip() or None
+        return _resolve_release_owner(dev_id, task.get("developer_name"), cfg, dev_lead)
+
+    def _add_release(task: dict, work_types: list[str]) -> None:
+        if "release" not in work_types:
+            return
+        key = task["key"]
+        if key in released_keys:
+            return
+        owner = _release_owner(task)
+        if owner is None:
+            return
+        owner_id, owner_role, owner_name = owner
+        # Часы релиза всегда 0 — см. estimate_hours_for_role: это не работа, а
+        # сигнал готовности, не должен попадать в плановые часы / стоимость.
+        derived.append(_make_derived(task, owner_role, "Релиз", owner_id, owner_name, 0.0))
+        released_keys.add(key)
 
     for task in allocated:
         if task.get("is_pseudo"):
@@ -1233,7 +1385,7 @@ def derive_pipeline_tasks(
             for wt in post_alloc_order:
                 if wt == "testing":
                     tester_role = _safe_content_role(
-                        (direction.get("tester_role") or "analyst") if direction else "analyst",
+                        _role_override(direction, "testing") or "analyst",
                         "Тестирование",
                     )
                     test_cand_key = (key, tester_role, "Тестирование")
@@ -1276,7 +1428,10 @@ def derive_pipeline_tasks(
                             derived.append(d)
                             allocated_keys.add(cr_cand_key)
 
-        # ---- Код-ревью завершено → тестирование ----
+                elif wt == "release":
+                    _add_release(task, work_types)
+
+        # ---- Код-ревью завершено → тестирование (+ релиз) ----
         elif bucket == "Код-ревью":
             if direction:
                 cr_idx = next((i for i, wt in enumerate(work_types) if wt == "code_review"), -1)
@@ -1286,7 +1441,7 @@ def derive_pipeline_tasks(
 
             if has_testing:
                 tester_role = _safe_content_role(
-                    (direction.get("tester_role") or "analyst") if direction else "analyst",
+                    _role_override(direction, "testing") or "analyst",
                     "Тестирование",
                 )
                 tester_team = _team_with_role(cfg, tester_role)
@@ -1310,6 +1465,12 @@ def derive_pipeline_tasks(
                         )
                         derived.append(d)
                         allocated_keys.add(test_cand_key)
+
+            _add_release(task, work_types)
+
+        # ---- Тестирование завершено → релиз ----
+        elif bucket == "Тестирование":
+            _add_release(task, work_types)
 
         # ---- Задача дизайнера ----
         elif bucket == "Дизайн" and task.get("role") == "designer":

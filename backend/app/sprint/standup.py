@@ -63,11 +63,15 @@ def build_standup(
     # Порог: сколько рабочих часов прошло к концу standup_date
     hours_threshold = _working_hours_by_eod(sprint_start, standup_date, hours_per_day)
 
+    terminal = set(config_snapshot.get("terminal_statuses") or [])
+
     # Берём только реальные (не псевдо) задачи, начавшиеся к standup_date
+    # и не находящиеся уже в терминальном статусе (закрыты/выполнены в Jira)
     relevant = [
         item for item in gantt
         if not item.get("is_pseudo")
         and item["start_hours"] < hours_threshold  # start < EOD сегодня
+        and item.get("status_name") not in terminal
     ]
 
     # Фильтрация по ролям
