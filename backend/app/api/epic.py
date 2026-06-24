@@ -1,5 +1,6 @@
 """Прогноз реализации эпика."""
 
+import itertools
 import urllib.parse
 from datetime import date
 
@@ -8,7 +9,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_config
+from app.api.deps import current_config, get_jira_client
 from app.db import models, repository, sprints_repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
@@ -33,6 +34,28 @@ _BASE_FORECAST_FIELDS = (
 class EpicDependencyRequest(BaseModel):
     from_key: str
     to_key: str
+    from_bucket: str | None = None
+    to_bucket: str | None = None
+    # Реальный scope (epic_key), под которым зависимость лежит в БД — для remove
+    # унаследованной зависимости (см. _dependency_scope_keys). Пусто = epic_key из query.
+    epic_key: str | None = None
+
+
+def _dependency_scope_keys(parent_keys: list[str]) -> list[str]:
+    """Все непустые подмножества родителей (sorted+joined) — зависимость,
+    сохранённая в рамках одного родителя или меньшей комбинации, должна
+    применяться и в любом более широком прогнозе, который его включает.
+
+    Разделитель — запятая, не "+": "+" в query-параметре URL декодируется
+    некоторыми клиентами как пробел (application/x-www-form-urlencoded), из-за
+    чего составной ключ ломался при ручных запросах/прямых ссылках.
+    """
+    keys: list[str] = []
+    uniq = sorted(set(parent_keys))
+    for r in range(1, len(uniq) + 1):
+        for combo in itertools.combinations(uniq, r):
+            keys.append(",".join(combo))
+    return keys
 
 
 class RootTaskRequest(BaseModel):
@@ -55,7 +78,14 @@ class EpicSnapshotOut(BaseModel):
 
 
 def _to_dep_list(deps) -> list[TaskDependency]:
-    return [TaskDependency(from_key=d.from_key, to_key=d.to_key) for d in deps]
+    return [
+        TaskDependency(
+            from_key=d.from_key, to_key=d.to_key,
+            from_bucket=d.from_bucket or None, to_bucket=d.to_bucket or None,
+            epic_key=d.epic_key,
+        )
+        for d in deps
+    ]
 
 
 def _snapshot_to_out(s: models.EpicForecastSnapshot) -> "EpicSnapshotOut":
@@ -75,7 +105,10 @@ def get_epic_dependencies(
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
 ):
-    return _to_dep_list(repository.list_epic_dependencies(db, config.id, epic_key))
+    deps = repository.list_epic_dependencies_for_keys(
+        db, config.id, _dependency_scope_keys(epic_key.split(",")),
+    )
+    return _to_dep_list(deps)
 
 
 @router.post("/dependencies", response_model=list[TaskDependency], status_code=201)
@@ -87,8 +120,14 @@ def add_epic_dependency(
 ):
     if body.from_key == body.to_key:
         raise HTTPException(status_code=422, detail="Задача не может зависеть от самой себя")
-    deps = repository.add_epic_dependency(db, config.id, epic_key, body.from_key, body.to_key)
+    repository.add_epic_dependency(
+        db, config.id, epic_key, body.from_key, body.to_key,
+        from_bucket=body.from_bucket or "", to_bucket=body.to_bucket or "",
+    )
     db.commit()
+    deps = repository.list_epic_dependencies_for_keys(
+        db, config.id, _dependency_scope_keys(epic_key.split(",")),
+    )
     return _to_dep_list(deps)
 
 
@@ -99,7 +138,13 @@ def remove_epic_dependency(
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
 ):
-    repository.remove_epic_dependency(db, config.id, epic_key, body.from_key, body.to_key)
+    # Зависимость могла быть унаследована из меньшего scope (одного родителя или
+    # подмножества) — удаляем по её реальному epic_key, если он передан.
+    target_key = body.epic_key or epic_key
+    repository.remove_epic_dependency(
+        db, config.id, target_key, body.from_key, body.to_key,
+        from_bucket=body.from_bucket or "", to_bucket=body.to_bucket or "",
+    )
     db.commit()
 
 
@@ -418,6 +463,63 @@ _EPIC_TYPES = ("эпик", "epic")
 _PARENT_LINK_NAMES = ("parent",)
 _HIER_FIELDS = "issuetype,summary,parent,issuelinks"
 
+_PARENT_TYPE_LABELS = {"epic": "Эпики", "story": "Истории"}
+
+
+def _normalize_parent_type(issue_type: str) -> str:
+    """Эпик/история — синонимы схлопываются в одну категорию для сверки типов."""
+    t = issue_type.lower()
+    if t in _EPIC_TYPES:
+        return "epic"
+    if t in _STORY_TYPES:
+        return "story"
+    return t
+
+
+def _parse_parent_keys(raw: str) -> list[str]:
+    """Несколько ключей через запятую — uniq, с сохранением порядка ввода."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for part in raw.split(","):
+        k = part.strip().upper()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
+
+
+def _fetch_multi_parent(
+    keys: list[str], expand_changelog: bool,
+) -> tuple[str, list[dict]]:
+    """Собрать задачи нескольких родителей одного типа в одну выборку.
+
+    Возвращает (summary, issues). Поднимает HTTPException(422) при разнотипных
+    ключах — намеренно не поддерживаем смесь эпик+история в одном прогнозе.
+    """
+    parts = [_fetch_issue_children(k, expand_changelog=expand_changelog) for k in keys]
+
+    if len(keys) > 1:
+        norm_types = {_normalize_parent_type(t) for _, t, _ in parts}
+        if len(norm_types) > 1:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Ключи должны быть одного типа (сейчас разные: {', '.join(sorted(norm_types))}).",
+            )
+
+    if len(keys) == 1:
+        return parts[0][0], parts[0][2]
+
+    label = _PARENT_TYPE_LABELS.get(_normalize_parent_type(parts[0][1]), "Задачи")
+    summary = f"{label}: {', '.join(keys)}"
+    issues: list[dict] = []
+    seen: set[str] = set()
+    for _summary, _type, part_issues in parts:
+        for iss in part_issues:
+            if iss["key"] not in seen:
+                seen.add(iss["key"])
+                issues.append(iss)
+    return summary, issues
+
 
 def _field_parent_key(fields: dict) -> str | None:
     """Непосредственный родитель из поля `parent` (нативная иерархия Jira)."""
@@ -452,23 +554,31 @@ def _parent_candidates(fields: dict) -> list[str]:
     return out
 
 
-def _issuelink_keys(fields: dict) -> list[str]:
-    """Соседи задачи по «боковым» issue-link'ам (Blocks, Relates, Duplicate, Clones…).
+def _consolidated_neighbors(fields: dict) -> list[str]:
+    """Все связи задачи для «Консолидировано»: родитель (поле `parent` и
+    issue-link «Parent») + ЛЮБЫЕ боковые issue-link'и — Clones, Blocks, Relates,
+    Duplicate, кастомные типа «Старт-Финиш» и т.п. Буквально всё, что Jira
+    показывает в блоке «Связанные задачи» этой задачи, плюс родитель.
 
-    Используется для «Консолидировано» — кластеризации по смыслу связанных задач.
-    Иерархические связи (поле `parent` и issue-link «Parent») сюда НЕ включаем: они
-    реконструируют дерево эпик/история, для которых есть отдельные полосы.
+    В отличие от story_key/epic_key (которые идут только вверх по дереву
+    parent), здесь граф связности объединяет вообще все типы связей — задача
+    должна попасть в один свод с любой связанной, даже если связь не
+    иерархическая или ведёт на задачу вне текущей выборки (например, на уже
+    закрытый клон, не входящий в work items прогноза).
     """
-    res: list[str] = []
+    res = list(_parent_candidates(fields))
     for link in fields.get("issuelinks") or []:
-        t = link.get("type") or {}
-        if (t.get("name") or "").lower() in _PARENT_LINK_NAMES:
-            continue
         for side in ("inwardIssue", "outwardIssue"):
             o = link.get(side)
             if isinstance(o, dict) and o.get("key"):
                 res.append(o["key"])
-    return res
+    out: list[str] = []
+    seen: set[str] = set()
+    for k in res:
+        if k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
 
 
 def _sprint_info_from_issues(issues: list[dict], cfg) -> dict | None:
@@ -538,14 +648,18 @@ def _active_sprint_info(cfg) -> dict | None:
 def _annotate_hierarchy(gantt_items: list[dict], issues: list[dict]) -> None:
     """Проставить parent_/story_/epic_ ключи каждому бару (для сводных полос).
 
-    - parent_* — «Консолидировано»: связные компоненты по issue-link'ам любого типа
-      (Blocks, Relates, Parent-link, дубликаты…), т.е. кластеры связанных задач;
+    - parent_* — «Консолидировано»: связные компоненты по ВСЕМ связям задачи —
+      родитель (эпик/история) + любые issue-link'и (Clones, Blocks, Relates,
+      Duplicate, кастомные…). Узел-связка (общий родитель, уже закрытый клон
+      вне выборки прогноза) объединяет кластер, даже если сам не получает бар;
     - story_*  — первый предок с типом «История» (свод по User Story);
     - epic_*   — первый предок с типом «Эпик» (свод по эпикам).
 
     Предки/связи догружаем из Jira батчами. Псевдо/служебные бары не размечаем.
     """
     # info: key -> {"type", "summary", "field_parent", "parents": [str], "links": [str]}
+    # "links" здесь — полный граф связности для «Консолидировано» (родитель + любые
+    # issuelink'и), а "parents" — отдельно, только для предков (story_key/epic_key).
     info: dict[str, dict] = {}
 
     def absorb(iss: dict) -> None:
@@ -555,7 +669,7 @@ def _annotate_hierarchy(gantt_items: list[dict], issues: list[dict]) -> None:
             "summary": f.get("summary"),
             "field_parent": _field_parent_key(f),
             "parents": _parent_candidates(f),
-            "links": _issuelink_keys(f),
+            "links": _consolidated_neighbors(f),
         }
 
     # Стартовые ключи — реальные задачи прогноза
@@ -568,8 +682,11 @@ def _annotate_hierarchy(gantt_items: list[dict], issues: list[dict]) -> None:
         seen_start.add(k)
         start_keys.append(k)
 
-    # Поднимаемся по дереву уровень за уровнем (issuelinks есть только при отдельном
-    # запросе по ключу, поэтому дозапрашиваем каждый узел)
+    # Расходимся по графу связей уровень за уровнем — и вверх по дереву (parent),
+    # и в стороны по любым issuelink'ам (Clones/Blocks/Relates/...), чтобы
+    # «Консолидировано» видело задачи, связанные напрямую, а не только предков.
+    # issuelinks есть только при отдельном запросе по ключу, поэтому дозапрашиваем
+    # каждый обнаруженный узел.
     fetched: set[str] = set()
     frontier = list(start_keys)
     for _ in range(8):
@@ -584,9 +701,9 @@ def _annotate_hierarchy(gantt_items: list[dict], issues: list[dict]) -> None:
         for iss in batch:
             absorb(iss)
             fetched.add(iss["key"])
-            for pk in info[iss["key"]]["parents"]:
-                if pk not in fetched:
-                    next_frontier.append(pk)
+            for nb in info[iss["key"]]["links"]:
+                if nb not in fetched:
+                    next_frontier.append(nb)
         frontier = next_frontier
 
     def ancestor_of_type(key: str, types: tuple[str, ...]) -> str | None:
@@ -620,15 +737,16 @@ def _annotate_hierarchy(gantt_items: list[dict], issues: list[dict]) -> None:
         if ra != rb:
             uf[ra] = rb
 
-    # Кластеризуем ТОЛЬКО задачи прогноза между собой (эпик/история не должны быть
-    # хабом — иначе кластер вырождается в эпик). Связь учитываем, если оба конца —
-    # задачи прогноза.
-    work_set = set(start_keys)
-    for k in start_keys:
+    # Кластеризуем по ВСЕМ обнаруженным узлам (не только задачам прогноза) —
+    # эпик/история/уже закрытый клон и т.п. участвуют как «соединители», даже
+    # если сами не получают бар. Иначе задача, связанная только с другой через
+    # общего родителя или через уже выполненный клон вне выборки прогноза,
+    # никогда не попадёт в один кластер со своей парой.
+    for k in fetched:
         for nb in info.get(k, {}).get("links", []):
-            if nb in work_set:
+            if nb in fetched:
                 union(k, nb)
-        find(k)   # одиночная задача без связей — свой компонент
+        find(k)   # узел без связей — свой компонент
 
     from collections import defaultdict
     members: dict[str, list[str]] = defaultdict(list)
@@ -730,9 +848,12 @@ def _enrich_with_config_fields(issues: list[dict], cfg_snapshot: dict) -> list[d
     return issues
 
 
-@router.get("/forecast", response_model=EpicForecastResponse)
+@router.get(
+    "/forecast", response_model=EpicForecastResponse,
+    dependencies=[Depends(get_jira_client)],
+)
 def epic_forecast(
-    key: str | None = Query(None, description="Ключ эпика, например SHN-1947"),
+    key: str | None = Query(None, description="Ключ(и) родителя, через запятую (одного типа), напр. SHN-1947 или SHN-1947,SHN-2034"),
     sprint_id: int | None = Query(None, description="ID утверждённого спринта — источник задач вместо эпика"),
     start_date: date = Query(..., description="Дата начала расчёта, напр. 2025-01-20"),
     hours_per_day: float = Query(8.0, ge=1, le=24),
@@ -800,13 +921,22 @@ def epic_forecast(
         effective_key = f"sprint-{sprint.sprint_num}"
         issue_summary = f"Утверждённый спринт {sprint.sprint_num}"
     else:
-        try:
-            issue_summary, _issue_type, issues = _fetch_issue_children(
-                key, expand_changelog=use_history,
+        # sorted() — ключи через запятую в любом порядке должны давать тот же
+        # effective_key, иначе зависимости/снапшоты/стартовые задачи, сохранённые
+        # под одним порядком ввода, не найдутся при следующем запросе в другом.
+        parent_keys = sorted(_parse_parent_keys(key))
+        if not parent_keys:
+            raise HTTPException(
+                status_code=422,
+                detail="Укажите ключ эпика или выберите утверждённый спринт.",
             )
+        try:
+            issue_summary, issues = _fetch_multi_parent(parent_keys, expand_changelog=use_history)
         except JiraError as e:
             raise HTTPException(status_code=502, detail=str(e))
-        effective_key = key
+        # Запятая, не "+" — "+" в query-параметре декодируется как пробел
+        # некоторыми клиентами (см. _dependency_scope_keys).
+        effective_key = ",".join(parent_keys)
 
     if not issues:
         raise HTTPException(status_code=404, detail=f"Задачи для {effective_key} не найдены")
@@ -832,25 +962,43 @@ def epic_forecast(
     # Отпуска из конфига
     vacations = repository.vacations_to_dicts(cfg_model.vacations)
 
-    # FS-зависимости. Эпик: из таблицы под ключом. Спринт: захваченные в снапшоте +
-    # добавленные пользователем в прогнозе (хранятся в той же таблице под "sprint-N").
+    # FS-зависимости. Эпик: из таблицы под ключом (+ унаследованные из меньших
+    # подмножеств родителей). Спринт: захваченные в снапшоте + добавленные
+    # пользователем в прогнозе (хранятся в той же таблице под "sprint-N").
     if sprint is not None:
         dependencies = []
         seen_deps: set[tuple] = set()
         captured = [
-            {"from_key": d.get("from_key"), "to_key": d.get("to_key")}
+            {
+                "from_key": d.get("from_key"), "to_key": d.get("to_key"),
+                "from_bucket": d.get("from_bucket"), "to_bucket": d.get("to_bucket"),
+            }
             for d in (sprint.task_dependencies or [])
             if isinstance(d, dict) and d.get("from_key") and d.get("to_key")
         ]
-        user_deps = repository.list_epic_dependencies(db, cfg_model.id, effective_key)
-        for d in captured + [{"from_key": x.from_key, "to_key": x.to_key} for x in user_deps]:
-            pair = (d["from_key"], d["to_key"])
+        user_deps = [
+            {
+                "from_key": x.from_key, "to_key": x.to_key,
+                "from_bucket": x.from_bucket or None, "to_bucket": x.to_bucket or None,
+            }
+            for x in repository.list_epic_dependencies(db, cfg_model.id, effective_key)
+        ]
+        for d in captured + user_deps:
+            pair = (d["from_key"], d["to_key"], d.get("from_bucket") or "", d.get("to_bucket") or "")
             if pair not in seen_deps:
                 seen_deps.add(pair)
                 dependencies.append(d)
     else:
-        epic_deps = repository.list_epic_dependencies(db, cfg_model.id, key)
-        dependencies = [{"from_key": d.from_key, "to_key": d.to_key} for d in epic_deps]
+        epic_deps = repository.list_epic_dependencies_for_keys(
+            db, cfg_model.id, _dependency_scope_keys(parent_keys),
+        )
+        dependencies = [
+            {
+                "from_key": d.from_key, "to_key": d.to_key,
+                "from_bucket": d.from_bucket or None, "to_bucket": d.to_bucket or None,
+            }
+            for d in epic_deps
+        ]
 
     # Стартовые задачи (п.1 ТЗ): автоснятие якорей на пропавшие/терминальные задачи,
     # затем подгружаем актуальный список owner_id → task_key для расписания.

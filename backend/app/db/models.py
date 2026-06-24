@@ -82,6 +82,12 @@ class Config(Base):
     # Поле Jira «Тестировщик» — customfield_XXXXX; пустая строка = не задано
     tester_field: Mapped[str] = mapped_column(String(50), default="")
 
+    # Подключение к Jira для этого конфига; пусто = берём из .env (settings).
+    # Действует только если все три поля заданы — частичного смешивания нет.
+    jira_base_url: Mapped[str] = mapped_column(String(200), default="")
+    jira_email: Mapped[str] = mapped_column(String(200), default="")
+    jira_api_token_enc: Mapped[str] = mapped_column(String(500), default="")
+
     team_members: Mapped[list["TeamMember"]] = relationship(
         cascade="all, delete-orphan", back_populates="config"
     )
@@ -331,11 +337,16 @@ class EmployeeVacation(Base):
 
 
 class EpicTaskDependency(Base):
-    """FS-зависимость задач в рамках эпика — уровень конфига, per epic key."""
+    """FS-зависимость задач в рамках эпика — уровень конфига, per epic key.
+
+    from_bucket/to_bucket пусты — зависимость на уровне всей задачи (старое
+    поведение); заданы — зависимость на конкретном этапе («колбаске») задачи.
+    """
 
     __tablename__ = "epic_task_dependencies"
     __table_args__ = (
         UniqueConstraint("config_id", "epic_key", "from_key", "to_key",
+                         "from_bucket", "to_bucket",
                          name="uq_epic_dep_unique"),
     )
 
@@ -344,6 +355,8 @@ class EpicTaskDependency(Base):
     epic_key: Mapped[str] = mapped_column(String(50))
     from_key: Mapped[str] = mapped_column(String(50))
     to_key: Mapped[str] = mapped_column(String(50))
+    from_bucket: Mapped[str] = mapped_column(String(50), default="")
+    to_bucket: Mapped[str] = mapped_column(String(50), default="")
 
     config: Mapped["Config"] = relationship(back_populates="epic_dependencies")
 

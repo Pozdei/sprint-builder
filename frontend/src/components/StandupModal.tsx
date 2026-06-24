@@ -211,6 +211,7 @@ export function StandupModal({ sprint, onClose }: Props) {
                   min={1} max={24} step={1}
                   value={hoursPerDay}
                   onChange={(e) => setHoursPerDay(Number(e.target.value))}
+                  onWheel={(e) => e.currentTarget.blur()}
                   className="mt-1 w-24 px-3 py-1.5 border rounded-lg text-sm"
                 />
               </label>

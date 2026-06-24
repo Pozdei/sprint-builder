@@ -5,7 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_config
+from app.api.deps import current_config, get_jira_client
 from app.db import models, repository, sprints_repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
@@ -129,7 +129,10 @@ def save_draft(
     return _to_out(sprint)
 
 
-@router.post("/{sprint_id}/approve", response_model=SprintOut)
+@router.post(
+    "/{sprint_id}/approve", response_model=SprintOut,
+    dependencies=[Depends(get_jira_client)],
+)
 def approve(
     sprint_id: int,
     config: models.Config = Depends(current_config),
@@ -167,7 +170,10 @@ def reopen(
     return _to_out(sprint)
 
 
-@router.post("/{sprint_id}/close", response_model=SprintOut)
+@router.post(
+    "/{sprint_id}/close", response_model=SprintOut,
+    dependencies=[Depends(get_jira_client)],
+)
 def close(
     sprint_id: int,
     config: models.Config = Depends(current_config),
@@ -302,6 +308,12 @@ def delete_gantt_snapshot(
 
 # -------------------- Dependencies CRUD --------------------
 
+def _dep_identity(d: dict) -> tuple:
+    """Канонический идентификатор зависимости — старые записи без from_bucket/
+    to_bucket (до фазовых зависимостей) считаются эквивалентными пустым строкам."""
+    return (d.get("from_key"), d.get("to_key"), d.get("from_bucket") or "", d.get("to_bucket") or "")
+
+
 @router.get("/{sprint_id}/dependencies", response_model=list[TaskDependency])
 def get_dependencies(
     sprint_id: int,
@@ -322,7 +334,7 @@ def add_dependency(
     sprint = _get_sprint_or_404(db, sprint_id, config.id)
     deps = list(sprint.task_dependencies or [])
     new_dep = body.model_dump()
-    if new_dep not in deps:
+    if _dep_identity(new_dep) not in {_dep_identity(d) for d in deps}:
         deps.append(new_dep)
         sprint.task_dependencies = deps
         db.commit()
@@ -338,8 +350,8 @@ def remove_dependency(
 ):
     sprint = _get_sprint_or_404(db, sprint_id, config.id)
     deps = list(sprint.task_dependencies or [])
-    rm = body.model_dump()
-    sprint.task_dependencies = [d for d in deps if d != rm]
+    rm = _dep_identity(body.model_dump())
+    sprint.task_dependencies = [d for d in deps if _dep_identity(d) != rm]
     db.commit()
 
 

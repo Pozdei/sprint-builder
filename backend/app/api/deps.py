@@ -67,3 +67,21 @@ def current_config(
     """Активный конфиг текущего lead-пользователя. Создаёт пустой при первом обращении."""
     from app.services import config_service
     return config_service.ensure_active_config(db, user)
+
+
+async def get_jira_client(config: models.Config = Depends(current_config)):
+    """Привязывает Jira-клиент активного конфига к текущему запросу.
+
+    Сам клиент не возвращается — эндпоинты продолжают использовать
+    `from app.jira.client import client` (proxy на contextvar). Async-генератор —
+    принципиально важно: FastAPI резолвит его на event loop без оффлоада в тред,
+    поэтому set/reset contextvar происходят в одном и том же Context (sync-генератор
+    же может получить set и reset в разных копиях контекста из тред-пула и упасть
+    с ValueError на reset).
+    """
+    from app.jira.client import bind_client_for_request, reset_client
+    token = bind_client_for_request(config)
+    try:
+        yield
+    finally:
+        reset_client(token)

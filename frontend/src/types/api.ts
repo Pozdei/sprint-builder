@@ -194,6 +194,13 @@ export interface GanttItem {
 export interface TaskDependency {
   from_key: string;
   to_key: string;
+  /** Этап (bucket); пусто/undefined = вся задача (последний этап A -> первый этап B). */
+  from_bucket?: string | null;
+  to_bucket?: string | null;
+  /** Реальный scope (epic_key), под которым зависимость лежит в БД — заполняется
+   * сервером при чтении; нужен, чтобы удаление унаследованной (из меньшего
+   * подмножества родителей) зависимости попадало в нужную запись. */
+  epic_key?: string | null;
 }
 
 export interface RootTaskOut {
@@ -321,6 +328,10 @@ export interface ConfigOut {
   developer_field: string;
   designer_field: string;
   tester_field: string;
+  /** Подключение к Jira; пусто = берётся из .env сервера. Токен не возвращается. */
+  jira_base_url: string;
+  jira_email: string;
+  jira_api_token_set: boolean;
   team: Record<string, TeamMemberOut>;
   boards: Record<string, number>;
   extra_components: string[];
@@ -347,6 +358,10 @@ export interface ConfigUpdate {
   developer_field?: string;
   designer_field?: string;
   tester_field?: string;
+  jira_base_url?: string;
+  jira_email?: string;
+  /** Шлём только если пользователь ввёл новое значение; "" — явно очистить. */
+  jira_api_token?: string;
   team?: Record<string, { jira_name: string; file_name: string; role: string }>;
   boards?: Record<string, number>;
   extra_components?: string[];

@@ -6,6 +6,14 @@ from pydantic import BaseModel
 class TaskDependency(BaseModel):
     from_key: str
     to_key: str
+    # Этап (bucket) предшественника/последователя; пусто = вся задача (старое
+    # поведение — последний этап A -> первый этап B).
+    from_bucket: str | None = None
+    to_bucket: str | None = None
+    # Реальный epic_key, под которым зависимость сохранена в БД (см. эпик-прогноз
+    # с несколькими родителями) — нужен, чтобы remove бил по правильной строке,
+    # а не по составному ключу текущего просмотра. Не используется для спринтов.
+    epic_key: str | None = None
 
 
 class RootTaskOut(BaseModel):

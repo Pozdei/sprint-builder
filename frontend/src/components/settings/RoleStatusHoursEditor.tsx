@@ -63,6 +63,7 @@ export function RoleStatusHoursEditor({ value, onChange, roles }: Props) {
                   step="0.5"
                   value={r.hours}
                   onChange={(e) => update(i, "hours", Number(e.target.value))}
+                  onWheel={(e) => e.currentTarget.blur()}
                   className="w-full px-2 py-1 border rounded"
                 />
               </td>

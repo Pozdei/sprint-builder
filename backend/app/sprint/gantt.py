@@ -153,13 +153,15 @@ def _schedule_real_tasks(
     real_tasks: list[dict],
     config_snapshot: dict,
     hours_per_day: float,
-    cross_task_deps: dict[str, list[str]] | None = None,
+    cross_task_deps: list[dict] | None = None,
     vacation_blocks: dict[str, list[tuple[float, float]]] | None = None,
     root_tasks: dict[str, str] | None = None,
 ) -> tuple[dict[tuple, tuple[float, float]], dict[str, float]]:
     """Event-driven scheduling для реальных задач.
 
-    cross_task_deps: from_key → [to_key, ...] — FS-зависимости между задачами.
+    cross_task_deps: список {from_key, to_key, from_bucket?, to_bucket?} — FS-зависимости
+    между задачами. from_bucket/to_bucket пусты — зависимость на уровне всей задачи
+    (последний этап A -> первый этап B); заданы — зависимость на конкретном этапе.
     vacation_blocks: owner_id → [(start_h, end_h), ...] — заблокированное время.
     root_tasks: owner_id → task_key — стартовая (корневая) задача исполнителя:
     встаёт первой в его очереди (Start-Start), не нарушая pipeline-зависимости —
@@ -170,7 +172,7 @@ def _schedule_real_tasks(
     - person_cursor: person_id → end_h последней задачи
     """
     dir_pipelines = _build_direction_pipelines(config_snapshot)
-    cross_deps = cross_task_deps or {}
+    cross_deps = cross_task_deps or []
     vac = vacation_blocks or {}
     roots = root_tasks or {}
 
@@ -233,15 +235,24 @@ def _schedule_real_tasks(
         if pred:
             all_preds[tid].append(pred)
 
-    # Добавляем кросс-задачные FS-зависимости
-    for from_key, to_keys in cross_deps.items():
-        from_last = last_stage_of_key(from_key)
-        if not from_last:
+    # Добавляем кросс-задачные FS-зависимости. Этап не указан — поведение «по
+    # умолчанию» (последний этап A -> первый этап B); указан — зависимость именно
+    # на этом этапе («колбаске»), остальные этапы A/B зависимостью не связаны.
+    for dep in cross_deps:
+        from_key = dep.get("from_key", "")
+        to_key = dep.get("to_key", "")
+        if not from_key or not to_key or from_key == to_key:
             continue
-        for to_key in to_keys:
-            to_first = first_stage_of_key(to_key)
-            if to_first and from_last not in all_preds[to_first]:
-                all_preds[to_first].append(from_last)
+        from_bucket = dep.get("from_bucket")
+        to_bucket = dep.get("to_bucket")
+        from_tid = (from_key, from_bucket) if from_bucket else last_stage_of_key(from_key)
+        to_tid = (to_key, to_bucket) if to_bucket else first_stage_of_key(to_key)
+        if not from_tid or from_tid not in task_by_id:
+            continue
+        if not to_tid or to_tid not in task_by_id:
+            continue
+        if from_tid not in all_preds[to_tid]:
+            all_preds[to_tid].append(from_tid)
 
     # Обратная карта: задача → кто на неё ждёт
     dependents: dict[tuple, list[tuple]] = defaultdict(list)
@@ -506,7 +517,8 @@ def compute_gantt_schedule(
 ) -> list[dict]:
     """Рассчитать расписание Ганта.
 
-    dependencies: список {from_key, to_key} — FS-зависимости.
+    dependencies: список {from_key, to_key, from_bucket?, to_bucket?} — FS-зависимости.
+    Этап не указан — зависимость на уровне всей задачи; указан — на конкретном этапе.
     vacations: список {owner_id, start_date, end_date} — отпуска сотрудников.
     root_tasks: owner_id → task_key — стартовая задача исполнителя (Start-Start).
 
@@ -519,14 +531,6 @@ def compute_gantt_schedule(
 
     budget = float(config_snapshot.get("hours_per_person", hours_per_day * 10))
 
-    # Строим карту кросс-задачных FS-зависимостей: from_key → [to_key, ...]
-    cross_task_deps: dict[str, list[str]] = defaultdict(list)
-    for dep in (dependencies or []):
-        fk = dep.get("from_key", "")
-        tk = dep.get("to_key", "")
-        if fk and tk and fk != tk:
-            cross_task_deps[fk].append(tk)
-
     # Блоки отпуска per person
     vac_blocks = _compute_vacation_blocks(
         vacations or [], sprint_start, hours_per_day
@@ -535,7 +539,7 @@ def compute_gantt_schedule(
     # Шаг 1: расставляем реальные задачи
     scheduled, person_cursor = _schedule_real_tasks(
         real_tasks, config_snapshot, hours_per_day,
-        cross_task_deps=dict(cross_task_deps),
+        cross_task_deps=dependencies or [],
         vacation_blocks=vac_blocks,
         root_tasks=root_tasks,
     )

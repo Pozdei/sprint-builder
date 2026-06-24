@@ -117,6 +117,7 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
                     step="0.5"
                     value={pt.hours}
                     onChange={(e) => update(i, "hours", Number(e.target.value))}
+                    onWheel={(e) => e.currentTarget.blur()}
                     className="w-full px-2 py-1 border rounded"
                   />
                 </td>
@@ -136,6 +137,7 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
                       const v = e.target.value;
                       update(i, "target_sprint_num", v === "" ? null : Number(v));
                     }}
+                    onWheel={(e) => e.currentTarget.blur()}
                     className="w-full px-2 py-1 border rounded"
                     disabled={pt.recurring}
                     title={pt.recurring

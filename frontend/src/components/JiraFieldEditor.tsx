@@ -33,6 +33,7 @@ function HoursInput({
         step={0.5}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onWheel={(e) => e.currentTarget.blur()}
         placeholder="не задано"
         className="w-full px-2 py-1.5 border rounded text-sm"
       />

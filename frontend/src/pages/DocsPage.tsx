@@ -74,31 +74,25 @@ function ConceptSection() {
           Каждая задача проходит через последовательность этапов — <strong>pipeline</strong>.
           Набор этапов зависит от типа (направления) задачи, но общая логика одна:
         </p>
-        <div className="flex flex-wrap items-center gap-2 mb-5">
+        <div className="flex items-start mb-5">
           {[
             { label: "Анализ", color: "bg-amber-100 text-amber-800 border-amber-300", desc: "Аналитик" },
-            { label: "→", color: "text-gray-400 font-bold text-lg", desc: "" },
             { label: "Дизайн", color: "bg-pink-100 text-pink-800 border-pink-300", desc: "Дизайнер" },
-            { label: "→", color: "text-gray-400 font-bold text-lg", desc: "" },
             { label: "Разработка", color: "bg-emerald-100 text-emerald-800 border-emerald-300", desc: "Разработчик" },
-            { label: "→", color: "text-gray-400 font-bold text-lg", desc: "" },
             { label: "Код-ревью", color: "bg-teal-100 text-teal-800 border-teal-300", desc: "Лид разработки" },
-            { label: "→", color: "text-gray-400 font-bold text-lg", desc: "" },
             { label: "Тестирование", color: "bg-blue-100 text-blue-800 border-blue-300", desc: "Тестировщик" },
-            { label: "→", color: "text-gray-400 font-bold text-lg", desc: "" },
-            { label: "Релиз", color: "bg-yellow-100 text-yellow-800 border-yellow-300", desc: "Разработчик → Лид разработки" },
-          ].map((s, i) =>
-            s.desc ? (
-              <div key={i} className="flex flex-col items-center gap-1">
-                <span className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${s.color}`}>
+            { label: "Релиз", color: "bg-yellow-100 text-yellow-800 border-yellow-300", desc: "Лид разработки" },
+          ].map((s, i) => (
+            <div key={i} className="flex items-center flex-1 min-w-0">
+              {i > 0 && <span className="text-gray-300 font-bold text-lg flex-none w-5 text-center">→</span>}
+              <div className="flex-1 min-w-0 flex flex-col items-center gap-1 text-center">
+                <span className={`whitespace-nowrap px-2 py-1 rounded-lg border text-xs font-semibold ${s.color}`}>
                   {s.label}
                 </span>
-                <span className="text-xs text-gray-400">{s.desc}</span>
+                <span className="text-xs text-gray-400 leading-tight">{s.desc}</span>
               </div>
-            ) : (
-              <span key={i} className={s.color}>{s.label}</span>
-            )
-          )}
+            </div>
+          ))}
         </div>
         <p className="text-gray-600 leading-relaxed text-sm">
           Статусы в Jira автоматически маппируются на эти фазы через таблицу
@@ -207,11 +201,12 @@ function ConceptSection() {
             </thead>
             <tbody className="divide-y">
               {[
-                { role: "analyst", label: "Аналитик", phases: "Анализ, Тестирование", priority: "Assignee → Responsible → Reporter" },
-                { role: "developer_backend", label: "Разработчик backend", phases: "Разработка", priority: "Поле «Разработчик» → Assignee" },
-                { role: "developer_frontend", label: "Разработчик frontend", phases: "Разработка", priority: "Поле «Разработчик» → Assignee" },
+                { role: "analyst", label: "Аналитик", phases: "Анализ, Тестирование (по умолчанию)", priority: "Assignee → Responsible → Reporter" },
+                { role: "tester", label: "Тестировщик", phases: "Тестирование (если у направления задана отдельная роль)", priority: "Поле «Тестировщик» → историчный тестировщик (changelog) → тестировщик направления → дефолт (аналитик)" },
+                { role: "developer_backend", label: "Разработчик backend", phases: "Разработка", priority: "Поле «Разработчик» → Assignee → автовыбор" },
+                { role: "developer_frontend", label: "Разработчик frontend", phases: "Разработка", priority: "Поле «Разработчик» → Assignee → автовыбор" },
                 { role: "developer_lead", label: "Лид разработки", phases: "Разработка, Код-ревью, Релиз", priority: "Поле «Разработчик» → Assignee (Релиз: Поле «Разработчик» → Лид разработки)" },
-                { role: "designer", label: "Дизайнер", phases: "Дизайн", priority: "Assignee направления" },
+                { role: "designer", label: "Дизайнер", phases: "Дизайн", priority: "Поле «Дизайнер» → Assignee → designer_id направления → автовыбор" },
                 { role: "designer_lead", label: "Лид дизайна", phases: "Дизайн, Дизайн-ревью", priority: "Первый лид дизайна в команде" },
               ].map((r) => (
                 <tr key={r.role} className="hover:bg-gray-50">
@@ -227,9 +222,11 @@ function ConceptSection() {
           </table>
         </div>
         <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200 text-sm text-amber-800">
-          <strong>Важно:</strong> если в задаче явно заполнено поле «Разработчик» (настраивается
-          в разделе Настройки) — система всегда берёт именно его, независимо от роли. Это
-          позволяет лиду делегировать задачу конкретному разработчику прямо в Jira.
+          <strong>Важно:</strong> если в задаче явно заполнено поле «Разработчик» / «Дизайнер» /
+          «Тестировщик» (настраивается в разделе Настройки) — система всегда берёт именно
+          этого человека, независимо от роли в команде. Это позволяет лиду делегировать
+          задачу конкретному исполнителю прямо в Jira, без подбора по ролям. Подробнее —
+          в разделе «Поля Дизайнер/Тестировщик» ниже.
         </div>
       </DocCard>
 
@@ -342,19 +339,35 @@ function FeaturesSection() {
           </p>
           <FeatureList items={[
             "Введите ключ эпика (SHN-1947) или обычной задачи — система найдёт все дочерние",
+            "Можно указать несколько родителей через запятую (SHN-1947, SHN-2034) — но только одного типа: либо все эпики, либо все стори; смешать эпик со стори система не даст",
             "Каждая задача расписывается по pipeline её направления с реальными исполнителями",
             "Гант-диаграмма: по строкам — исполнители, по оси X — рабочие дни",
             "Масштаб диаграммы регулируется кнопками «−» / «+»",
-            "Клик по бару — показывает все этапы задачи; двойной клик — открывает Jira",
+            "Клик по бару — открывает окно этапов задачи; для Анализа/Разработки/Дизайна/Тестирования там можно поменять часы и сразу отправить их в Jira; двойной клик по бару — открывает саму задачу в Jira",
             "Стоимость считается по формуле: оклад ÷ 160 ч/мес × плановые часы",
             "Недавние эпики сохраняются — можно быстро переключиться",
+          ]} />
+          <h4 className="font-semibold text-gray-700 mt-4">Своды: Эпик / Стори / Консолидировано</h4>
+          <p>
+            Переключатели над Ганом группируют бары в сводные полосы — по эпику, по
+            User Story или «Консолидировано».
+          </p>
+          <FeatureList items={[
+            "Эпик / Стори — группировка по предку нужного типа в дереве parent у задачи",
+            "Консолидировано — кластеризация по ЛЮБЫМ связям задачи: общий родитель (эпик/стори) и любые issue-link'и Jira (clones, blocks, relates, duplicate и т.п.)",
+            "Задача, связанная с другой только через уже закрытый клон или через общую стори, всё равно попадёт в один консолидированный кластер — связывающий узел не обязан сам иметь бар на графике",
+            "Если у всех задач есть только общая стори и нет боковых issue-link'ов — Консолидировано совпадёт со сводом по Стори, это ожидаемо",
           ]} />
           <h4 className="font-semibold text-gray-700 mt-4">Зависимости (FS)</h4>
           <p>
             Кнопка <strong>«Зависимости»</strong> позволяет задать порядок выполнения задач:
-            задача B не начнётся, пока не закончится задача A (Finish-Start). Зависимости
-            сохраняются и учитываются при каждом пересчёте прогноза.
+            задача B не начнётся, пока не закончится задача A (Finish-Start).
           </p>
+          <FeatureList items={[
+            "Зависимость можно поставить на всю задачу целиком (по умолчанию) или на конкретный этап («колбаску») — например, разработка B только после дизайна A, при этом аналитика B может идти параллельно",
+            "Добавление/удаление зависимостей не пересчитывает прогноз автоматически — можно накопить сразу несколько изменений, кнопка «Пересчитать прогноз» внизу панели запускает пересчёт по требованию",
+            "Зависимость, сохранённая для одного родителя (SHN-1947), автоматически учитывается и в прогнозе по нескольким родителям, если он включает этот ключ (SHN-1947, SHN-2034) — отдельно настраивать не нужно",
+          ]} />
           <h4 className="font-semibold text-gray-700 mt-2">Отпуска</h4>
           <p>
             Кнопка <strong>«Отпуска»</strong> позволяет указать периоды отсутствия сотрудников.
@@ -518,6 +531,14 @@ function FeaturesSection() {
                 ],
               },
               {
+                title: "Подключение к Jira",
+                items: [
+                  "Jira Base URL / Email / API Token — нужны только если у этого конфига свой Jira-аккаунт или инстанс, отдельный от сервера",
+                  "Пусто — используются серверные настройки (.env); большинству конфигов это и нужно",
+                  "Токен write-only: после сохранения не показывается, только отметка, что он задан",
+                ],
+              },
+              {
                 title: "Команда",
                 items: [
                   "Список участников: Jira-логин, имя в системе, роль, оклад",
@@ -578,18 +599,26 @@ function FeaturesSection() {
             Если в задаче явно указан конкретный человек — дизайнер или тестировщик —
             система должна брать именно его, а не подбирать по роли. Для этого в Настройках
             есть поля «Поле дизайнера» и «Поле тестировщика» (кастомные поля Jira типа
-            «пользователь»).
+            «пользователь»). У дизайнера и тестировщика цепочки приоритета немного разные —
+            у тестировщика есть дополнительный шаг с историей changelog.
           </p>
-          <p>Порядок выбора ответственного:</p>
+          <h4 className="font-semibold text-gray-700 mt-2">Дизайнер — порядок выбора</h4>
           <ol className="space-y-1.5 text-sm text-gray-600 list-decimal pl-5">
-            <li>Значение кастомного поля Jira («Поле дизайнера» / «Поле тестировщика»), если оно заполнено</li>
-            <li>Assignee задачи, если он входит в команду с нужной ролью</li>
-            <li>Роль направления (колонка «Роль» в настройках направлений, если для этапа задана выпадашка)</li>
-            <li>Автовыбор — единственный подходящий кандидат в команде</li>
+            <li>Значение поля «Дизайнер» из Jira, если оно заполнено — безусловный приоритет</li>
+            <li>Assignee задачи, если он входит в команду с ролью designer</li>
+            <li>Дизайнер, явно выбранный для направления (Настройки → Направления, если в команде их несколько)</li>
+            <li>Автовыбор — единственный/первый дизайнер в команде</li>
+          </ol>
+          <h4 className="font-semibold text-gray-700 mt-2">Тестировщик — порядок выбора</h4>
+          <ol className="space-y-1.5 text-sm text-gray-600 list-decimal pl-5">
+            <li>Значение поля «Тестировщик» из Jira, если оно заполнено — безусловный приоритет</li>
+            <li>Историчный тестировщик — кто реально тестировал задачу в прошлом, по changelog (если задача уже проходила тестирование)</li>
+            <li>Если у направления задана отдельная роль тестировщика (Настройки → Направления) — тестировщик этой роли</li>
+            <li>Дефолт — если роль тестировщика не задана, тестирует аналитик: Assignee → Responsible → Reporter</li>
           </ol>
           <FeatureList items={[
             "Поле «Время дизайнера(ч.)» — отдельная оценка часов на дизайн-этап, если у задачи есть и аналитика, и дизайн",
-            "Поля опциональны: если не настроены — система работает по ролям команды, как и раньше",
+            "Оба поля опциональны: если не настроены — система работает по ролям команды, как и раньше",
           ]} />
         </div>
       ),
@@ -630,6 +659,63 @@ function FeaturesSection() {
             "Один человек (по accountId Jira) может быть в нескольких конфигах с разными ролями",
             "Создать новый конфиг или удалить существующий — в разделе Настройки",
           ]} />
+        </div>
+      ),
+    },
+    {
+      id: "jira-api",
+      icon: "🔌",
+      title: "Используемые методы Jira API",
+      content: (
+        <div className="space-y-3 text-sm text-gray-600">
+          <p>
+            Все запросы идут под кредами Jira-подключения активного конфига (Настройки →
+            «Подключение к Jira»), либо, если оно не задано, под серверными настройками по
+            умолчанию. Ниже — полный список используемых эндпоинтов Jira REST API v3 и Agile API.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-gray-50">
+                  <th className="text-left px-3 py-2 text-gray-600 font-semibold">Метод</th>
+                  <th className="text-left px-3 py-2 text-gray-600 font-semibold">Endpoint</th>
+                  <th className="text-left px-3 py-2 text-gray-600 font-semibold">Для чего и где</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {[
+                  { m: "GET", path: "/rest/api/3/myself", desc: "Проверка подключения — статус «Jira: …» в шапке приложения" },
+                  { m: "GET", path: "/rest/api/3/field", desc: "Поиск customfield «Story Points» — дефолтная оценка часов, если в задаче не указана своя" },
+                  { m: "GET", path: "/rest/agile/1.0/board/{boardId}/issue", desc: "Задачи с настроенных Jira-досок — источник кандидатов в разделе «Спринт»" },
+                  { m: "GET", path: "/rest/agile/1.0/board/{boardId}/sprint", desc: "Активный спринт борды (даты) — отметка границ спринта на Ганте «Прогноза»" },
+                  { m: "GET", path: "/rest/api/3/search/jql", desc: "JQL-поиск: по компоненту проекта (доп. кандидаты в Спринт), дочерние задачи эпика/истории и батчи по ключам (Прогноз, режим по утверждённому спринту)" },
+                  { m: "GET", path: "/rest/api/3/issue/{key}", desc: "Сама задача + issuelinks — определение типа (эпик/история/задача) и поиск детей/родителей в «Прогнозе»" },
+                  { m: "GET", path: "/rest/api/3/issue/{key}/changelog", desc: "Полная история переходов статусов — режим «По истории статусов»" },
+                  { m: "PUT", path: "/rest/api/3/issue/{key}", desc: "Запись полей задачи (часы ролей, разработчик/дизайнер/тестировщик/аналитик) — вкладка «Без исполнителей», редактор оценок" },
+                  { m: "POST", path: "/rest/api/3/issue/{key}/comment", desc: "Комментарий с итогами — режим «Стендап»" },
+                  { m: "GET", path: "/rest/api/3/user/search", desc: "Поиск пользователей Jira — модалки назначения исполнителя без перехода в Jira" },
+                ].map((r, i) => (
+                  <tr key={i} className="hover:bg-gray-50 align-top">
+                    <td className="px-3 py-2">
+                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                        r.m === "GET" ? "bg-blue-100 text-blue-800"
+                          : r.m === "PUT" ? "bg-amber-100 text-amber-800"
+                          : "bg-emerald-100 text-emerald-800"
+                      }`}>
+                        {r.m}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2"><code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{r.path}</code></td>
+                    <td className="px-3 py-2 text-gray-600">{r.desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <FeatureTip>
+            Только два метода что-то меняют в Jira: <code>PUT .../fields</code> (поля задачи) и
+            <code> POST .../comment</code> (комментарий стендапа). Все остальные — только чтение.
+          </FeatureTip>
         </div>
       ),
     },

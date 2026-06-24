@@ -103,38 +103,46 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <h1 className="text-xl font-bold text-gray-800">Sprint Builder</h1>
-            <nav className="flex gap-1">
-              <NavTab active={activePage === "sprint"} onClick={() => setPage("sprint")}>
-                Спринт
-              </NavTab>
-              <NavTab active={activePage === "history"} onClick={() => setPage("history")}>
-                История
-              </NavTab>
-              <NavTab active={activePage === "forecast"} onClick={() => setPage("forecast")}>
-                Прогноз реализации
-              </NavTab>
-              <NavTab active={activePage === "settings"} onClick={() => setPage("settings")}>
-                Настройки
-              </NavTab>
-              <NavTab active={activePage === "docs"} onClick={() => setPage("docs")}>
-                Справка
-              </NavTab>
-              {isAdmin && (
-                <NavTab active={activePage === "admin"} onClick={() => setPage("admin")}>
-                  Админка
-                </NavTab>
-              )}
-            </nav>
+      <header className="bg-white border-b border-gray-200">
+        {/* Верхняя строка: бренд + аккаунт/конфиг — служебная информация, не навигация */}
+        <div className="max-w-7xl mx-auto px-6 h-11 flex items-center justify-between border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-md bg-indigo-600 flex-none" />
+            <span className="text-[15px] font-semibold text-gray-900 tracking-tight">Sprint Builder</span>
           </div>
-          <div className="flex items-center gap-4">
-            <ConfigSwitcher onChange={() => setConfigEpoch((e) => e + 1)} />
+          <div className="flex items-center gap-3">
             <JiraStatusLine status={jiraStatus} />
+            <span className="w-px h-4 bg-gray-200" />
+            <ConfigSwitcher onChange={() => setConfigEpoch((e) => e + 1)} />
+            <span className="w-px h-4 bg-gray-200" />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
+        </div>
+
+        {/* Нижняя строка: навигация по разделам */}
+        <div className="max-w-7xl mx-auto px-6">
+          <nav className="flex gap-5">
+            <NavTab active={activePage === "sprint"} onClick={() => setPage("sprint")}>
+              Спринт
+            </NavTab>
+            <NavTab active={activePage === "history"} onClick={() => setPage("history")}>
+              История
+            </NavTab>
+            <NavTab active={activePage === "forecast"} onClick={() => setPage("forecast")}>
+              Прогноз реализации
+            </NavTab>
+            <NavTab active={activePage === "settings"} onClick={() => setPage("settings")}>
+              Настройки
+            </NavTab>
+            <NavTab active={activePage === "docs"} onClick={() => setPage("docs")}>
+              Справка
+            </NavTab>
+            {isAdmin && (
+              <NavTab active={activePage === "admin"} onClick={() => setPage("admin")}>
+                Админка
+              </NavTab>
+            )}
+          </nav>
         </div>
       </header>
 
@@ -146,6 +154,43 @@ function App() {
       {activePage === "settings" && <SettingsPage key={`settings-${configEpoch}`} />}
       {activePage === "docs" && <DocsPage />}
       {isAdmin && activePage === "admin" && <AdminPage />}
+
+      <AuthorBadge />
+    </div>
+  );
+}
+
+/**
+ * Авторский бейдж в углу. В покое — почти невидимый «PS» (не отвлекает от
+ * работы). На hover «PS» гаснет, а бейдж раскрывается в градиент с подписью —
+ * без нативного title, он не успевает появиться и не стилизуется.
+ */
+function AuthorBadge() {
+  return (
+    <div className="fixed bottom-5 right-5 z-50 group">
+      <div
+        className="relative h-8 w-8 group-hover:w-[208px] rounded-xl overflow-hidden cursor-default select-none
+                   bg-gray-100/70 group-hover:bg-gradient-to-br group-hover:from-indigo-600 group-hover:via-violet-600 group-hover:to-fuchsia-600
+                   transition-all duration-300 ease-out
+                   group-hover:shadow-lg group-hover:shadow-fuchsia-900/30"
+      >
+        {/* «PS» — видно в покое, гаснет на hover */}
+        <span
+          className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tracking-wide
+                     text-gray-400 opacity-100 group-hover:opacity-0
+                     transition-opacity duration-150"
+        >
+          PS
+        </span>
+        {/* Подпись — появляется вместо «PS» на hover */}
+        <span
+          className="absolute inset-0 flex items-center justify-center whitespace-nowrap px-3
+                     text-white text-xs font-medium opacity-0 group-hover:opacity-100
+                     transition-opacity duration-200 delay-100"
+        >
+          by Sergey Pozdeev <span className="text-white/60 ml-1.5">© 2026</span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -160,8 +205,10 @@ function NavTab({
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
-        active ? "bg-blue-100 text-blue-800" : "text-gray-600 hover:bg-gray-100"
+      className={`relative py-2.5 text-sm font-medium transition border-b-2 ${
+        active
+          ? "text-indigo-700 border-indigo-600"
+          : "text-gray-500 border-transparent hover:text-gray-800 hover:border-gray-200"
       }`}
     >
       {children}
@@ -170,29 +217,38 @@ function NavTab({
 }
 
 function JiraStatusLine({ status }: { status: JiraStatus }) {
-  if (status.kind === "checking") {
-    return <p className="text-xs text-gray-500">Проверка Jira…</p>;
-  }
-  if (status.kind === "error") {
-    return <p className="text-xs text-red-600">Jira: {status.message}</p>;
-  }
-  return <p className="text-xs text-green-600">Jira: {status.name}</p>;
+  const dot = status.kind === "checking"
+    ? "bg-gray-300"
+    : status.kind === "error" ? "bg-red-500" : "bg-emerald-500";
+  const label = status.kind === "checking"
+    ? "Проверка…"
+    : status.kind === "error" ? status.message : status.name;
+  return (
+    <span
+      className="flex items-center gap-1.5 text-xs text-gray-500 max-w-[160px]"
+      title={status.kind === "error" ? `Jira: ${status.message}` : undefined}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full flex-none ${dot}`} />
+      <span className="truncate">{label}</span>
+    </span>
+  );
 }
 
 function UserMenu({ user, onLogout }: { user: UserOut; onLogout: () => void }) {
+  const name = user.display_name || user.email;
+  const initial = name.trim().charAt(0).toUpperCase();
   return (
-    <div className="flex items-center gap-3 text-sm">
-      <div className="text-right">
-        <div className="font-semibold text-gray-700">
-          {user.display_name || user.email}
-        </div>
-        <div className="text-xs text-gray-500">{user.role}</div>
+    <div className="flex items-center gap-2 group">
+      <div className="w-6 h-6 rounded-full bg-gray-200 text-gray-600 text-xs font-semibold flex items-center justify-center flex-none">
+        {initial}
       </div>
+      <span className="text-xs text-gray-600 max-w-[120px] truncate" title={name}>{name}</span>
       <button
         onClick={onLogout}
-        className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded"
+        title="Выйти"
+        className="text-gray-400 hover:text-red-600 text-xs leading-none transition"
       >
-        Выйти
+        ⏻
       </button>
     </div>
   );

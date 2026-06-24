@@ -1,8 +1,8 @@
-"""Jira: поиск пользователей и обновление полей задач."""
+"""Jira: проверка подключения, поиск пользователей, обновление полей задач."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.deps import current_config, require_lead
+from app.api.deps import current_config, get_jira_client, require_lead
 from app.db import models
 from app.jira.client import JiraError, client
 from app.schemas.jira import (
@@ -11,6 +11,15 @@ from app.schemas.jira import (
 )
 
 router = APIRouter(prefix="/jira", tags=["jira"])
+
+
+@router.get("/check", dependencies=[Depends(get_jira_client)])
+def jira_check():
+    try:
+        me = client.get("/rest/api/3/myself")
+    except JiraError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"display_name": me.get("displayName"), "email": me.get("emailAddress")}
 
 # Поля часов: (атрибут тела запроса, ключ в role_hours_fields, человекочитаемое имя)
 _HOURS_ROLE_FIELDS = [
@@ -21,7 +30,7 @@ _HOURS_ROLE_FIELDS = [
 ]
 
 
-@router.patch("/issues/{key}/fields", status_code=204)
+@router.patch("/issues/{key}/fields", status_code=204, dependencies=[Depends(get_jira_client)])
 def update_issue_fields(
     key: str,
     body: IssueFieldsUpdate,
@@ -72,7 +81,10 @@ def update_issue_fields(
         raise HTTPException(status_code=502, detail=str(e))
 
 
-@router.post("/standup/submit", response_model=list[StandupSubmitResult])
+@router.post(
+    "/standup/submit", response_model=list[StandupSubmitResult],
+    dependencies=[Depends(get_jira_client)],
+)
 def submit_standup(
     body: StandupSubmitRequest,
     _user: models.User = Depends(require_lead),
@@ -116,7 +128,10 @@ def submit_standup(
     return results
 
 
-@router.get("/users/search", response_model=list[JiraUserOut])
+@router.get(
+    "/users/search", response_model=list[JiraUserOut],
+    dependencies=[Depends(get_jira_client)],
+)
 def search_users(
     q: str = Query(..., min_length=1, description="Запрос — имя или email"),
     _user: models.User = Depends(require_lead),

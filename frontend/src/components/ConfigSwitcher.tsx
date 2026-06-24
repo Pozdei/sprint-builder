@@ -131,9 +131,10 @@ export function ConfigSwitcher({ onChange }: Props) {
     <div ref={wrapRef} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="bg-white border rounded px-3 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+        className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 transition"
       >
-        Конфиг: {active?.name || "загрузка…"} ▾
+        <span className="text-gray-400">Конфиг:</span> {active?.name || "…"}
+        <span className="text-gray-400">▾</span>
       </button>
 
       {open && (

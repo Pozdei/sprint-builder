@@ -157,14 +157,27 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
       <div className="mb-6">
         <h1 className="text-xl font-bold text-gray-800 mb-1">Прогноз реализации</h1>
         <p className="text-sm text-gray-500">
-          Введите ключ родителя (эпик / стори / задача) или выберите спринт — система
-          рассчитает расписание оставшихся этапов и предскажет дату завершения.
+          Введите ключ родителя (эпик / стори / задача) — можно несколько через запятую,
+          если они одного типа (например, два эпика) — или выберите спринт. Система рассчитает
+          расписание оставшихся этапов и предскажет дату завершения.
         </p>
       </div>
 
       {/* Форма ввода */}
       <div className="bg-white rounded-xl border shadow-sm p-5 mb-6">
         <div className="flex flex-wrap gap-4 items-end">
+          <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg px-3 py-1.5">
+            <label className="flex items-center gap-1 text-sm font-medium text-indigo-700 mb-1">
+              <span>📅</span> Старт расчёта
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="px-2 py-1 border border-indigo-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+          </div>
+          <span className="w-px h-10 bg-gray-200 self-center" />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">По родителю (эпик / стори)</label>
             <input
@@ -172,9 +185,10 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
               value={epicKey}
               onChange={(e) => { setEpicKey(e.target.value); if (e.target.value.trim()) setSprintId(null); }}
               onKeyDown={(e) => e.key === "Enter" && handleForecast()}
-              placeholder="напр. SHN-3969"
+              placeholder="напр. SHN-3969 или SHN-3969, SHN-4012"
+              title="Несколько ключей через запятую — должны быть одного типа (два эпика или два стори, но не вперемешку)"
               disabled={sprintId !== null}
-              className="px-3 py-2 border rounded-lg text-sm font-mono w-40 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-100 disabled:text-gray-400"
+              className="px-3 py-2 border rounded-lg text-sm font-mono w-64 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-100 disabled:text-gray-400"
             />
           </div>
           <div>
@@ -204,21 +218,13 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Старт расчёта</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="px-3 py-2 border rounded-lg text-sm"
-            />
-          </div>
-          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Ч/день</label>
             <input
               type="number"
               min={1} max={24} step={1}
               value={hoursPerDay}
               onChange={(e) => setHoursPerDay(Number(e.target.value))}
+              onWheel={(e) => e.currentTarget.blur()}
               className="px-3 py-2 border rounded-lg text-sm w-20"
             />
           </div>
@@ -617,6 +623,21 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
               taskKey={selectedKey}
               allItems={result.gantt_items}
               onClose={() => setSelectedKey(null)}
+              onSaved={() => { setSelectedKey(null); handleForecast(); }}
+              onHoursSaved={(key, bucket, hours) => {
+                // Применяем сразу к локальному состоянию: полный пересчёт ходит в
+                // Jira search/jql, у которого бывает задержка относительно только что
+                // записанного значения — без этого повторное открытие модалки могло
+                // показать старую цифру.
+                setResult((prev) => prev && {
+                  ...prev,
+                  gantt_items: prev.gantt_items.map((it) =>
+                    it.key === key && it.bucket === bucket
+                      ? { ...it, hours, hours_is_default: false }
+                      : it
+                  ),
+                });
+              }}
             />
           )}
 
@@ -649,11 +670,14 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
               onSetRootTask={(ownerId, taskKey) => setRootTask(result.epic_key, ownerId, taskKey)}
               onRemoveRootTask={(ownerId) => removeRootTask(result.epic_key, ownerId)}
               onClose={() => setShowDeps(false)}
+              currentScopeKey={result.epic_key}
               onChanged={() => {
+                // Только лёгкое обновление локальных списков — без пересчёта прогноза,
+                // чтобы можно было добавить/удалить много записей подряд без перестроек.
                 fetchEpicDependencies(result.epic_key).then(setEpicDeps);
                 rootTasksHook.reload();
-                handleForecast();
               }}
+              onRecompute={handleForecast}
             />
           )}
 

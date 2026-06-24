@@ -456,6 +456,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                               min={1} max={24} step={1}
                               value={hoursPerDay}
                               onChange={(e) => { setHoursPerDay(Number(e.target.value)); setGanttItems(null); }}
+                              onWheel={(e) => e.currentTarget.blur()}
                               className="border rounded px-2 py-0.5 text-sm w-16"
                             />
                           </label>

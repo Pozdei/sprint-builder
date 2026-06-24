@@ -84,6 +84,12 @@ class ConfigOut(BaseModel):
     designer_field: str = ""
     tester_field: str = ""
 
+    # Подключение к Jira; пусто = используются переменные окружения сервера.
+    # Токен никогда не возвращается — только флаг, что он задан.
+    jira_base_url: str = ""
+    jira_email: str = ""
+    jira_api_token_set: bool = False
+
     # team приходит как dict {accountId: TeamMemberOut}
     team: dict[str, TeamMemberOut]
     boards: dict[str, int]
@@ -120,6 +126,11 @@ class ConfigUpdate(BaseModel):
     developer_field: str | None = None
     designer_field: str | None = None
     tester_field: str | None = None
+
+    jira_base_url: str | None = None
+    jira_email: str | None = None
+    # Поле опущено в теле (exclude_unset) = не менять; "" явно = очистить токен.
+    jira_api_token: str | None = None
 
     team: dict[str, TeamMemberIn] | None = None
     boards: dict[str, int] | None = None

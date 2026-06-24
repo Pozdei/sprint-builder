@@ -334,7 +334,12 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     const labels: { date: Date; x: number; isWeekend: boolean }[] = [];
     let workDay = 0;
     const d = new Date(startD);
-    for (let i = 0; labels.length <= totalDays + 2; i++) {
+    // Бюджет итераций — в КАЛЕНДАРНЫХ днях (с запасом на выходные), а не в
+    // длине labels: выходные попадают в массив, но не двигают workDay и не
+    // рисуются (см. фильтр !isWeekend ниже) — раньше выходные "съедали" бюджет
+    // цикла, и шапка с датами обрывалась раньше, чем кончались реальные бары.
+    const maxIterations = (totalDays + 3) * 2 + 14;
+    for (let i = 0; i < maxIterations; i++) {
       const cur = new Date(d);
       cur.setDate(d.getDate() + i);
       const isWeekend = cur.getDay() === 0 || cur.getDay() === 6;
@@ -381,9 +386,15 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
       if (x == null) continue;
       lines.push({ x, num: sprintInfo.sprint_num != null ? sprintInfo.sprint_num + k : null });
     }
-    // Номер спринта, в который попадает старт графика (для подписи слева)
+    // Номер спринта, в который попадает старт графика (для подписи слева). Если
+    // график начинается ровно на границе спринта — она уже попала в lines[0] почти
+    // в той же точке (x≈0), и отдельная подпись наложилась бы на неё, давая
+    // "сдвоенный" нечитаемый текст — в этом случае отдельную подпись не рисуем.
     const offset = Math.floor((chartStart.getTime() - s.getTime()) / (lenDays * 86_400_000));
-    const startNum = sprintInfo.sprint_num != null ? sprintInfo.sprint_num + Math.max(0, offset) : null;
+    const startsOnBoundary = lines.length > 0 && lines[0].x <= 1;
+    const startNum = sprintInfo.sprint_num != null && !startsOnBoundary
+      ? sprintInfo.sprint_num + Math.max(0, offset)
+      : null;
     return { lines, startNum };
   }, [sprintInfo, dateLabels, startDate]);
 
@@ -395,8 +406,13 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     return dependencies.flatMap((dep) => {
       // Веха «Релиз» больше не рисуется отдельным баром в детальной сетке (см.
       // ниже) — если стрелка целится в неё, рисовать её некуда, пропускаем.
-      const fromItems = items.filter((i) => i.key === dep.from_key && !i.is_pseudo && i.bucket !== "Релиз");
-      const toItems = items.filter((i) => i.key === dep.to_key && !i.is_pseudo && i.bucket !== "Релиз");
+      // from_bucket/to_bucket — зависимость на конкретном этапе, а не на всей задаче.
+      const fromItems = items.filter((i) =>
+        i.key === dep.from_key && !i.is_pseudo && i.bucket !== "Релиз"
+        && (!dep.from_bucket || i.bucket === dep.from_bucket));
+      const toItems = items.filter((i) =>
+        i.key === dep.to_key && !i.is_pseudo && i.bucket !== "Релиз"
+        && (!dep.to_bucket || i.bucket === dep.to_bucket));
       if (!fromItems.length || !toItems.length) return [];
 
       const fromItem = fromItems.reduce((a, b) => (a.end_hours > b.end_hours ? a : b));
@@ -411,7 +427,8 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
       const x2 = hoursToX(toItem.start_hours);
       const y2 = ownerY(toOwnerIdx) + ROW_H / 2;
 
-      return [{ x1, y1, x2, y2, key: `${dep.from_key}→${dep.to_key}` }];
+      const key = `${dep.from_key}[${dep.from_bucket || ""}]→${dep.to_key}[${dep.to_bucket || ""}]`;
+      return [{ x1, y1, x2, y2, key }];
     });
   }, [dependencies, items, owners, groupByStory]);
 

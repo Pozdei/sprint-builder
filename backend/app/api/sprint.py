@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_config, require_lead
+from app.api.deps import current_config, get_jira_client, require_lead
 from app.api.sprints import _to_out as sprint_to_out
 from app.db import models
 from app.db.session import get_db
@@ -30,7 +30,10 @@ def _parse_candidates_in(body: SprintBuildRequest | None) -> list[dict] | None:
     return None
 
 
-@router.post("/candidates", response_model=CandidatesResponse)
+@router.post(
+    "/candidates", response_model=CandidatesResponse,
+    dependencies=[Depends(get_jira_client)],
+)
 def candidates(
     user: models.User = Depends(require_lead),
     db: Session = Depends(get_db),
@@ -44,7 +47,10 @@ def candidates(
     return result
 
 
-@router.post("/build", response_model=SprintBuildResponse)
+@router.post(
+    "/build", response_model=SprintBuildResponse,
+    dependencies=[Depends(get_jira_client)],
+)
 def build(
     body: SprintBuildRequest | None = None,
     user: models.User = Depends(require_lead),
@@ -59,7 +65,10 @@ def build(
     return result
 
 
-@router.post("/build-and-save", response_model=BuildAndSaveResponse)
+@router.post(
+    "/build-and-save", response_model=BuildAndSaveResponse,
+    dependencies=[Depends(get_jira_client)],
+)
 def build_and_save(
     body: SprintBuildRequest | None = None,
     config: models.Config = Depends(current_config),

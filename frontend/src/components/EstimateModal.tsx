@@ -2,22 +2,8 @@ import { useState } from "react";
 import { type IssueFieldsUpdate, updateJiraIssueFields } from "../api/jira-client";
 import { useToast } from "./Toast";
 import { extractError } from "../lib/api-error";
+import { BUCKET_TO_FIELD, FIELD_LABEL } from "../lib/bucket-fields";
 import type { GanttItem } from "../types/api";
-
-// Маппинг бакета → поле IssueFieldsUpdate
-const BUCKET_TO_FIELD: Partial<Record<string, keyof IssueFieldsUpdate>> = {
-  "Анализ":       "hours_analyst",
-  "Разработка":   "hours_developer",
-  "Тестирование": "hours_tester",
-  "Дизайн":       "hours_designer",
-};
-
-const FIELD_LABEL: Record<string, string> = {
-  hours_analyst:  "Аналитик",
-  hours_developer:"Разработчик",
-  hours_tester:   "Тестер",
-  hours_designer: "Дизайнер",
-};
 
 const BUCKET_COLOR: Record<string, string> = {
   "Анализ":       "text-amber-700 bg-amber-50 border-amber-200",
@@ -213,6 +199,7 @@ export function EstimateModal({ items, onClose, onSaved }: Props) {
                         step={0.5}
                         value={values[t.key]?.[f.field] ?? ""}
                         onChange={(e) => setValue(t.key, f.field, e.target.value)}
+                        onWheel={(e) => e.currentTarget.blur()}
                         placeholder="часы"
                         className="w-24 px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
                       />

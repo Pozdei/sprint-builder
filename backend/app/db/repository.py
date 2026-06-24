@@ -242,9 +242,17 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
     for field in ("name", "project_key", "sprint_field", "responsible_field",
                   "hours_per_person", "default_task_hours",
                   "leader_hours", "leader_management_enabled", "developer_field",
-                  "designer_field", "tester_field"):
+                  "designer_field", "tester_field", "jira_base_url", "jira_email"):
         if field in data:
             setattr(config, field, data[field])
+
+    if "jira_api_token" in data:
+        token = data["jira_api_token"]
+        if token:
+            from app.core.security import encrypt_secret
+            config.jira_api_token_enc = encrypt_secret(token)
+        else:
+            config.jira_api_token_enc = ""
 
     if "team" in data:
         items = [
@@ -455,8 +463,25 @@ def list_epic_dependencies(
     ).all())
 
 
+def list_epic_dependencies_for_keys(
+    db: Session, config_id: int, epic_keys: list[str],
+) -> list[models.EpicTaskDependency]:
+    """Зависимости под любым из перечисленных epic_key (объединение нескольких
+    scope-ключей — см. _dependency_scope_keys в api/epic.py)."""
+    if not epic_keys:
+        return []
+    return list(db.scalars(
+        select(models.EpicTaskDependency)
+        .where(
+            models.EpicTaskDependency.config_id == config_id,
+            models.EpicTaskDependency.epic_key.in_(epic_keys),
+        )
+    ).all())
+
+
 def add_epic_dependency(
     db: Session, config_id: int, epic_key: str, from_key: str, to_key: str,
+    from_bucket: str = "", to_bucket: str = "",
 ) -> list[models.EpicTaskDependency]:
     existing = db.scalar(
         select(models.EpicTaskDependency)
@@ -465,11 +490,14 @@ def add_epic_dependency(
             models.EpicTaskDependency.epic_key == epic_key,
             models.EpicTaskDependency.from_key == from_key,
             models.EpicTaskDependency.to_key == to_key,
+            models.EpicTaskDependency.from_bucket == from_bucket,
+            models.EpicTaskDependency.to_bucket == to_bucket,
         )
     )
     if not existing:
         dep = models.EpicTaskDependency(
             config_id=config_id, epic_key=epic_key, from_key=from_key, to_key=to_key,
+            from_bucket=from_bucket, to_bucket=to_bucket,
         )
         db.add(dep)
         db.flush()
@@ -478,6 +506,7 @@ def add_epic_dependency(
 
 def remove_epic_dependency(
     db: Session, config_id: int, epic_key: str, from_key: str, to_key: str,
+    from_bucket: str = "", to_bucket: str = "",
 ) -> None:
     dep = db.scalar(
         select(models.EpicTaskDependency)
@@ -486,6 +515,8 @@ def remove_epic_dependency(
             models.EpicTaskDependency.epic_key == epic_key,
             models.EpicTaskDependency.from_key == from_key,
             models.EpicTaskDependency.to_key == to_key,
+            models.EpicTaskDependency.from_bucket == from_bucket,
+            models.EpicTaskDependency.to_bucket == to_bucket,
         )
     )
     if dep:

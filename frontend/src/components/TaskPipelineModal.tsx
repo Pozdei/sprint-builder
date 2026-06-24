@@ -1,9 +1,22 @@
+import { useState } from "react";
+import { updateJiraIssueFields } from "../api/jira-client";
+import { useToast } from "./Toast";
+import { extractError } from "../lib/api-error";
+import { BUCKET_TO_FIELD } from "../lib/bucket-fields";
 import type { GanttItem } from "../types/api";
 
 interface Props {
   taskKey: string;
   allItems: GanttItem[];   // все элементы Ганта (нужны для группировки по ключу)
   onClose: () => void;
+  /** Вызывается после успешного сохранения часов в Jira — пересчитать прогноз
+   * (расписание/позиции баров; сама цифра часов обновляется через onHoursSaved
+   * сразу, без этого — пересчёт нужен только из-за возможного сдвига сроков). */
+  onSaved?: () => void;
+  /** Сразу применить новое значение часов к локальному состоянию прогноза —
+   * не дожидаясь полного пересчёта (который ходит в Jira search/jql и может на
+   * пару секунд отставать от только что записанного значения). */
+  onHoursSaved?: (key: string, bucket: string, hours: number) => void;
 }
 
 const BUCKET_ORDER = [
@@ -33,7 +46,36 @@ function bucketRank(bucket: string): number {
   return idx >= 0 ? idx : 99;
 }
 
-export function TaskPipelineModal({ taskKey, allItems, onClose }: Props) {
+export function TaskPipelineModal({ taskKey, allItems, onClose, onSaved, onHoursSaved }: Props) {
+  const toast = useToast();
+  // editValues[stageId] — введённое значение (строка); savingId — какой стейдж
+  // сейчас сохраняется; savedIds — успешно сохранённые (показываем галочку вместо кнопки).
+  const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+
+  const handleSaveHours = async (stage: GanttItem, stageId: string) => {
+    const field = BUCKET_TO_FIELD[stage.bucket];
+    const raw = editValues[stageId];
+    if (!field || raw === undefined) return;
+    const n = parseFloat(raw);
+    if (isNaN(n) || n <= 0) {
+      toast.error("Часы должны быть положительным числом");
+      return;
+    }
+    setSavingId(stageId);
+    try {
+      await updateJiraIssueFields(stage.key, { [field]: n });
+      setSavedIds((prev) => new Set(prev).add(stageId));
+      onHoursSaved?.(stage.key, stage.bucket, n);
+      toast.success(`${stage.key}: ${n} ч сохранено в Jira`);
+    } catch (e) {
+      toast.error(extractError(e));
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   // Этапы задачи — либо по точному ключу, либо (для сводных баров Epic/User
   // Story/Консолидировано) все этапы всех задач группы по story_key/epic_key/parent_key.
   const stages = allItems
@@ -127,6 +169,11 @@ export function TaskPipelineModal({ taskKey, allItems, onClose }: Props) {
               {stages.map((stage, i) => {
                 const col = BUCKET_COLORS[stage.bucket] ?? DEFAULT_COLOR;
                 const isLast = i === stages.length - 1;
+                const stageId = `${stage.key}|${stage.bucket}`;
+                const field = BUCKET_TO_FIELD[stage.bucket];
+                const editValue = editValues[stageId];
+                const isDirty = editValue !== undefined && parseFloat(editValue) !== stage.hours;
+                const isSaved = savedIds.has(stageId);
                 return (
                   <div key={`${stage.key}-${stage.bucket}-${stage.start_hours}`} className="flex gap-3">
                     {/* Dot */}
@@ -140,9 +187,37 @@ export function TaskPipelineModal({ taskKey, allItems, onClose }: Props) {
                         <span className={`text-sm font-semibold ${col.text}`}>
                           {stage.bucket}
                         </span>
-                        <span className="text-xs font-mono font-medium text-gray-600 bg-white/70 px-1.5 py-0.5 rounded">
-                          {stage.hours.toFixed(1)} ч
-                        </span>
+                        {field ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={0.5}
+                              step={0.5}
+                              value={editValue ?? stage.hours}
+                              onChange={(e) => setEditValues((p) => ({ ...p, [stageId]: e.target.value }))}
+                              onWheel={(e) => e.currentTarget.blur()}
+                              className="w-16 px-1.5 py-0.5 border rounded text-xs font-mono text-right bg-white/70 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            />
+                            <span className="text-xs text-gray-500">ч</span>
+                            {isDirty && (
+                              <button
+                                onClick={() => handleSaveHours(stage, stageId)}
+                                disabled={savingId === stageId}
+                                title="Сохранить в Jira"
+                                className="text-indigo-600 hover:text-indigo-800 font-bold text-sm disabled:opacity-40"
+                              >
+                                {savingId === stageId ? "…" : "✓"}
+                              </button>
+                            )}
+                            {!isDirty && isSaved && (
+                              <span className="text-green-600 text-xs" title="Сохранено в Jira">✓</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs font-mono font-medium text-gray-600 bg-white/70 px-1.5 py-0.5 rounded">
+                            {stage.hours.toFixed(1)} ч
+                          </span>
+                        )}
                       </div>
                       {isGroup && (
                         <div className="text-xs text-gray-500 mt-0.5 truncate">
@@ -173,14 +248,29 @@ export function TaskPipelineModal({ taskKey, allItems, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="border-t px-5 py-3 bg-gray-50 rounded-b-2xl flex items-center justify-between">
-          <div className="text-sm text-gray-500">
-            <span className="font-medium text-gray-700">{stages.length}</span> этапов ·{" "}
-            <span className="font-medium text-gray-700">{totalHours.toFixed(1)} ч</span> итого
-          </div>
-          <div className="text-sm">
-            <span className="text-gray-500">Завершение: </span>
-            <span className="font-semibold text-gray-800">{completionDate}</span>
+        <div className="border-t px-5 py-3 bg-gray-50 rounded-b-2xl">
+          {savedIds.size > 0 && onSaved && (
+            <div className="flex items-center justify-between gap-3 mb-2.5 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg">
+              <span className="text-xs text-green-800">
+                Часы сохранены в Jira. Сроки на Ганте — по старой оценке, пересчитайте при необходимости.
+              </span>
+              <button
+                onClick={onSaved}
+                className="text-xs font-semibold text-white bg-green-600 hover:bg-green-700 px-2.5 py-1 rounded-md flex-none"
+              >
+                Пересчитать прогноз
+              </button>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-500">
+              <span className="font-medium text-gray-700">{stages.length}</span> этапов ·{" "}
+              <span className="font-medium text-gray-700">{totalHours.toFixed(1)} ч</span> итого
+            </div>
+            <div className="text-sm">
+              <span className="text-gray-500">Завершение: </span>
+              <span className="font-semibold text-gray-800">{completionDate}</span>
+            </div>
           </div>
         </div>
       </div>

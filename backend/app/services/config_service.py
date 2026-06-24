@@ -237,5 +237,8 @@ def to_out_dict(config: models.Config) -> dict:
         "name": config.name,
         "is_default": config.is_default,
         "owner_user_id": config.owner_user_id,
+        "jira_base_url": config.jira_base_url or "",
+        "jira_email": config.jira_email or "",
+        "jira_api_token_set": bool(config.jira_api_token_enc),
         **base,
     }
