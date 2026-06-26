@@ -7,6 +7,7 @@ import { extractError } from "../lib/api-error";
 import { DictEditor } from "../components/settings/DictEditor";
 import { DirectionsEditor } from "../components/settings/DirectionsEditor";
 import { PseudoTasksEditor } from "../components/settings/PseudoTasksEditor";
+import { VacationsEditor } from "../components/settings/VacationsEditor";
 import { RolesEditor } from "../components/settings/RolesEditor";
 import { RoleStatusBucketsEditor } from "../components/settings/RoleStatusBucketsEditor";
 import { RoleStatusHoursEditor } from "../components/settings/RoleStatusHoursEditor";
@@ -404,6 +405,13 @@ export function SettingsPage() {
                   onChange={(v) => update("pseudo_tasks", v)}
                   team={config.team}
                 />
+              </Section>
+
+              <Section title={t("page.sections.vacations")} accent="amber">
+                <p className="text-xs text-gray-500 mb-3">
+                  {t("page.hints.vacations")}
+                </p>
+                <VacationsEditor team={config.team} />
               </Section>
             </>
           )}

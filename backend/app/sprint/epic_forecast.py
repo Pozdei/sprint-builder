@@ -321,8 +321,15 @@ def _is_cancelled(status_name: str) -> bool:
 
 
 def _annotate_phase_costs(gantt_items: list[dict], cfg: SprintConfig) -> None:
-    """Добавляет phase_cost к каждому элементу Ганта на основе оклада исполнителя."""
+    """Добавляет phase_cost к каждому элементу Ганта на основе оклада исполнителя.
+
+    Псевдо-задачи (отпуск/отсутствие/руководство) — не проектная работа: их
+    стоимость = 0, чтобы разбивка по задачам/людям сходилась с итоговым
+    total_cost (он считается только по реальным задачам, см. _compute_cost)."""
     for item in gantt_items:
+        if item.get("is_pseudo"):
+            item["phase_cost"] = 0.0
+            continue
         oid = item.get("owner_id") or ""
         member = cfg.team.get(oid) or {}
         salary = member.get("salary") or 0
@@ -337,6 +344,8 @@ def _compute_cost(items: list[dict], cfg: SprintConfig) -> tuple[float, dict[str
     total_cost = 0.0
     breakdown: dict[str, dict] = {}
     for w in items:
+        if w.get("is_pseudo"):
+            continue  # псевдо-задачи (отпуск/отсутствие/руководство) — не проектная стоимость
         oid = w.get("owner_id") or ""
         member = cfg.team.get(oid) or {}
         salary = member.get("salary") or 0

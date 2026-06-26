@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-table";
 import { useTranslation } from "react-i18next";
 import { bucketLabel } from "../lib/bucket-label";
+import { bucketSoftClass, isKnownBucket } from "../lib/bucket-color";
 import type { TaskOut } from "../types/api";
 
 export interface AssignablePerson {
@@ -23,15 +24,7 @@ interface Props {
 }
 
 function bucketColor(bucket: string): string {
-  if (bucket === "Тестирование") return "bg-blue-50 text-blue-800";
-  if (bucket === "Анализ") return "bg-amber-50 text-amber-800";
-  if (bucket === "Дизайн") return "bg-pink-50 text-pink-800";
-  if (bucket === "Дизайн-ревью") return "bg-pink-100 text-pink-900";
-  if (bucket === "Разработка") return "bg-green-50 text-green-800";
-  if (bucket === "Код-ревью") return "bg-green-100 text-green-900";
-  if (bucket === "Руководство") return "bg-purple-50 text-purple-800";
-  if (bucket === "Отсутствие") return "bg-gray-100 text-gray-700";
-  return "";
+  return bucketSoftClass(bucket);
 }
 
 export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, testers, onPatchTask }: Props) {
@@ -98,13 +91,13 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
         if (t.is_pseudo) return null;
         const v = t.sprint_expected_result;
         if (!v) return <span className="text-gray-300">—</span>;
-        const isTerminal = !bucketColor(v);
+        const isTerminal = !isKnownBucket(v);
         return (
           <span
             className={`px-2 py-0.5 rounded text-xs font-medium ${
               isTerminal
                 ? "bg-emerald-100 text-emerald-800"
-                : bucketColor(v) || "bg-gray-100 text-gray-700"
+                : bucketColor(v)
             }`}
           >
             {bucketLabel(v, tr)}

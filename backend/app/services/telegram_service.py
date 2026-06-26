@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import decrypt_secret
-from app.db import models, repository, sprints_repository
+from app.db import models, sprints_repository
+from app.services import sprints_service
 from app.sprint import today_export
 from app.sprint.gantt import compute_gantt_schedule
 from app.telegram import client as tg
@@ -42,17 +43,10 @@ def _gantt_for_latest_approved(db: Session, config: models.Config) -> tuple[list
     approved = sprint.approved_at or datetime.now(timezone.utc)
     start_date = approved.date()
 
-    vac_dicts = repository.vacations_to_dicts(repository.list_vacations(db, config.id))
-    root_tasks = {
-        r.owner_id: r.task_key
-        for r in repository.list_root_tasks(db, config.id, f"sprint-{sprint.sprint_num}")
-    }
     items = compute_gantt_schedule(
         [t.task_data for t in sprint.tasks],
         sprint.config_snapshot, start_date, HOURS_PER_DAY,
-        dependencies=sprint.task_dependencies or [],
-        vacations=vac_dicts,
-        root_tasks=root_tasks,
+        **sprints_service.assemble_gantt_inputs(db, config.id, sprint),
     )
     return items, start_date
 

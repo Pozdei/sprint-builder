@@ -275,10 +275,7 @@ def create_epic_gantt_snapshot(
         [item.model_dump() for item in body.gantt_items], body.label,
     )
     db.commit()
-    return GanttSnapshotSummary(
-        id=snap.id, captured_at=snap.captured_at.isoformat(),
-        label=snap.label, gantt_start=snap.gantt_start, hours_per_day=snap.hours_per_day,
-    )
+    return GanttSnapshotSummary.from_orm_snap(snap)
 
 
 @router.get("/gantt/snapshots", response_model=list[GanttSnapshotSummary])
@@ -288,10 +285,7 @@ def list_epic_gantt_snapshots(
     db: Session = Depends(get_db),
 ):
     return [
-        GanttSnapshotSummary(
-            id=s.id, captured_at=s.captured_at.isoformat(),
-            label=s.label, gantt_start=s.gantt_start, hours_per_day=s.hours_per_day,
-        )
+        GanttSnapshotSummary.from_orm_snap(s)
         for s in repository.list_epic_gantt_snapshots(db, config.id, epic_key)
     ]
 
@@ -307,11 +301,7 @@ def get_epic_gantt_snapshot(
     snap = repository.get_epic_gantt_snapshot(db, config.id, epic_key, snapshot_id)
     if not snap:
         raise HTTPException(status_code=404, detail=_t("gantt_snapshot_not_found", lang, snapshot_id=snapshot_id))
-    return GanttSnapshotDetail(
-        id=snap.id, captured_at=snap.captured_at.isoformat(),
-        label=snap.label, gantt_start=snap.gantt_start, hours_per_day=snap.hours_per_day,
-        gantt_items=snap.gantt_items,
-    )
+    return GanttSnapshotDetail.from_orm_snap(snap)
 
 
 @router.delete("/gantt/snapshots/{snapshot_id}", status_code=204)

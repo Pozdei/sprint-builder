@@ -31,6 +31,10 @@ def build_standup(
     standup_date: date,
     hours_per_day: float,
     role_filter: set[str] | None,
+    *,
+    dependencies: list[dict] | None = None,
+    vacations: list[dict] | None = None,
+    root_tasks: dict[str, str] | None = None,
 ) -> list[dict]:
     """Собрать данные для стендапа.
 
@@ -58,7 +62,12 @@ def build_standup(
       }
     ]
     """
-    gantt = compute_gantt_schedule(tasks, config_snapshot, sprint_start, hours_per_day)
+    gantt = compute_gantt_schedule(
+        tasks, config_snapshot, sprint_start, hours_per_day,
+        dependencies=dependencies,
+        vacations=vacations,
+        root_tasks=root_tasks,
+    )
 
     # Порог: сколько рабочих часов прошло к концу standup_date
     hours_threshold = _working_hours_by_eod(sprint_start, standup_date, hours_per_day)

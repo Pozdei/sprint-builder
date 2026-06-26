@@ -70,9 +70,29 @@ class GanttSnapshotSummary(BaseModel):
     gantt_start: str
     hours_per_day: float
 
+    @classmethod
+    def from_orm_snap(cls, snap) -> "GanttSnapshotSummary":
+        """Собрать сводку из ORM-снимка (SprintGanttSnapshot).
+
+        Общий конструктор для снимков истории спринтов и прогноза эпиков —
+        модель одна, отличается только ключ привязки."""
+        return cls(
+            id=snap.id, captured_at=snap.captured_at.isoformat(),
+            label=snap.label, gantt_start=snap.gantt_start,
+            hours_per_day=snap.hours_per_day,
+        )
+
 
 class GanttSnapshotDetail(GanttSnapshotSummary):
     gantt_items: list[GanttItem]
+
+    @classmethod
+    def from_orm_snap(cls, snap) -> "GanttSnapshotDetail":
+        return cls(
+            id=snap.id, captured_at=snap.captured_at.isoformat(),
+            label=snap.label, gantt_start=snap.gantt_start,
+            hours_per_day=snap.hours_per_day, gantt_items=snap.gantt_items,
+        )
 
 
 class GanttSnapshotCreate(BaseModel):

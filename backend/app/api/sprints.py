@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_config, get_jira_client
 from app.core.i18n import get_lang, make_translator
-from app.db import models, repository, sprints_repository
+from app.db import models, sprints_repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
 from app.schemas.gantt import (
@@ -228,6 +228,7 @@ def get_standup(
         [t.task_data for t in sprint.tasks],
         sprint.config_snapshot,
         sprint_start, standup_date, hours_per_day, role_filter,
+        **sprints_service.assemble_gantt_inputs(db, config.id, sprint),
     )
 
 
@@ -241,17 +242,10 @@ def get_gantt(
     lang: str = Depends(get_lang),
 ):
     sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
-    vac_dicts = repository.vacations_to_dicts(repository.list_vacations(db, config.id))
-    root_tasks = {
-        r.owner_id: r.task_key
-        for r in repository.list_root_tasks(db, config.id, f"sprint-{sprint.sprint_num}")
-    }
     return compute_gantt_schedule(
         [t.task_data for t in sprint.tasks],
         sprint.config_snapshot, start_date, hours_per_day,
-        dependencies=sprint.task_dependencies or [],
-        vacations=vac_dicts,
-        root_tasks=root_tasks,
+        **sprints_service.assemble_gantt_inputs(db, config.id, sprint),
     )
 
 
@@ -270,10 +264,8 @@ def create_gantt_snapshot(
         db, sprint.id, body.gantt_start, body.hours_per_day,
         [item.model_dump() for item in body.gantt_items], body.label,
     )
-    return GanttSnapshotSummary(
-        id=snap.id, captured_at=snap.captured_at.isoformat(),
-        label=snap.label, gantt_start=snap.gantt_start, hours_per_day=snap.hours_per_day,
-    )
+    db.commit()
+    return GanttSnapshotSummary.from_orm_snap(snap)
 
 
 @router.get("/{sprint_id}/gantt/snapshots", response_model=list[GanttSnapshotSummary])
@@ -285,10 +277,7 @@ def list_gantt_snapshots(
 ):
     sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
     return [
-        GanttSnapshotSummary(
-            id=s.id, captured_at=s.captured_at.isoformat(),
-            label=s.label, gantt_start=s.gantt_start, hours_per_day=s.hours_per_day,
-        )
+        GanttSnapshotSummary.from_orm_snap(s)
         for s in sprints_repository.list_gantt_snapshots(db, sprint.id)
     ]
 
@@ -305,11 +294,7 @@ def get_gantt_snapshot(
     snap = sprints_repository.get_gantt_snapshot(db, sprint.id, snapshot_id)
     if not snap:
         raise HTTPException(status_code=404, detail=_t("snapshot_not_found", lang, snapshot_id=snapshot_id))
-    return GanttSnapshotDetail(
-        id=snap.id, captured_at=snap.captured_at.isoformat(),
-        label=snap.label, gantt_start=snap.gantt_start, hours_per_day=snap.hours_per_day,
-        gantt_items=snap.gantt_items,
-    )
+    return GanttSnapshotDetail.from_orm_snap(snap)
 
 
 @router.delete("/{sprint_id}/gantt/snapshots/{snapshot_id}", status_code=204)
@@ -323,6 +308,7 @@ def delete_gantt_snapshot(
     sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
     if not sprints_repository.delete_gantt_snapshot(db, sprint.id, snapshot_id):
         raise HTTPException(status_code=404, detail=_t("snapshot_not_found", lang, snapshot_id=snapshot_id))
+    db.commit()
 
 
 # -------------------- Dependencies CRUD --------------------

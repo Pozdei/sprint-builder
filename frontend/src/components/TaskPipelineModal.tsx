@@ -5,6 +5,7 @@ import { useToast } from "./Toast";
 import { extractError } from "../lib/api-error";
 import { BUCKET_TO_FIELD } from "../lib/bucket-fields";
 import { bucketLabel } from "../lib/bucket-label";
+import { bucketColor, BUCKET_PIPELINE_ORDER } from "../lib/bucket-color";
 import type { GanttItem } from "../types/api";
 
 interface Props {
@@ -21,19 +22,7 @@ interface Props {
   onHoursSaved?: (key: string, bucket: string, hours: number) => void;
 }
 
-const BUCKET_ORDER = [
-  "Анализ", "Дизайн", "Разработка", "Код-ревью", "Дизайн-ревью", "Тестирование",
-];
-
-const BUCKET_COLORS: Record<string, { dot: string; bg: string; text: string }> = {
-  "Анализ":       { dot: "bg-amber-400",   bg: "bg-amber-50",   text: "text-amber-800" },
-  "Разработка":   { dot: "bg-green-500",   bg: "bg-green-50",   text: "text-green-800" },
-  "Код-ревью":    { dot: "bg-emerald-500", bg: "bg-emerald-50", text: "text-emerald-800" },
-  "Тестирование": { dot: "bg-blue-500",    bg: "bg-blue-50",    text: "text-blue-800" },
-  "Дизайн":       { dot: "bg-pink-500",    bg: "bg-pink-50",    text: "text-pink-800" },
-  "Дизайн-ревью": { dot: "bg-fuchsia-500", bg: "bg-fuchsia-50", text: "text-fuchsia-800" },
-};
-const DEFAULT_COLOR = { dot: "bg-gray-400", bg: "bg-gray-50", text: "text-gray-700" };
+const BUCKET_ORDER = BUCKET_PIPELINE_ORDER;
 
 function fmtDT(iso: string) {
   const d = new Date(iso);
@@ -170,7 +159,7 @@ export function TaskPipelineModal({ taskKey, allItems, onClose, onSaved, onHours
 
             <div className="space-y-3">
               {stages.map((stage, i) => {
-                const col = BUCKET_COLORS[stage.bucket] ?? DEFAULT_COLOR;
+                const col = bucketColor(stage.bucket);
                 const isLast = i === stages.length - 1;
                 const stageId = `${stage.key}|${stage.bucket}`;
                 const field = BUCKET_TO_FIELD[stage.bucket];
@@ -185,9 +174,9 @@ export function TaskPipelineModal({ taskKey, allItems, onClose, onSaved, onHours
                     </div>
 
                     {/* Content */}
-                    <div className={`flex-1 rounded-xl px-3 py-2.5 ${col.bg} ${isLast ? "ring-1 ring-inset ring-gray-200" : ""}`}>
+                    <div className={`flex-1 rounded-xl px-3 py-2.5 ${col.softBg} ${isLast ? "ring-1 ring-inset ring-gray-200" : ""}`}>
                       <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <span className={`text-sm font-semibold ${col.text}`}>
+                        <span className={`text-sm font-semibold ${col.softText}`}>
                           {bucketLabel(stage.bucket, t)}
                         </span>
                         {field ? (

@@ -177,8 +177,7 @@ def create_gantt_snapshot(
         gantt_items=gantt_items, label=label,
     )
     db.add(snap)
-    db.commit()
-    db.refresh(snap)
+    db.flush()  # коммитит вызывающий (api), как и у epic-снимков — единая конвенция модели
     return snap
 
 
@@ -207,5 +206,5 @@ def delete_gantt_snapshot(db: Session, sprint_id: int, snapshot_id: int) -> bool
     if not snap:
         return False
     db.delete(snap)
-    db.commit()
+    db.flush()  # коммитит вызывающий (api)
     return True

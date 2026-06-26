@@ -435,6 +435,9 @@ def build_candidates_xlsx(candidates: list[dict],
 
 def build_epic_forecast_xlsx(gantt_items: list[dict], epic_key: str = "") -> bytes:
     """Выгрузка прогноза эпика: 3 листа — по фазам, по задачам, по исполнителям."""
+    # Отпуска/псевдо-задачи не входят в стоимость проекта (как и в _compute_cost
+    # и в экранной модалке) — исключаем из всех трёх листов.
+    gantt_items = [it for it in gantt_items if not it.get("is_pseudo")]
     wb = Workbook()
 
     # ---- Лист 1: По фазам ----

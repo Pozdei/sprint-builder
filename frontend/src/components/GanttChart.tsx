@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { triggerDownload } from "../lib/download";
 import { groupBy } from "../lib/group-by";
 import { bucketLabel } from "../lib/bucket-label";
+import { bucketColor as bucketColorPalette, BUCKET_NAMES } from "../lib/bucket-color";
 import type { GanttItem, TaskDependency } from "../types/api";
 
 const HOUR_PX_DEFAULT = 12;
@@ -29,25 +30,6 @@ interface Props {
   rootTasks?: Record<string, string>;
 }
 
-const BUCKET_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  "Анализ":          { bg: "#fef3c7", text: "#92400e", border: "#d97706" },
-  "Разработка":      { bg: "#d1fae5", text: "#065f46", border: "#059669" },
-  "Разработка фронт": { bg: "#bbf7d0", text: "#14532d", border: "#22c55e" },
-  "Разработка бек":   { bg: "#c7d2fe", text: "#312e81", border: "#6366f1" },
-  "Код-ревью":    { bg: "#a7f3d0", text: "#064e3b", border: "#047857" },
-  "Тестирование": { bg: "#dbeafe", text: "#1e3a5f", border: "#2563eb" },
-  "Дизайн":       { bg: "#fce7f3", text: "#831843", border: "#db2777" },
-  "Дизайн-ревью": { bg: "#f5d0fe", text: "#581c87", border: "#a855f7" },
-  "Релиз":        { bg: "#fef9c3", text: "#713f12", border: "#ca8a04" },
-  "Руководство":  { bg: "#ede9fe", text: "#4c1d95", border: "#7c3aed" },
-  "Отсутствие":   { bg: "#f3f4f6", text: "#374151", border: "#9ca3af" },
-  "Отпуск":       { bg: "#fff7ed", text: "#9a3412", border: "#f97316" },
-  "Story":        { bg: "#e0e7ff", text: "#3730a3", border: "#6366f1" },
-  "Epic":         { bg: "#ddd6fe", text: "#5b21b6", border: "#7c3aed" },
-  "Консолид.":    { bg: "#ccfbf1", text: "#115e59", border: "#14b8a6" },
-};
-const DEFAULT_COLOR = { bg: "#f3f4f6", text: "#374151", border: "#9ca3af" };
-
 const ROW_H    = 36;   // px высота строки
 const ROW_GAP  = 4;    // px между строками
 const LABEL_W  = 160;  // px ширина колонки с именем
@@ -55,7 +37,7 @@ const HEADER_H = 48;   // px высота шапки дат
 const BAND_GAP = 16;   // px разделитель между секциями (полосы сводов / детальная сетка)
 
 function bucketColor(bucket: string) {
-  return BUCKET_COLORS[bucket] ?? DEFAULT_COLOR;
+  return bucketColorPalette(bucket).hex;
 }
 
 /** Для бакета «Разработка» различаем фронт/бек по роли исполнителя (developer_frontend / developer_backend). */
@@ -1064,23 +1046,26 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
 
       {/* Легенда */}
       <div className="flex flex-wrap gap-2 px-4 py-2 border-t bg-gray-50 text-xs">
-        {Object.entries(BUCKET_COLORS)
-          .filter(([bucket]) => {
+        {BUCKET_NAMES
+          .filter((bucket) => {
             if (bucket === "Story") return groupByStory;
             if (bucket === "Epic") return groupByEpic;
             if (bucket === "Консолид.") return groupByParent;
             if (bucket === "Разработка") return false; // показываем только фронт/бек-разбивку
             return true;
           })
-          .map(([bucket, col]) => (
-            <span
-              key={bucket}
-              className="flex items-center gap-1 px-2 py-0.5 rounded border"
-              style={{ background: col.bg, color: col.text, borderColor: col.border }}
-            >
-              {legendLabel(bucket, t)}
-            </span>
-          ))}
+          .map((bucket) => {
+            const col = bucketColorPalette(bucket).hex;
+            return (
+              <span
+                key={bucket}
+                className="flex items-center gap-1 px-2 py-0.5 rounded border"
+                style={{ background: col.bg, color: col.text, borderColor: col.border }}
+              >
+                {legendLabel(bucket, t)}
+              </span>
+            );
+          })}
       </div>
     </div>
   );

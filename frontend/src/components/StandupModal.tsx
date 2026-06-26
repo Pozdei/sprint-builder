@@ -5,6 +5,7 @@ import { useToast } from "./Toast";
 import { extractError } from "../lib/api-error";
 import { fmtDateDotted, todayISO } from "../lib/format";
 import { bucketLabel } from "../lib/bucket-label";
+import { bucketColor as bucketColorPalette } from "../lib/bucket-color";
 import type { RoleOut, SprintOut, StandupExecutor, StandupSubmitResult } from "../types/api";
 
 interface TaskState {
@@ -22,17 +23,8 @@ function fmtTime(iso: string): string {
   return iso.slice(11, 16);
 }
 
-const BUCKET_COLOR_BY_RU: Record<string, string> = {
-  "Анализ": "bg-amber-100 text-amber-800",
-  "Разработка": "bg-green-100 text-green-800",
-  "Код-ревью": "bg-emerald-100 text-emerald-800",
-  "Тестирование": "bg-blue-100 text-blue-800",
-  "Дизайн": "bg-pink-100 text-pink-800",
-  "Дизайн-ревью": "bg-fuchsia-100 text-fuchsia-800",
-};
-
 function bucketColor(bucket: string): string {
-  return BUCKET_COLOR_BY_RU[bucket] ?? "bg-gray-100 text-gray-700";
+  return bucketColorPalette(bucket).solid;
 }
 
 export function StandupModal({ sprint, onClose }: Props) {

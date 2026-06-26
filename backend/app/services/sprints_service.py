@@ -95,6 +95,29 @@ def _check_access(sprint: models.Sprint, config_id: int, lang: str = "ru") -> No
         )
 
 
+# -------------------- Общие входы планировщика Ганта --------------------
+
+def assemble_gantt_inputs(db: Session, config_id: int, sprint: models.Sprint) -> dict:
+    """Собрать общие входы `compute_gantt_schedule` для спринта: пользовательские
+    FS-зависимости, отпуска конфига и стартовые задачи исполнителей.
+
+    Единый источник для всех потребителей Ганта спринта — эндпоинты Ганта и
+    стендапа (`api/sprints.py`) и Telegram-дайджеста (`services/telegram_service.py`),
+    чтобы расписание везде считалось от одних и тех же ограничений.
+    Возвращает kwargs-словарь для распаковки в `compute_gantt_schedule(...)`.
+    """
+    vac_dicts = repository.vacations_to_dicts(repository.list_vacations(db, config_id))
+    root_tasks = {
+        r.owner_id: r.task_key
+        for r in repository.list_root_tasks(db, config_id, f"sprint-{sprint.sprint_num}")
+    }
+    return {
+        "dependencies": sprint.task_dependencies or [],
+        "vacations": vac_dicts,
+        "root_tasks": root_tasks,
+    }
+
+
 # -------------------- Формула номера --------------------
 
 def compute_next_sprint_num(

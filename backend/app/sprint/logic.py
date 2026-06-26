@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from app.jira.client import JiraClient
+from app.sprint import buckets
 from app.sprint.config import SprintConfig
 
 
@@ -102,29 +103,11 @@ def _positive_float(v: Any) -> float | None:
     return fv if fv > 0 else None
 
 
-# Маппинг бакета → категория поля часов в Jira.
-_BUCKET_TO_ROLE_HOURS_FIELD = {
-    "Анализ":       "analyst",
-    "Тестирование": "tester",
-    "Дизайн":       "designer",
-    "Разработка":   "developer",
-}
-
-# Бакеты ревью/вехи: время определяется только настроенным дефолтом
-# (role_status_default_hours), никакие поля задачи (timeoriginalestimate, sp,
-# hours_developer) не учитываются. «Релиз» — финальная веха пайплайна разработки.
-_REVIEW_BUCKETS = {"Код-ревью", "Дизайн-ревью", "Релиз"}
-
-# Маппинг вида работы → роль + бакет
-_WORK_TYPE_INFO: dict[str, dict[str, str]] = {
-    "analytics":     {"role": "analyst",        "bucket": "Анализ"},
-    "development":   {"role": "developer",       "bucket": "Разработка"},
-    "testing":       {"role": "analyst",         "bucket": "Тестирование"},
-    "design":        {"role": "designer",        "bucket": "Дизайн"},
-    "code_review":   {"role": "developer_lead",  "bucket": "Код-ревью"},
-    "design_review": {"role": "designer_lead",   "bucket": "Дизайн-ревью"},
-    "release":       {"role": "developer_lead",  "bucket": "Релиз"},
-}
+# Bucket-карты — единый источник в app/sprint/buckets.py (имена сохранены
+# приватными, чтобы не трогать остальной модуль и импорт из epic_forecast).
+_BUCKET_TO_ROLE_HOURS_FIELD = buckets.BUCKET_TO_ROLE_HOURS_FIELD
+_REVIEW_BUCKETS = buckets.REVIEW_BUCKETS
+_WORK_TYPE_INFO = buckets.WORK_TYPE_INFO
 
 # Виды работ, которые порождаются ПОСЛЕ аллокации (когда знаем, что задача выполнится)
 _POST_ALLOC_WORK_TYPES = {"testing", "code_review", "design_review", "release"}
@@ -139,13 +122,8 @@ def _role_override(direction: dict | None, work_type: str) -> str:
 # Что может делать каждый тип роли: prefix роли → допустимые bucket-категории.
 # Используется чтобы не отдать «Тестирование»/«Анализ» разработчику, даже если
 # направление сконфигурировано неправильно (role_overrides указывает
-# на несовместимую роль).
-_ROLE_WORK_CATEGORIES: dict[str, frozenset[str]] = {
-    "analyst":   frozenset({"Анализ", "Тестирование"}),
-    "tester":    frozenset({"Тестирование"}),
-    "developer": frozenset({"Разработка", "Код-ревью", "Релиз"}),
-    "designer":  frozenset({"Дизайн", "Дизайн-ревью"}),
-}
+# на несовместимую роль). Единый источник — app/sprint/buckets.py.
+_ROLE_WORK_CATEGORIES = buckets.ROLE_WORK_CATEGORIES
 
 
 def _role_allowed_buckets(role: str | None) -> frozenset[str] | None:

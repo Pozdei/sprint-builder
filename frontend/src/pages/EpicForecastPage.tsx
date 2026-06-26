@@ -816,10 +816,14 @@ function CostBreakdownModal({
     }
   };
 
+  // Отпуска/псевдо-задачи не входят в стоимость проекта (бэкенд их тоже исключает
+  // из totalCost и разреза по людям) — убираем из всех разрезов модалки.
+  const costItems = useMemo(() => ganttItems.filter((i) => !i.is_pseudo), [ganttItems]);
+
   // Данные для таба "По задачам"
   const byTask = useMemo(() => {
     const map = new Map<string, { summary: string; url: string; executors: Set<string>; hours: number; cost: number }>();
-    for (const it of ganttItems) {
+    for (const it of costItems) {
       if (!map.has(it.key)) {
         map.set(it.key, { summary: it.summary, url: it.url, executors: new Set(), hours: 0, cost: 0 });
       }
@@ -829,7 +833,7 @@ function CostBreakdownModal({
       d.cost += it.phase_cost ?? 0;
     }
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [ganttItems]);
+  }, [costItems]);
 
   const TABS: { key: CostTab; label: string }[] = [
     { key: "phases",  label: t("costBreakdown.tabs.phases") },
@@ -892,7 +896,7 @@ function CostBreakdownModal({
                 </tr>
               </thead>
               <tbody>
-                {[...ganttItems]
+                {[...costItems]
                   .sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : a.key.localeCompare(b.key)))
                   .map((it, i) => (
                     <tr key={i} className="border-b hover:bg-gray-50">

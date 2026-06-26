@@ -12,19 +12,10 @@ import heapq
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
-_WORK_TYPE_TO_BUCKET = {
-    "analytics":     "Анализ",
-    "development":   "Разработка",
-    "testing":       "Тестирование",
-    "design":        "Дизайн",
-    "code_review":   "Код-ревью",
-    "design_review": "Дизайн-ревью",
-    "release":       "Релиз",
-}
-
-_DEFAULT_BUCKET_PIPELINE = [
-    "Анализ", "Дизайн", "Разработка", "Код-ревью", "Дизайн-ревью", "Тестирование", "Релиз",
-]
+from app.sprint.buckets import (
+    DEFAULT_BUCKET_PIPELINE as _DEFAULT_BUCKET_PIPELINE,
+    WORK_TYPE_TO_BUCKET as _WORK_TYPE_TO_BUCKET,
+)
 
 WORK_START_HOUR = 9
 
