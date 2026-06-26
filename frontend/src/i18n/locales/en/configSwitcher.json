@@ -1,0 +1,15 @@
+{
+  "label": "Config:",
+  "deleteConfig": "Delete config",
+  "createNew": "+ Create new config",
+  "name": "Name",
+  "namePlaceholder": "E.g.: Development",
+  "copyFrom": "Copy settings from",
+  "emptyConfig": "— empty config —",
+  "creating": "Creating…",
+  "switched": "Config switched",
+  "lastConfigDeleteBlocked": "This is the last config — it can't be deleted. Create a new one first, then delete the old one.",
+  "confirmDelete": "Delete config \"{{name}}\"?\n\nAll its sprints will be deleted permanently. This action can't be undone.",
+  "created": "Config «{{name}}» created",
+  "deleted": "Config «{{name}}» deleted"
+}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   type IssueFieldsUpdate,
   updateJiraIssueFields,
@@ -24,6 +25,7 @@ function HoursInput({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation("sprint");
   return (
     <div>
       <label className="block text-xs text-gray-500 mb-0.5">{label}</label>
@@ -34,7 +36,7 @@ function HoursInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onWheel={(e) => e.currentTarget.blur()}
-        placeholder="не задано"
+        placeholder={t("jiraField.hoursNotSet")}
         className="w-full px-2 py-1.5 border rounded text-sm"
       />
     </div>
@@ -42,6 +44,7 @@ function HoursInput({
 }
 
 export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
+  const { t } = useTranslation(["sprint", "common"]);
   const toast = useToast();
   const [hoursAnalyst, setHoursAnalyst] = useState(
     task.hours_analyst != null ? String(task.hours_analyst) : "",
@@ -90,10 +93,10 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
     try {
       await updateJiraIssueFields(task.key, update);
       onSaved(task.key, update, developer?.display_name ?? null);
-      toast.success(`${task.key}: поля обновлены в Jira`);
+      toast.success(t("jiraField.toastFieldsUpdated", { key: task.key }));
       onClose();
     } catch (e: unknown) {
-      toast.error(extractError(e, "Ошибка сохранения"));
+      toast.error(extractError(e, t("jiraField.errorSaving")));
     } finally {
       setSaving(false);
     }
@@ -112,7 +115,7 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
           {/* Заголовок */}
           <div>
             <h3 className="font-semibold text-gray-800 text-base">
-              Редактировать поля в Jira
+              {t("jiraField.modalTitle")}
             </h3>
             <div className="mt-0.5">
               <a
@@ -132,23 +135,23 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
           {/* Поля часов */}
           <div className={`grid gap-3 ${showDesigner ? "grid-cols-4" : "grid-cols-3"}`}>
             <HoursInput
-              label="Часы аналитика"
+              label={t("jiraField.hoursAnalyst")}
               value={hoursAnalyst}
               onChange={setHoursAnalyst}
             />
             <HoursInput
-              label="Часы тестера"
+              label={t("jiraField.hoursTester")}
               value={hoursTester}
               onChange={setHoursTester}
             />
             <HoursInput
-              label="Часы разработчика"
+              label={t("jiraField.hoursDeveloper")}
               value={hoursDeveloper}
               onChange={setHoursDeveloper}
             />
             {showDesigner && (
               <HoursInput
-                label="Часы дизайнера"
+                label={t("jiraField.hoursDesigner")}
                 value={hoursDesigner}
                 onChange={setHoursDesigner}
               />
@@ -158,14 +161,14 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
           {/* Разработчик */}
           <div>
             <label className="block text-xs text-gray-500 mb-0.5">
-              Разработчик
+              {t("jiraField.developer")}
             </label>
             <div className="flex gap-2">
               <input
                 type="text"
                 readOnly
                 value={developerDisplay}
-                placeholder="не задан"
+                placeholder={t("jiraField.developerNotSet")}
                 className="flex-1 px-2 py-1.5 border rounded text-sm bg-gray-50"
               />
               <button
@@ -173,14 +176,14 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
                 onClick={() => setShowUserSearch(true)}
                 className="px-3 py-1.5 border rounded text-sm bg-white hover:bg-gray-50 text-blue-600"
               >
-                Выбрать
+                {t("jiraField.pick")}
               </button>
               {developer && (
                 <button
                   type="button"
                   onClick={() => { setDeveloper(null); setDeveloperDisplay(task.developer_name ?? ""); }}
                   className="px-2 py-1.5 border rounded text-sm text-red-500 hover:bg-red-50"
-                  title="Отменить выбор"
+                  title={t("jiraField.clearChoiceTitle")}
                 >
                   ✕
                 </button>
@@ -196,7 +199,7 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
               disabled={saving}
               className="px-4 py-2 text-sm border rounded hover:bg-gray-50 text-gray-600"
             >
-              Отмена
+              {t("common:cancel")}
             </button>
             <button
               type="button"
@@ -204,7 +207,7 @@ export function JiraFieldEditor({ task, onClose, onSaved }: Props) {
               disabled={saving}
               className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded font-medium"
             >
-              {saving ? "Сохраняю…" : "Сохранить в Jira"}
+              {saving ? t("jiraField.saving") : t("jiraField.saveToJira")}
             </button>
           </div>
         </div>

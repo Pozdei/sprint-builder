@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useToast } from "../Toast";
 import type { PseudoTaskOut, TeamMemberOut } from "../../types/api";
 
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export function PseudoTasksEditor({ value, onChange, team }: Props) {
+  const { t } = useTranslation(["settings", "common"]);
   const toast = useToast();
   // Берём только сохранённых (id > 0). У свежедобавленных через "+ Добавить из Jira"
   // id = 0 — для них псевдо-задачи нельзя завести до сохранения конфига.
@@ -30,17 +32,15 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
 
   const handleAdd = () => {
     if (members.length === 0) {
-      toast.info(
-        "Нет сохранённых людей в команде. Сначала добавьте их через «+ Добавить из Jira» и сохраните конфиг."
-      );
+      toast.info(t("pseudoTasks.noSavedMembers"));
       return;
     }
     onChange([
       ...value,
       {
         member_id: members[0].id,
-        name: "Отпуск",
-        bucket: "Отсутствие",
+        name: t("pseudoTasks.newTask.name"),
+        bucket: t("pseudoTasks.newTask.bucket"),
         hours: 40,
         recurring: false,
         target_sprint_num: null,
@@ -54,20 +54,19 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
     <div>
       {hasUnsavedMembers && (
         <div className="mb-3 bg-yellow-50 border border-yellow-300 text-yellow-900 rounded p-2 text-sm">
-          В команде есть новые люди, которые ещё не сохранены. После сохранения
-          конфига они появятся в выпадающем списке псевдо-задач.
+          {t("pseudoTasks.unsavedMembersWarning")}
         </div>
       )}
 
       <table className="w-full text-sm border">
         <thead className="bg-gray-100">
           <tr>
-            <th className="text-left px-2 py-1 border-b font-semibold">Человек</th>
-            <th className="text-left px-2 py-1 border-b font-semibold">Название</th>
-            <th className="text-left px-2 py-1 border-b font-semibold">Бакет</th>
-            <th className="text-left px-2 py-1 border-b font-semibold w-20">Часы</th>
-            <th className="text-center px-2 py-1 border-b font-semibold w-24">Recurring</th>
-            <th className="text-left px-2 py-1 border-b font-semibold w-32">Спринт №</th>
+            <th className="text-left px-2 py-1 border-b font-semibold">{t("pseudoTasks.table.person")}</th>
+            <th className="text-left px-2 py-1 border-b font-semibold">{t("pseudoTasks.table.name")}</th>
+            <th className="text-left px-2 py-1 border-b font-semibold">{t("pseudoTasks.table.bucket")}</th>
+            <th className="text-left px-2 py-1 border-b font-semibold w-20">{t("pseudoTasks.table.hours")}</th>
+            <th className="text-center px-2 py-1 border-b font-semibold w-24">{t("pseudoTasks.table.recurring")}</th>
+            <th className="text-left px-2 py-1 border-b font-semibold w-32">{t("pseudoTasks.table.sprintNum")}</th>
             <th className="px-2 py-1 border-b w-12"></th>
           </tr>
         </thead>
@@ -84,7 +83,7 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
                   >
                     {!m && pt.member_id ? (
                       <option value={pt.member_id}>
-                        (id={pt.member_id}, не найден)
+                        {t("pseudoTasks.memberNotFound", { id: pt.member_id })}
                       </option>
                     ) : null}
                     {members.map((mem) => (
@@ -107,7 +106,7 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
                     type="text"
                     value={pt.bucket}
                     onChange={(e) => update(i, "bucket", e.target.value)}
-                    placeholder="Отсутствие / Руководство / Обучение"
+                    placeholder={t("pseudoTasks.bucketPlaceholder")}
                     className="w-full px-2 py-1 border rounded"
                   />
                 </td>
@@ -132,7 +131,7 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
                   <input
                     type="number"
                     value={pt.target_sprint_num ?? ""}
-                    placeholder="—"
+                    placeholder={t("pseudoTasks.sprintNumPlaceholder")}
                     onChange={(e) => {
                       const v = e.target.value;
                       update(i, "target_sprint_num", v === "" ? null : Number(v));
@@ -141,14 +140,15 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
                     className="w-full px-2 py-1 border rounded"
                     disabled={pt.recurring}
                     title={pt.recurring
-                      ? "Для recurring задач номер спринта не используется"
-                      : "Номер целевого спринта (если пусто — задача не попадёт в спринт)"}
+                      ? t("pseudoTasks.sprintNumTitleRecurring")
+                      : t("pseudoTasks.sprintNumTitleOnce")}
                   />
                 </td>
                 <td className="px-2 py-1 text-center">
                   <button
                     onClick={() => handleRemove(i)}
                     className="text-red-500 hover:text-red-700 text-lg"
+                    title={t("pseudoTasks.remove")}
                   >
                     ×
                   </button>
@@ -162,14 +162,12 @@ export function PseudoTasksEditor({ value, onChange, team }: Props) {
         onClick={handleAdd}
         className="mt-2 text-sm text-blue-600 hover:text-blue-800"
       >
-        + Добавить
+        {t("pseudoTasks.add")}
       </button>
       <p className="text-xs text-gray-500 mt-2">
-        <b>Recurring</b> — попадает в каждый спринт автоматически (для регулярных задач
-        типа стендапов).<br />
-        <b>Спринт №</b> — попадает только в спринт с указанным номером (разово, для отпуска).
-        Если оба поля пусты — задача не попадёт ни в один спринт.<br />
-        «Руководство» для лидов добавляется автоматически — управляется в базовых настройках.
+        <b>{t("pseudoTasks.table.recurring")}</b> — {t("pseudoTasks.footnoteRecurring")}<br />
+        <b>{t("pseudoTasks.table.sprintNum")}</b> — {t("pseudoTasks.footnoteSprintNum")}<br />
+        {t("pseudoTasks.footnoteManagement")}
       </p>
     </div>
   );

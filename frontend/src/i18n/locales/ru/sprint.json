@@ -1,0 +1,104 @@
+{
+  "toolbar": {
+    "loading": "Загружаю…",
+    "refreshCandidates": "Обновить кандидатов",
+    "loadCandidates": "Загрузить кандидатов",
+    "downloading": "Скачиваю…",
+    "downloadCandidates": "Скачать кандидатов",
+    "building": "Формирую и сохраняю…",
+    "buildSprint": "Сформировать спринт",
+    "editCompositionTitle": "Изменить состав вручную",
+    "editComposition": "Редактировать состав",
+    "downloadSprint": "Скачать спринт",
+    "approving": "Утверждаю…",
+    "approve": "Утвердить"
+  },
+  "empty": "Нажмите «Загрузить кандидатов», чтобы подтянуть задачи из Jira.",
+  "summary": {
+    "maxInJira": "Макс. в Jira",
+    "candidates": "Кандидатов",
+    "formal": "формальных"
+  },
+  "filter": {
+    "label": "Фильтр:",
+    "allExecutors": "Все исполнители",
+    "allPhases": "Все фазы",
+    "reset": "Сбросить"
+  },
+  "sections": {
+    "inSprint": "В спринт",
+    "ofTotal": "из",
+    "tasksSuffix": "задач",
+    "overflow": "Не влезло",
+    "candidates": "Кандидаты"
+  },
+  "toast": {
+    "candidatesLoaded": "Загружено кандидатов: {{count}}",
+    "sprintBuilt": "Sprint {{num}} сформирован и сохранён",
+    "sprintApproved": "Sprint {{num}} утверждён",
+    "compositionUpdated": "Состав спринта обновлён"
+  },
+  "confirm": {
+    "approveTitle": "Утвердить Sprint {{num}}?",
+    "approveBody": "В Jira уже должен существовать Sprint {{num}}."
+  },
+  "status": {
+    "approved": "approved",
+    "draft": "draft"
+  },
+  "table": {
+    "priority": "№",
+    "task": "Задача",
+    "pseudo": "(псевдо)",
+    "title": "Название",
+    "executor": "Исполнитель",
+    "role": "Роль",
+    "phase": "Фаза",
+    "jiraStatus": "Статус Jira",
+    "expectedResult": "Ожид. итог",
+    "hours": "Часы",
+    "hoursOf": "из {{total}} ч",
+    "hoursTruncatedTitle": "Задача урезана до остатка бюджета",
+    "hoursDefaultTitle": "Оценка не задана в Jira — используется дефолт",
+    "hoursAnalystShort": "Ч. аналит.",
+    "hoursTesterShort": "Ч. тестера",
+    "hoursDeveloperShort": "Ч. разраб.",
+    "hoursDesignerShort": "Ч. дизайн.",
+    "developer": "Разработчик",
+    "designer": "Дизайнер",
+    "tester": "Тестировщик",
+    "sprint": "Спринт",
+    "source": "Источник",
+    "reason": "Причина",
+    "editInJiraTitle": "Редактировать в Jira"
+  },
+  "composer": {
+    "title": "Редактирование состава спринта",
+    "saving": "Сохраняю…",
+    "saveComposition": "Сохранить состав",
+    "candidates": "Кандидаты",
+    "allBoards": "Все доски",
+    "allExecutors": "Все исполнители",
+    "addToSprintTitle": "Добавить в спринт",
+    "inSprint": "В спринте",
+    "removeFromSprintTitle": "Убрать из спринта",
+    "empty": "пусто",
+    "pseudo": "(псевдо)"
+  },
+  "jiraField": {
+    "modalTitle": "Редактировать поля в Jira",
+    "hoursAnalyst": "Часы аналитика",
+    "hoursTester": "Часы тестера",
+    "hoursDeveloper": "Часы разработчика",
+    "hoursDesigner": "Часы дизайнера",
+    "hoursNotSet": "не задано",
+    "developer": "Разработчик",
+    "developerNotSet": "не задан",
+    "pick": "Выбрать",
+    "clearChoiceTitle": "Отменить выбор",
+    "saving": "Сохраняю…",
+    "saveToJira": "Сохранить в Jira",
+    "toastFieldsUpdated": "{{key}}: поля обновлены в Jira",
+    "errorSaving": "Ошибка сохранения"
+  }
+}

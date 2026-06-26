@@ -2,12 +2,36 @@
 
 from sqlalchemy.orm import Session
 
+from app.core.i18n import DEFAULT_LANG, make_translator
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db import models, users_repository
 
+_MSG: dict[str, dict[str, str]] = {
+    "bad_credentials": {
+        "ru": "Неверный email или пароль",
+        "en": "Invalid email or password",
+    },
+    "user_deactivated": {
+        "ru": "Пользователь деактивирован",
+        "en": "User is deactivated",
+    },
+}
+_t = make_translator(_MSG)
+
 
 class AuthError(Exception):
-    """Ошибка аутентификации (плохие creds, заблокирован)."""
+    """Ошибка аутентификации (плохие creds, заблокирован).
+
+    `str(e)` — ru-вариант (обратная совместимость), `.text(lang)` — нужная локаль.
+    """
+
+    def __init__(self, key: str, **kwargs):
+        self._key = key
+        self._kwargs = kwargs
+        super().__init__(_t(key, DEFAULT_LANG, **kwargs))
+
+    def text(self, lang: str) -> str:
+        return _t(self._key, lang, **self._kwargs)
 
 
 def authenticate(db: Session, email: str, password: str) -> tuple[models.User, str]:
@@ -17,11 +41,11 @@ def authenticate(db: Session, email: str, password: str) -> tuple[models.User, s
     """
     user = users_repository.get_user_by_email(db, email)
     if not user:
-        raise AuthError("Неверный email или пароль")
+        raise AuthError("bad_credentials")
     if not user.is_active:
-        raise AuthError("Пользователь деактивирован")
+        raise AuthError("user_deactivated")
     if not verify_password(password, user.password_hash):
-        raise AuthError("Неверный email или пароль")
+        raise AuthError("bad_credentials")
 
     token = create_access_token(user.id, user.role)
     return user, token

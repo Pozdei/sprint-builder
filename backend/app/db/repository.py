@@ -242,7 +242,8 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
     for field in ("name", "project_key", "sprint_field", "responsible_field",
                   "hours_per_person", "default_task_hours",
                   "leader_hours", "leader_management_enabled", "developer_field",
-                  "designer_field", "tester_field", "jira_base_url", "jira_email"):
+                  "designer_field", "tester_field", "jira_base_url", "jira_email",
+                  "telegram_chat_id", "telegram_daily_enabled", "telegram_daily_time"):
         if field in data:
             setattr(config, field, data[field])
 
@@ -253,6 +254,14 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
             config.jira_api_token_enc = encrypt_secret(token)
         else:
             config.jira_api_token_enc = ""
+
+    if "telegram_bot_token" in data:
+        token = data["telegram_bot_token"]
+        if token:
+            from app.core.security import encrypt_secret
+            config.telegram_bot_token_enc = encrypt_secret(token)
+        else:
+            config.telegram_bot_token_enc = ""
 
     if "team" in data:
         items = [

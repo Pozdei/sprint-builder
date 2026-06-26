@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_config, get_jira_client, require_lead
 from app.api.sprints import _to_out as sprint_to_out
+from app.core.i18n import get_lang
 from app.db import models
 from app.db.session import get_db
 from app.jira.client import JiraError, client
@@ -37,13 +38,14 @@ def _parse_candidates_in(body: SprintBuildRequest | None) -> list[dict] | None:
 def candidates(
     user: models.User = Depends(require_lead),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     try:
-        result = collect_sprint_candidates(db, client, user.id)
+        result = collect_sprint_candidates(db, client, user.id, lang=lang)
     except ConfigNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except JiraError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=e.text(lang))
     return result
 
 
@@ -55,13 +57,16 @@ def build(
     body: SprintBuildRequest | None = None,
     user: models.User = Depends(require_lead),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     try:
-        result = build_sprint(db, client, user.id, candidates_in=_parse_candidates_in(body))
+        result = build_sprint(
+            db, client, user.id, candidates_in=_parse_candidates_in(body), lang=lang,
+        )
     except ConfigNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except JiraError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=e.text(lang))
     return result
 
 
@@ -73,16 +78,17 @@ def build_and_save(
     body: SprintBuildRequest | None = None,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     candidates_in = _parse_candidates_in(body)
 
     if not candidates_in:
         try:
-            collected = collect_sprint_candidates(db, client, config.owner_user_id)
+            collected = collect_sprint_candidates(db, client, config.owner_user_id, lang=lang)
         except ConfigNotFoundError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except JiraError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise HTTPException(status_code=502, detail=e.text(lang))
         candidates_in = collected["candidates"]
         max_sprint_num = collected["max_sprint_num"]
     else:
@@ -103,11 +109,12 @@ def build_and_save(
             db, client, config.owner_user_id,
             candidates_in=candidates_in,
             target_sprint_num=target_sprint_num,
+            lang=lang,
         )
     except ConfigNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except JiraError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=e.text(lang))
 
     try:
         sprint = sprints_service.save_draft(

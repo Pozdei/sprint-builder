@@ -1,11 +1,11 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { fetchStandup, submitStandup } from "../api/client";
 import { useToast } from "./Toast";
 import { extractError } from "../lib/api-error";
 import { fmtDateDotted, todayISO } from "../lib/format";
+import { bucketLabel } from "../lib/bucket-label";
 import type { RoleOut, SprintOut, StandupExecutor, StandupSubmitResult } from "../types/api";
-
-const STATUSES = ["Выполнено", "В работе", "Заблокировано", "Не начинал"];
 
 interface TaskState {
   status: string;
@@ -22,20 +22,28 @@ function fmtTime(iso: string): string {
   return iso.slice(11, 16);
 }
 
+const BUCKET_COLOR_BY_RU: Record<string, string> = {
+  "Анализ": "bg-amber-100 text-amber-800",
+  "Разработка": "bg-green-100 text-green-800",
+  "Код-ревью": "bg-emerald-100 text-emerald-800",
+  "Тестирование": "bg-blue-100 text-blue-800",
+  "Дизайн": "bg-pink-100 text-pink-800",
+  "Дизайн-ревью": "bg-fuchsia-100 text-fuchsia-800",
+};
+
 function bucketColor(bucket: string): string {
-  const map: Record<string, string> = {
-    "Анализ": "bg-amber-100 text-amber-800",
-    "Разработка": "bg-green-100 text-green-800",
-    "Код-ревью": "bg-emerald-100 text-emerald-800",
-    "Тестирование": "bg-blue-100 text-blue-800",
-    "Дизайн": "bg-pink-100 text-pink-800",
-    "Дизайн-ревью": "bg-fuchsia-100 text-fuchsia-800",
-  };
-  return map[bucket] ?? "bg-gray-100 text-gray-700";
+  return BUCKET_COLOR_BY_RU[bucket] ?? "bg-gray-100 text-gray-700";
 }
 
 export function StandupModal({ sprint, onClose }: Props) {
+  const { t } = useTranslation(["history", "common"]);
   const toast = useToast();
+  const STATUSES = [
+    t("history:standupModal.statusValues.done"),
+    t("history:standupModal.statusValues.inProgress"),
+    t("history:standupModal.statusValues.blocked"),
+    t("history:standupModal.statusValues.notStarted"),
+  ];
   const roles: RoleOut[] = (sprint.config_snapshot.roles as RoleOut[] | undefined) ?? [];
   const enabledRoles = roles.filter((r) => r.enabled && !r.is_lead);
   const leadRoles   = roles.filter((r) => r.enabled && r.is_lead);
@@ -81,7 +89,7 @@ export function StandupModal({ sprint, onClose }: Props) {
         Array.from(selectedRoles),
       );
       if (data.length === 0) {
-        toast.info("По выбранным параметрам задач не найдено. Проверьте дату начала спринта и роли.");
+        toast.info(t("history:standupModal.toast.noTasksFound"));
         setLoading(false);
         return;
       }
@@ -90,7 +98,7 @@ export function StandupModal({ sprint, onClose }: Props) {
       for (const ex of data) {
         for (const t of ex.tasks) {
           initial[`${t.key}|${t.bucket}`] = {
-            status: t.is_overdue ? "Выполнено" : "В работе",
+            status: t.is_overdue ? STATUSES[0] : STATUSES[1],
             comment: "",
             pushToJira: false,
           };
@@ -100,7 +108,7 @@ export function StandupModal({ sprint, onClose }: Props) {
       setTaskStates(initial);
       setStep("form");
     } catch (e: unknown) {
-      toast.error(extractError(e, "Ошибка загрузки"));
+      toast.error(extractError(e, t("history:standupModal.toast.loadError")));
     } finally {
       setLoading(false);
     }
@@ -137,11 +145,11 @@ export function StandupModal({ sprint, onClose }: Props) {
       const pushed = res.filter((r) => r.pushed).length;
       toast.success(
         pushed > 0
-          ? `Стендап проведён · ${pushed} коммент. отправлено в Jira`
-          : "Стендап проведён",
+          ? t("history:standupModal.toast.submittedWithPush", { count: pushed })
+          : t("history:standupModal.toast.submitted"),
       );
     } catch (e: unknown) {
-      toast.error(extractError(e, "Ошибка отправки"));
+      toast.error(extractError(e, t("history:standupModal.toast.submitError")));
     } finally {
       setSubmitting(false);
     }
@@ -163,11 +171,11 @@ export function StandupModal({ sprint, onClose }: Props) {
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h2 className="font-bold text-gray-900 text-lg">
-              Stand-up · Sprint {sprint.sprint_num}
+              {t("history:standupModal.title", { num: sprint.sprint_num })}
             </h2>
             {step === "form" && (
               <p className="text-sm text-gray-500 mt-0.5">
-                {fmtDateDotted(standupDate)} · {executors.length} участников · {totalTasks} задач
+                {t("history:standupModal.subtitle", { date: fmtDateDotted(standupDate), count: executors.length, tasks: totalTasks })}
               </p>
             )}
           </div>
@@ -182,7 +190,7 @@ export function StandupModal({ sprint, onClose }: Props) {
             <div className="space-y-5">
               <div className="grid grid-cols-2 gap-4">
                 <label className="block">
-                  <span className="text-sm font-medium text-gray-700">Дата стендапа</span>
+                  <span className="text-sm font-medium text-gray-700">{t("history:standupModal.step1.standupDate")}</span>
                   <input
                     type="date"
                     value={standupDate}
@@ -192,8 +200,8 @@ export function StandupModal({ sprint, onClose }: Props) {
                 </label>
                 <label className="block">
                   <span className="text-sm font-medium text-gray-700">
-                    Дата начала спринта
-                    <span className="text-gray-400 font-normal ml-1">(для расчёта Ганта)</span>
+                    {t("history:standupModal.step1.sprintStartDate")}
+                    <span className="text-gray-400 font-normal ml-1">{t("history:standupModal.step1.sprintStartHint")}</span>
                   </span>
                   <input
                     type="date"
@@ -205,7 +213,7 @@ export function StandupModal({ sprint, onClose }: Props) {
               </div>
 
               <label className="block">
-                <span className="text-sm font-medium text-gray-700">Рабочих часов в день</span>
+                <span className="text-sm font-medium text-gray-700">{t("history:standupModal.step1.hoursPerDay")}</span>
                 <input
                   type="number"
                   min={1} max={24} step={1}
@@ -218,7 +226,7 @@ export function StandupModal({ sprint, onClose }: Props) {
 
               <div>
                 <span className="text-sm font-medium text-gray-700 block mb-2">
-                  Роли участников стендапа
+                  {t("history:standupModal.step1.rolesLabel")}
                 </span>
                 <div className="grid grid-cols-2 gap-y-2 gap-x-4">
                   {allEnabled.map((r) => (
@@ -231,13 +239,13 @@ export function StandupModal({ sprint, onClose }: Props) {
                       />
                       <span className="text-sm text-gray-700">
                         {r.display_name}
-                        {r.is_lead && <span className="text-gray-400 ml-1">(лид)</span>}
+                        {r.is_lead && <span className="text-gray-400 ml-1">{t("history:standupModal.step1.leadSuffix")}</span>}
                       </span>
                     </label>
                   ))}
                 </div>
                 {allEnabled.length === 0 && (
-                  <p className="text-sm text-gray-400 italic">Нет настроенных ролей в конфиге спринта.</p>
+                  <p className="text-sm text-gray-400 italic">{t("history:standupModal.step1.noRoles")}</p>
                 )}
               </div>
             </div>
@@ -255,48 +263,48 @@ export function StandupModal({ sprint, onClose }: Props) {
                       {ex.role}
                     </span>
                     <span className="text-xs text-gray-400 ml-auto">
-                      {ex.tasks.length} задач
+                      {t("history:standupModal.step2.tasksCount", { count: ex.tasks.length })}
                     </span>
                   </div>
 
                   {/* Tasks */}
                   <div className="divide-y">
-                    {ex.tasks.map((t) => {
-                      const tid = `${t.key}|${t.bucket}`;
-                      const ts = taskStates[tid] ?? { status: "В работе", comment: "", pushToJira: false };
+                    {ex.tasks.map((task) => {
+                      const tid = `${task.key}|${task.bucket}`;
+                      const ts = taskStates[tid] ?? { status: STATUSES[1], comment: "", pushToJira: false };
 
                       return (
                         <div key={tid} className="px-4 py-3 space-y-2">
                           {/* Task header */}
                           <div className="flex items-start gap-2 flex-wrap">
                             <a
-                              href={t.url}
+                              href={task.url}
                               target="_blank"
                               rel="noreferrer"
                               className="font-mono text-sm font-semibold text-blue-600 hover:underline"
                             >
-                              {t.key}
+                              {task.key}
                             </a>
                             <span
-                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${bucketColor(t.bucket)}`}
+                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${bucketColor(task.bucket)}`}
                             >
-                              {t.bucket}
+                              {bucketLabel(task.bucket, t)}
                             </span>
-                            {t.is_overdue && (
+                            {task.is_overdue && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium">
-                                по плану завершена
+                                {t("history:standupModal.step2.onSchedule")}
                               </span>
                             )}
                             <span className="text-xs text-gray-400 ml-auto">
-                              {fmtTime(t.planned_start)}→{fmtTime(t.planned_end)} · {t.planned_hours.toFixed(1)}ч
+                              {fmtTime(task.planned_start)}→{fmtTime(task.planned_end)} · {task.planned_hours.toFixed(1)}{t("common:hoursShort")}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-600 leading-tight">{t.summary}</p>
+                          <p className="text-sm text-gray-600 leading-tight">{task.summary}</p>
 
                           {/* Controls */}
                           <div className="flex flex-wrap gap-3 items-start pt-1">
                             <div className="flex-none">
-                              <label className="text-xs text-gray-500 block mb-0.5">Статус</label>
+                              <label className="text-xs text-gray-500 block mb-0.5">{t("history:standupModal.step2.statusLabel")}</label>
                               <select
                                 value={ts.status}
                                 onChange={(e) =>
@@ -315,12 +323,12 @@ export function StandupModal({ sprint, onClose }: Props) {
 
                             <div className="flex-1 min-w-[180px]">
                               <label className="text-xs text-gray-500 block mb-0.5">
-                                Комментарий
+                                {t("history:standupModal.step2.commentLabel")}
                               </label>
                               <input
                                 type="text"
                                 value={ts.comment}
-                                placeholder="Опционально…"
+                                placeholder={t("history:standupModal.step2.commentPlaceholder")}
                                 onChange={(e) =>
                                   setTaskStates((prev) => ({
                                     ...prev,
@@ -343,7 +351,7 @@ export function StandupModal({ sprint, onClose }: Props) {
                                     }))
                                   }
                                 />
-                                Push to Jira
+                                {t("history:standupModal.step2.pushToJira")}
                               </label>
                             </div>
                           </div>
@@ -360,23 +368,23 @@ export function StandupModal({ sprint, onClose }: Props) {
           {step === "done" && (
             <div className="space-y-3">
               <p className="text-gray-700 font-medium">
-                Стендап проведён · {fmtDateDotted(standupDate)}
+                {t("history:standupModal.step3.done", { date: fmtDateDotted(standupDate) })}
               </p>
               {results.length > 0 && (
                 <div className="border rounded-xl overflow-hidden">
                   {results.filter((r) => r.pushed || r.error).map((r, i) => (
                     <div key={i} className={`flex items-center gap-3 px-4 py-2 border-b last:border-b-0 ${r.error ? "bg-red-50" : "bg-green-50"}`}>
                       <span className="font-mono text-sm font-semibold text-blue-600">{r.key}</span>
-                      <span className="text-xs text-gray-500">[{r.bucket}]</span>
+                      <span className="text-xs text-gray-500">[{bucketLabel(r.bucket, t)}]</span>
                       {r.error
                         ? <span className="text-sm text-red-700 ml-auto">✗ {r.error}</span>
-                        : <span className="text-sm text-green-700 ml-auto">✓ Комментарий добавлен в Jira</span>
+                        : <span className="text-sm text-green-700 ml-auto">{t("history:standupModal.step3.commentAdded")}</span>
                       }
                     </div>
                   ))}
                   {results.filter((r) => !r.pushed && !r.error).length > 0 && (
                     <div className="px-4 py-2 text-sm text-gray-500">
-                      + {results.filter((r) => !r.pushed && !r.error).length} задач без отправки в Jira
+                      {t("history:standupModal.step3.withoutSending", { count: results.filter((r) => !r.pushed && !r.error).length })}
                     </div>
                   )}
                 </div>
@@ -390,14 +398,14 @@ export function StandupModal({ sprint, onClose }: Props) {
           {step === "setup" && (
             <>
               <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">
-                Отмена
+                {t("common:cancel")}
               </button>
               <button
                 onClick={handleLoad}
                 disabled={loading || selectedRoles.size === 0}
                 className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white px-5 py-2 rounded-lg text-sm font-semibold"
               >
-                {loading ? "Загружаю…" : "Загрузить задачи →"}
+                {loading ? t("history:standupModal.footer.loading") : t("history:standupModal.footer.loadTasks")}
               </button>
             </>
           )}
@@ -408,12 +416,12 @@ export function StandupModal({ sprint, onClose }: Props) {
                 onClick={() => setStep("setup")}
                 className="text-sm text-gray-500 hover:text-gray-700"
               >
-                ← Назад
+                {t("history:standupModal.footer.back")}
               </button>
               <div className="flex items-center gap-3">
                 {pushCount > 0 && (
                   <span className="text-xs text-gray-500">
-                    {pushCount} из {totalTasks} задач → Jira
+                    {t("history:standupModal.footer.pushSummary", { pushed: pushCount, total: totalTasks })}
                   </span>
                 )}
                 <button
@@ -421,7 +429,7 @@ export function StandupModal({ sprint, onClose }: Props) {
                   disabled={submitting}
                   className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white px-5 py-2 rounded-lg text-sm font-semibold"
                 >
-                  {submitting ? "Отправляю…" : "Провести стендап"}
+                  {submitting ? t("history:standupModal.footer.submitting") : t("history:standupModal.footer.submit")}
                 </button>
               </div>
             </>
@@ -432,7 +440,7 @@ export function StandupModal({ sprint, onClose }: Props) {
               onClick={onClose}
               className="ml-auto bg-gray-800 hover:bg-gray-900 text-white px-5 py-2 rounded-lg text-sm font-semibold"
             >
-              Закрыть
+              {t("common:close")}
             </button>
           )}
         </div>

@@ -1,0 +1,254 @@
+{
+  "page": {
+    "title": "Прогноз реализации",
+    "intro": "Введите ключ родителя (эпик / стори / задача) — можно несколько через запятую, если они одного типа (например, два эпика) — или выберите спринт. Система рассчитает расписание оставшихся этапов и предскажет дату завершения.",
+    "startDateLabel": "Старт расчёта",
+    "byParentLabel": "По родителю (эпик / стори)",
+    "epicKeyPlaceholder": "напр. SHN-3969 или SHN-3969, SHN-4012",
+    "epicKeyTitle": "Несколько ключей через запятую — должны быть одного типа (два эпика или два стори, но не вперемешку)",
+    "orApprovedSprintLabel": "или утверждённый спринт",
+    "noApprovedSprints": "нет утверждённых спринтов",
+    "byParentOption": "— по родителю —",
+    "sprintOption": "Спринт {{num}} ({{count}} задач)",
+    "hoursPerDayLabel": "Ч/день",
+    "calculating": "Считаю…",
+    "buildForecast": "Построить прогноз",
+    "useHistoryTitle": "Восстановить прошлые фазы по истории Jira (кто и когда был на аналитике/разработке/тесте) и показать их на одной шкале с прогнозом",
+    "useHistoryLabel": "По истории статусов",
+    "recentLabel": "Недавние:",
+    "buildForecastForTitle": "Построить прогноз для {{key}}",
+    "removeFromRecentTitle": "Убрать из недавних",
+    "toast": {
+      "sprintLabel": "Спринт {{num}}",
+      "forecastBuiltWithDate": "{{label}}: прогноз построен — {{date}}",
+      "forecastBuilt": "{{label}}: прогноз построен",
+      "ganttSnapshotSaved": "Снимок Ганта сохранён ({{datetime}})",
+      "ganttSnapshotDeleted": "Снимок удалён"
+    },
+    "confirmDeleteGanttSnapshot": "Удалить этот снимок Ганта?",
+    "completionCard": {
+      "title": "Прогноз завершения",
+      "noData": "нет данных",
+      "overdueBy": "просрочено на {{count}} дн.",
+      "today": "сегодня",
+      "inDays": "через {{count}} дн."
+    },
+    "metrics": {
+      "totalIssues": "Всего задач",
+      "doneIssues": "Выполнено",
+      "remainingIssues": "Осталось задач",
+      "remainingWorkItemsSub": "{{count}} эт. в расписании",
+      "plannedHours": "Плановых часов",
+      "hoursUnit": "ч",
+      "missingEstimatesSub": "{{count}} без оценки",
+      "allEstimatedSub": "все оценены"
+    },
+    "cost": {
+      "title": "Стоимость проекта",
+      "showCalculation": "показать расчёт",
+      "byTeamSalaries": "по окладам команды",
+      "calculateRoi": "Посчитать ROI",
+      "detailedCalculation": "Подробный расчёт",
+      "spent": "Потрачено",
+      "remaining": "Осталось",
+      "factNote": "левее красной линии на диаграмме — факт по истории Jira"
+    },
+    "warnings": {
+      "title": "Задачи с неизвестным статусом ({{count}}) — расписаны с начала pipeline",
+      "andMore": "…и ещё {{count}}"
+    },
+    "gantt": {
+      "clickHint": "Клик — все этапы · двойной — Jira",
+      "todayExportButton": "Выгрузка на сегодня",
+      "todayExportTitle": "Текстовая выгрузка задач, активных сегодня, по направлениям",
+      "missingAssignees": "Без исполнителей",
+      "dependencies": "Зависимости",
+      "vacations": "Отпуска",
+      "rollupLabel": "Свод:",
+      "rollupEpicTitle": "Добавить сверху сводную полосу с суммарной длительностью каждого эпика",
+      "rollupEpic": "Эпик",
+      "rollupStoryTitle": "Сводная полоса по родительской задаче с типом «История» (аналог свода по эпику)",
+      "rollupStory": "Стори",
+      "rollupParentTitle": "Кластеры связанных между собой задач (по issue-link'ам Blocks/Relates/Duplicate и т.п.); одиночные задачи не показываются",
+      "rollupParent": "Консолидировано",
+      "missingEstimates": "Без оценок",
+      "loadingSnapshot": "Загрузка снимка…",
+      "noTasksScheduled": "Все задачи эпика выполнены или нет задач с известными исполнителями."
+    }
+  },
+  "costBreakdown": {
+    "title": "Расчёт стоимости",
+    "preparing": "Формирую…",
+    "downloadXlsx": "Скачать xlsx",
+    "tabs": {
+      "phases": "По фазам",
+      "tasks": "По задачам",
+      "people": "По исполнителям"
+    },
+    "table": {
+      "task": "Задача",
+      "phase": "Фаза",
+      "executor": "Исполнитель",
+      "executors": "Исполнители",
+      "title": "Название",
+      "hours": "Часов",
+      "cost": "Стоимость, ₽",
+      "total": "Итого",
+      "noValue": "—"
+    },
+    "noSalaries": "Оклады не настроены",
+    "formulaNote": "Расчёт: оклад ÷ 160 ч/мес × плановые часы в прогнозе"
+  },
+  "roiModal": {
+    "title": "Расчёт ROI",
+    "revenueLabel": "Доход от проекта, ₽",
+    "revenuePlaceholder": "Например, 5 000 000",
+    "projectCost": "Стоимость проекта",
+    "profit": "Прибыль",
+    "roi": "ROI",
+    "formulaNote": "ROI = (доход − стоимость проекта) ÷ стоимость проекта × 100 %"
+  },
+  "dependencyPanel": {
+    "title": "Зависимости FS",
+    "description": "Задача B стартует после задачи A — целиком, либо после конкретного этапа A, если этап указан (например, «Дизайн»). Этап можно выбрать и у B — тогда зависимость ограничена именно им, остальные этапы B зависимостью не связаны.",
+    "loading": "Загрузка…",
+    "noDependencies": "Нет зависимостей",
+    "inheritedTitle": "Унаследована из меньшей комбинации родителей",
+    "removeTitle": "Удалить",
+    "addSectionTitle": "Добавить зависимость",
+    "predecessorLabel": "Предшественник (A)",
+    "successorLabel": "Последователь (B)",
+    "stageLabel": "Этап",
+    "taskOption": "— задача —",
+    "wholeTaskOption": "вся задача",
+    "saving": "Сохраняю…",
+    "addDependency": "Добавить зависимость",
+    "toast": {
+      "dependencyAdded": "Зависимость добавлена: {{from}} → {{to}}",
+      "dependencyRemoved": "Зависимость удалена",
+      "rootTaskSet": "Стартовая задача назначена",
+      "rootTaskUnset": "Стартовая задача снята"
+    },
+    "rootTasks": {
+      "title": "Стартовые задачи",
+      "description": "Стартовая задача сотрудника встаёт первой в его очереди на Ганте — отражает, что он реально держит в работе прямо сейчас.",
+      "loading": "Загрузка…",
+      "notAssigned": "Не назначены",
+      "unsetTitle": "Снять",
+      "employeeLabel": "Сотрудник",
+      "selectEmployeeOption": "— выберите сотрудника —",
+      "rootTaskLabel": "Стартовая задача",
+      "selectTaskOption": "— выберите задачу —",
+      "saving": "Сохраняю…",
+      "assignAsRoot": "Назначить стартовой"
+    },
+    "footer": {
+      "recompute": "Пересчитать прогноз",
+      "hint": "После изменений нажмите «Построить прогноз» для пересчёта."
+    }
+  },
+  "vacationPanel": {
+    "title": "Отпуска",
+    "noVacations": "Нет отпусков",
+    "removeTitle": "Удалить",
+    "addSectionTitle": "Добавить отпуск",
+    "employeeLabel": "Сотрудник",
+    "selectEmployeeOption": "— выберите сотрудника —",
+    "fromLabel": "С",
+    "toLabel": "По",
+    "overlapWarning": "Пересекается с отпуском {{start}}–{{end}}",
+    "saving": "Сохраняю…",
+    "addVacation": "Добавить отпуск",
+    "footerHint": "Отпуска хранятся в конфиге и влияют на все спринты. После изменений нажмите «Построить».",
+    "toast": {
+      "endBeforeStart": "Дата окончания не может быть раньше даты начала",
+      "vacationAdded": "Отпуск добавлен: {{name}}",
+      "vacationDeleted": "Отпуск удалён"
+    }
+  },
+  "trendChart": {
+    "title": "Тренд прогноза завершения",
+    "pinnedLegend": "📌 — закреплённый снапшот",
+    "trendLater": "сдвигается вправо",
+    "trendEarlier": "сдвигается влево",
+    "trendFlat": "стабильно",
+    "pinnedTitle": "Закреплён",
+    "forecastLabel": "Прогноз:",
+    "tasksDone": "{{done}}/{{total}} задач выполнено",
+    "unpinTitle": "Открепить (снапшот будет перезаписываться)",
+    "pinTitle": "Закрепить (не будет перезаписываться)",
+    "unpin": "📌 Открепить",
+    "pin": "📌 Закрепить",
+    "deleteTitle": "Удалить",
+    "unpinFirstTitle": "Открепите снапшот перед удалением",
+    "delete": "Удалить"
+  },
+  "todayExport": {
+    "title": "Выгрузка на сегодня",
+    "summary": "{{date}} · {{count}} задач",
+    "noDirection": "Без направления",
+    "dateLabel": "Дата: {{date}}",
+    "empty": "На сегодня нет задач, активных по расписанию.",
+    "close": "Закрыть",
+    "copy": "Копировать",
+    "toast": {
+      "copied": "Скопировано в буфер обмена",
+      "copyFailed": "Не удалось скопировать"
+    }
+  },
+  "estimateModal": {
+    "title": "Задачи без оценок",
+    "summary": "{{tasks}} задач · {{fields}} полей не заполнены",
+    "allEstimated": "Все задачи имеют оценки в Jira 🎉",
+    "currentDefaultHours": "(сейчас ~{{hours}}ч дефолт)",
+    "hoursPlaceholder": "часы",
+    "hoursUnit": "ч",
+    "savedToJira": "✓ Сохранено в Jira",
+    "filledOf": "Заполнено: {{filled}} из {{total}}",
+    "cancel": "Отмена",
+    "close": "Закрыть",
+    "saving": "Сохраняю…",
+    "saveToJira": "Сохранить в Jira ({{count}})",
+    "recompute": "Пересчитать прогноз",
+    "toast": {
+      "noFilledEstimates": "Нет заполненных оценок для сохранения",
+      "savedCount": "Сохранено оценок: {{count}}",
+      "savedWithErrors": "Сохранено {{ok}}, с ошибкой {{failed}}"
+    }
+  },
+  "pipelineModal": {
+    "saveTitle": "Сохранить в Jira",
+    "hoursUnit": "ч",
+    "savedTitle": "Сохранено в Jira",
+    "footerNote": "Часы сохранены в Jira. Сроки на Ганте — по старой оценке, пересчитайте при необходимости.",
+    "recompute": "Пересчитать прогноз",
+    "stagesCount": "{{count}} этапов",
+    "totalHours": "{{hours}} ч итого",
+    "completion": "Завершение:",
+    "toast": {
+      "hoursMustBePositive": "Часы должны быть положительным числом",
+      "hoursSaved": "{{key}}: {{hours}} ч сохранено в Jira"
+    }
+  },
+  "missingAssignees": {
+    "allCovered": "Все задачи направлений design/development обеспечены исполнителями.",
+    "table": {
+      "task": "Задача",
+      "title": "Название",
+      "direction": "Направление",
+      "missingRole": "Кого не хватает",
+      "noDirection": "—"
+    },
+    "roleLabels": {
+      "responsible": "Аналитик",
+      "developer": "Разработчик",
+      "designer": "Дизайнер",
+      "tester": "Тестировщик"
+    },
+    "saving": "Сохраняю…",
+    "addRole": "+ {{role}}",
+    "toast": {
+      "assigned": "{{key}}: {{role}} — {{name}}"
+    }
+  }
+}

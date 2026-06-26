@@ -1,0 +1,217 @@
+{
+  "page": {
+    "categories": {
+      "general": { "label": "General", "hint": "Project, budget, Jira connection" },
+      "team": { "label": "Team", "hint": "Roles, members, pseudo-tasks" },
+      "pipeline": { "label": "Pipeline", "hint": "Directions, statuses, default hours" },
+      "source": { "label": "Task source", "hint": "Boards, components, priorities" }
+    },
+    "title": "Settings",
+    "configLabel": "Config «{{name}}»",
+    "saving": "Saving…",
+    "save": "Save",
+    "loadingConfig": "Loading config…",
+    "loadFailed": "Failed to load config: {{error}}",
+    "saveSuccess": "Settings saved",
+    "reservedBuckets": {
+      "management": "Management",
+      "absence": "Absence",
+      "training": "Training"
+    },
+    "sections": {
+      "baseParams": "Basic parameters",
+      "jiraConnection": "Jira connection",
+      "telegram": "Telegram “tasks for today” digest",
+      "roles": "Roles",
+      "team": "Team",
+      "pseudoTasks": "Pseudo-tasks (vacation, training, …)",
+      "directions": "Task directions",
+      "statusBucketMapping": "Status-to-bucket mapping (by role)",
+      "defaultHours": "Default hours (role, status)",
+      "hoursFields": "Jira hour fields by “category”",
+      "boards": "Boards (Jira board id)",
+      "extraComponents": "Extra components",
+      "statusPriorities": "Status priorities",
+      "terminalStatuses": "Terminal statuses"
+    },
+    "fields": {
+      "configName": "Config name",
+      "projectKey": "Project Key (Jira)",
+      "hoursPerPerson": "Hours per person",
+      "defaultTaskHours": "Default task estimate (h)",
+      "leaderHours": "Lead hours for management",
+      "leaderManagementEnabled": "Add “Management” to leads automatically",
+      "sprintField": "Sprint field (customfield_)",
+      "responsibleField": "Responsible field (customfield_)",
+      "developerField": "Developer field (customfield_)",
+      "designerField": "Designer field (customfield_)",
+      "testerField": "Tester field (customfield_)",
+      "jiraBaseUrl": "Jira Base URL",
+      "jiraEmail": "Jira Email",
+      "jiraApiToken": "Jira API Token",
+      "jiraApiTokenPlaceholderSet": "Set — leave empty to keep unchanged",
+      "jiraApiTokenPlaceholderUnset": "Not set",
+      "telegramBotToken": "Bot token",
+      "telegramBotTokenPlaceholderSet": "Set — leave empty to keep unchanged",
+      "telegramBotTokenPlaceholderUnset": "Not set — global .env token is used",
+      "telegramChatId": "Chat ID",
+      "telegramDailyTime": "Daily send time",
+      "telegramDailyEnabled": "Send automatically every day"
+    },
+    "telegram": {
+      "sendNow": "Send now",
+      "test": "Test",
+      "saveHint": "Save changes first — sending uses the saved config.",
+      "sent": "Tasks sent: {{count}}",
+      "testSent": "Test message sent"
+    },
+    "hints": {
+      "jiraConnection": "Empty = server settings (.env) are used. Fill in if this config needs a different Jira account or instance — e.g. for production use with multiple leads.",
+      "telegram": "The digest is built from the latest approved sprint: tasks active today on the Gantt, grouped by direction. You can set the bot token here (per-config) — otherwise the global .env token is used. Chat ID is the chat/group id (groups start with -100). The bot must be added to the chat. See the “Help” section for how to create a bot.",
+      "telegramNoToken": "No bot token is set: neither on this config nor globally in .env. Enter a bot token above (get one from @BotFather) — sending is unavailable without it.",
+      "roles": "The “In sprint” checkbox enables the role for sprint forming. “Lead” is a flag for auto-adding “Management”.",
+      "team": "One person — one role. If a person has two roles, create two records with the same accountId.",
+      "directions": "A direction is determined by Jira labels. Each direction has a pipeline of work types. Developer tasks finishing in the sprint automatically spawn testing (for the analyst) and code review (for the lead). Designer tasks spawn a design review for the lead.",
+      "statusBucketMapping": "One status can map to different buckets for different roles. For example, «In Progress» = «Development» for a developer and «Testing» for an analyst.",
+      "defaultHours": "If a task has no estimate, this default is used. For example, for the pair (Development Lead, Code Review) = 1 — the lead spends 1h on review by default.",
+      "hoursFields": "analyst → Analyst time, tester → Tester time, developer → Developer time, designer → Designer time. Used to estimate hours per bucket.",
+      "extraComponents": "Project tasks with these components are pulled into the selection regardless of boards.",
+      "statusPriorities": "The lower the number, the earlier the task gets into the sprint. Global per status.",
+      "terminalStatuses": "Statuses in which a task is considered done. Used when closing a sprint to calculate completion %."
+    },
+    "dictLabels": {
+      "category": "Category",
+      "customfield": "Customfield",
+      "boardName": "Board name",
+      "boardId": "Jira board ID",
+      "jiraStatus": "Jira status",
+      "priority": "Priority"
+    },
+    "placeholders": {
+      "terminalStatus": "e.g.: Done"
+    }
+  },
+  "directions": {
+    "workTypes": {
+      "analytics": "Analytics",
+      "development": "Development",
+      "design": "Design",
+      "code_review": "Code Review",
+      "design_review": "Design Review",
+      "testing": "Testing",
+      "release": "Release"
+    },
+    "buckets": {
+      "analytics": "Analysis",
+      "development": "Development",
+      "testing": "Testing",
+      "design": "Design",
+      "code_review": "Code Review",
+      "design_review": "Design Review",
+      "release": "Release"
+    },
+    "genericRole": {
+      "developer": "any developer"
+    },
+    "empty": "No directions yet. Add the first one.",
+    "nameLabel": "Name",
+    "namePlaceholder": "E.g.: Backend",
+    "removeDirection": "Remove direction",
+    "designerLabel": "Designer",
+    "designerAutoOption": "auto-select (the only one on the team)",
+    "labelsLabel": "Jira labels (comma-separated)",
+    "labelsPlaceholder": "E.g.: Backend or frontend-web, frontend-mobile",
+    "pipelineLabel": "Work-type pipeline and roles (order matters)",
+    "pipelineHint": "In the “Role” column: a dropdown means you can pin a custom role for this direction instead of the system default; plain text means the role is fixed and can't be overridden.",
+    "table": {
+      "workType": "Work type",
+      "bucket": "Bucket",
+      "role": "Role"
+    },
+    "roleDefaultSuffix": "{{role}} (default)",
+    "moveUp": "Up",
+    "moveDown": "Down",
+    "removeStep": "Remove step",
+    "addStepOption": "+ Add step…",
+    "addDirection": "+ Add direction",
+    "noValue": "—"
+  },
+  "team": {
+    "table": {
+      "jiraName": "Jira name",
+      "fileName": "File name",
+      "role": "Role",
+      "accountId": "accountId"
+    },
+    "empty": "The team is empty. Add someone via “+ Add from Jira”.",
+    "fileNamePlaceholder": "e.g. Smith J.",
+    "remove": "Remove",
+    "addFromJira": "+ Add from Jira",
+    "removeConfirm": "Remove this person from the team?"
+  },
+  "roles": {
+    "table": {
+      "name": "name",
+      "displayName": "Display name",
+      "inSprint": "In sprint",
+      "lead": "Lead"
+    },
+    "remove": "Remove",
+    "addRole": "+ Add role",
+    "newRoleName": "new_role",
+    "newRoleDisplayName": "New role"
+  },
+  "statusBuckets": {
+    "table": {
+      "role": "Role",
+      "jiraStatus": "Jira status",
+      "bucket": "Bucket"
+    },
+    "remove": "Remove",
+    "add": "+ Add"
+  },
+  "statusHours": {
+    "table": {
+      "role": "Role",
+      "jiraStatus": "Jira status",
+      "hours": "Hours"
+    },
+    "remove": "Remove",
+    "add": "+ Add"
+  },
+  "pseudoTasks": {
+    "noSavedMembers": "There are no saved people on the team. First add them via “+ Add from Jira” and save the config.",
+    "unsavedMembersWarning": "There are new people on the team who haven't been saved yet. After saving the config they'll appear in the pseudo-task dropdown.",
+    "table": {
+      "person": "Person",
+      "name": "Name",
+      "bucket": "Bucket",
+      "hours": "Hours",
+      "recurring": "Recurring",
+      "sprintNum": "Sprint #"
+    },
+    "memberNotFound": "(id={{id}}, not found)",
+    "bucketPlaceholder": "Absence / Management / Training",
+    "sprintNumPlaceholder": "—",
+    "sprintNumTitleRecurring": "Sprint number isn't used for recurring tasks",
+    "sprintNumTitleOnce": "Target sprint number (if empty, the task won't be included in any sprint)",
+    "remove": "Remove",
+    "add": "+ Add",
+    "footnoteRecurring": "included in every sprint automatically (for regular tasks like standups).",
+    "footnoteSprintNum": "included only in the sprint with the given number (one-off, e.g. for vacation). If both fields are empty, the task won't be included in any sprint.",
+    "footnoteManagement": "“Management” for leads is added automatically — controlled in the basic settings.",
+    "newTask": {
+      "name": "Vacation",
+      "bucket": "Absence"
+    }
+  },
+  "dictEditor": {
+    "remove": "Remove",
+    "add": "+ Add",
+    "newKey": "new_key"
+  },
+  "stringList": {
+    "remove": "Remove",
+    "add": "+ Add"
+  }
+}

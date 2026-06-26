@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   activateConfig, createConfig, deleteConfigById, listConfigTemplates, listMyConfigs,
 } from "../api/configs-client";
@@ -14,6 +15,7 @@ interface Props {
 /** Dropdown в шапке: показывает текущий активный конфиг, позволяет переключиться,
  *  создать новый (пустой или копией), удалить. */
 export function ConfigSwitcher({ onChange }: Props) {
+  const { t } = useTranslation("configSwitcher");
   const toast = useToast();
   const [configs, setConfigs] = useState<ConfigSummary[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -69,7 +71,7 @@ export function ConfigSwitcher({ onChange }: Props) {
       await load();
       setOpen(false);
       onChange();
-      toast.success("Конфиг переключён");
+      toast.success(t("switched"));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -93,7 +95,7 @@ export function ConfigSwitcher({ onChange }: Props) {
       setNewName("");
       setNewFrom("empty");
       onChange();
-      toast.success(`Конфиг «${created.name}» создан`);
+      toast.success(t("created", { name: created.name }));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -104,22 +106,17 @@ export function ConfigSwitcher({ onChange }: Props) {
   const handleDelete = async (cfg: ConfigSummary) => {
     if (!configs) return;
     if (configs.length === 1) {
-      toast.info(
-        "Это последний конфиг — удалить нельзя. Сначала создай новый, потом удали старый."
-      );
+      toast.info(t("lastConfigDeleteBlocked"));
       return;
     }
-    const ok = window.confirm(
-      `Удалить конфиг "${cfg.name}"?\n\n` +
-      `Все его спринты будут удалены безвозвратно. Это действие не отменить.`
-    );
+    const ok = window.confirm(t("confirmDelete", { name: cfg.name }));
     if (!ok) return;
     setBusy(true);
     try {
       await deleteConfigById(cfg.id);
       await load();
       onChange();
-      toast.success(`Конфиг «${cfg.name}» удалён`);
+      toast.success(t("deleted", { name: cfg.name }));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -133,7 +130,7 @@ export function ConfigSwitcher({ onChange }: Props) {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 transition"
       >
-        <span className="text-gray-400">Конфиг:</span> {active?.name || "…"}
+        <span className="text-gray-400">{t("label")}</span> {active?.name || "…"}
         <span className="text-gray-400">▾</span>
       </button>
 
@@ -158,7 +155,7 @@ export function ConfigSwitcher({ onChange }: Props) {
                   <button
                     onClick={() => handleDelete(c)}
                     disabled={busy}
-                    title="Удалить конфиг"
+                    title={t("deleteConfig")}
                     className="text-red-500 hover:text-red-700 px-2"
                   >
                     ×
@@ -173,12 +170,12 @@ export function ConfigSwitcher({ onChange }: Props) {
               onClick={() => { setCreateOpen(true); loadTemplates(); }}
               className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50"
             >
-              + Создать новый конфиг
+              {t("createNew")}
             </button>
           ) : (
             <form onSubmit={handleCreate} className="p-3 space-y-2">
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Имя</label>
+                <label className="block text-xs text-gray-600 mb-1">{t("name")}</label>
                 <input
                   type="text"
                   value={newName}
@@ -186,11 +183,11 @@ export function ConfigSwitcher({ onChange }: Props) {
                   required
                   autoFocus
                   className="w-full px-2 py-1 border rounded text-sm"
-                  placeholder="Например: Разработка"
+                  placeholder={t("namePlaceholder")}
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Скопировать настройки из</label>
+                <label className="block text-xs text-gray-600 mb-1">{t("copyFrom")}</label>
                 <select
                   value={String(newFrom)}
                   onChange={(e) =>
@@ -198,7 +195,7 @@ export function ConfigSwitcher({ onChange }: Props) {
                   }
                   className="w-full px-2 py-1 border rounded text-sm bg-white"
                 >
-                  <option value="empty">— пустой конфиг —</option>
+                  <option value="empty">{t("emptyConfig")}</option>
                   {templates.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -213,14 +210,14 @@ export function ConfigSwitcher({ onChange }: Props) {
                   disabled={busy}
                   className="text-xs bg-gray-300 hover:bg-gray-400 text-gray-700 px-2 py-1 rounded"
                 >
-                  Отмена
+                  {t("common:cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={busy}
                   className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded font-semibold"
                 >
-                  {busy ? "Создаю…" : "Создать"}
+                  {busy ? t("creating") : t("common:create")}
                 </button>
               </div>
             </form>

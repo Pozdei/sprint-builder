@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getStoredLang } from "../i18n";
 import { triggerDownload } from "../lib/download";
 import type {
   BuildAndSaveResponse, ClosedTaskData, ConfigOut, ConfigUpdate, EmployeeVacation,
@@ -26,6 +27,7 @@ export function setToken(token: string | null): void {
 api.interceptors.request.use((cfg) => {
   const t = getToken();
   if (t) cfg.headers.Authorization = `Bearer ${t}`;
+  cfg.headers["Accept-Language"] = getStoredLang();
   return cfg;
 });
 

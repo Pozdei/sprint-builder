@@ -1,0 +1,118 @@
+{
+  "title": "Админка",
+  "tabs": {
+    "manage": "Управление",
+    "salaries": "Оклады"
+  },
+  "users": {
+    "sectionTitle": "Пользователи ({{count}})",
+    "createButton": "+ Создать",
+    "table": {
+      "id": "ID",
+      "email": "Email",
+      "name": "Имя",
+      "role": "Роль",
+      "active": "Активен"
+    },
+    "roleOptions": {
+      "lead": "lead",
+      "admin": "admin"
+    },
+    "actions": {
+      "edit": "Редактировать",
+      "password": "Пароль",
+      "delete": "Удалить"
+    },
+    "deleteConfirm": "Удалить пользователя {{email}}?\n\nВместе с ним удалится его конфиг и все его спринты (CASCADE).",
+    "toast": {
+      "updated": "Пользователь обновлён",
+      "deleted": "Пользователь {{email}} удалён",
+      "created": "Пользователь создан",
+      "passwordChanged": "Пароль изменён"
+    }
+  },
+  "configs": {
+    "sectionTitle": "Конфиги ({{count}})",
+    "empty": "Конфигов нет.",
+    "table": {
+      "id": "ID",
+      "name": "Имя",
+      "owner": "Владелец",
+      "sprintsCount": "Спринтов"
+    },
+    "noOwner": "нет владельца",
+    "transferButton": "Передать",
+    "toast": {
+      "transferred": "Конфиг передан"
+    }
+  },
+  "sprints": {
+    "sectionTitle": "Спринты ({{count}})",
+    "empty": "Спринтов нет.",
+    "table": {
+      "id": "ID",
+      "num": "№",
+      "status": "Статус",
+      "config": "Конфиг",
+      "owner": "Владелец"
+    }
+  },
+  "createUserModal": {
+    "title": "Создать пользователя",
+    "emailLabel": "Email",
+    "nameLabel": "Имя",
+    "roleLabel": "Роль",
+    "roleOptions": {
+      "lead": "lead — обычный пользователь",
+      "admin": "admin — управление пользователями"
+    },
+    "passwordLabel": "Пароль",
+    "creating": "Создаю…",
+    "create": "Создать"
+  },
+  "resetPasswordModal": {
+    "title": "Сброс пароля: {{email}}",
+    "description": "Введите новый пароль для пользователя. Передайте его лично.",
+    "placeholder": "Новый пароль",
+    "saving": "Сохраняю…",
+    "change": "Сменить"
+  },
+  "transferConfigModal": {
+    "title": "Передать конфиг: {{name}}",
+    "currentOwner": "Текущий владелец:",
+    "sprintsInConfig": "Спринтов в конфиге:",
+    "newOwnerLabel": "Новый владелец (lead)",
+    "selectPlaceholder": "— выберите —",
+    "noLeads": "Нет lead-пользователей. Сначала создай нужного.",
+    "confirmMessage": "Передать конфиг \"{{name}}\" пользователю {{email}}?\n\nВсе спринты этого конфига перейдут к нему.\nПрошлый владелец останется без конфига — при следующем логине ему будет создан новый пустой.",
+    "transferring": "Передаю…",
+    "transfer": "Передать"
+  },
+  "salaries": {
+    "title": "Оклады команды",
+    "description": "Оклад в ₽/месяц. Используется для расчёта стоимости проекта в прогнозе реализации.\nКонфиденциально — участники команды не видят эти данные.",
+    "empty": "Команда пуста. Добавьте участников в настройках конфига.",
+    "table": {
+      "jiraName": "Имя в Jira",
+      "fileName": "Имя для файла",
+      "role": "Роль",
+      "salary": "Оклад, ₽/мес"
+    },
+    "saving": "Сохраняю…",
+    "toast": {
+      "saved": "Оклады сохранены"
+    }
+  },
+  "diagnostics": {
+    "toggleLabel": "Диагностика источников",
+    "errorsCount": "{{count}} ошибок",
+    "table": {
+      "source": "Источник",
+      "type": "Тип",
+      "fetched": "Загружено",
+      "matched": "Совпало",
+      "epics": "Эпиков",
+      "status": "Статус"
+    }
+  }
+}

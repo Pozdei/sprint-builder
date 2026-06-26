@@ -63,6 +63,20 @@ def get_max_approved_num(db: Session, config_id: int) -> int | None:
     )
 
 
+def get_latest_approved(db: Session, config_id: int) -> models.Sprint | None:
+    """Последний утверждённый спринт конфига (с задачами) — источник Telegram-дайджеста."""
+    return db.scalar(
+        select(models.Sprint)
+        .where(
+            models.Sprint.config_id == config_id,
+            models.Sprint.status == "approved",
+        )
+        .order_by(models.Sprint.sprint_num.desc(), models.Sprint.id.desc())
+        .options(*_eager())
+        .limit(1)
+    )
+
+
 def upsert_draft(
     db: Session,
     config_id: int,

@@ -1,0 +1,172 @@
+{
+  "page": {
+    "loading": "Loading history…",
+    "empty": "No saved sprints yet. Build a sprint on the \"Sprint\" tab.",
+    "title": "Sprint History"
+  },
+  "table": {
+    "num": "No.",
+    "status": "Status",
+    "created": "Created",
+    "approved": "Approved",
+    "closed": "Closed",
+    "tasksCount": "Tasks"
+  },
+  "status": {
+    "draft": "draft",
+    "approved": "approved",
+    "closed": "closed"
+  },
+  "row": {
+    "loading": "Loading…",
+    "downloading": "Downloading…",
+    "downloadXlsx": "Download xlsx",
+    "approving": "Approving…",
+    "approve": "Approve",
+    "deleting": "Deleting…",
+    "reopening": "Reopening…",
+    "reopenToDraft": "Reopen as draft",
+    "standup": "📋 Standup",
+    "closing": "Closing…",
+    "closeSprint": "Close sprint"
+  },
+  "confirm": {
+    "approveTitle": "Approve Sprint {{num}}?",
+    "approveBody": "Sprint {{num}} must already exist in Jira.",
+    "approveDepsWarning_one": "\n\n⚠ The sprint has {{count}} FS dependency between tasks — make sure the schedule is correct.",
+    "approveDepsWarning_other": "\n\n⚠ The sprint has {{count}} FS dependencies between tasks — make sure the schedule is correct.",
+    "reopenTitle": "Reopen Sprint {{num}} as draft?",
+    "reopenBody": "Status will change to draft, and the approval date will be cleared.",
+    "closeTitle": "Close Sprint {{num}}?",
+    "closeBody": "The sprint must already be closed in Jira (state=closed). Task statuses and the list of \"intrusions\" will be fetched — this may take a minute.",
+    "deleteTitle": "Delete Sprint {{num}}?",
+    "deleteSnapshotTitle": "Delete this Gantt chart snapshot?"
+  },
+  "toast": {
+    "approved": "Sprint {{num}} approved",
+    "reopened": "Sprint {{num}} reopened as draft",
+    "closed": "Sprint {{num}} closed",
+    "deleted": "Sprint {{num}} deleted",
+    "snapshotSaved": "Gantt chart snapshot saved ({{time}})",
+    "snapshotDeleted": "Snapshot deleted"
+  },
+  "gantt": {
+    "sectionTitle": "Gantt Chart",
+    "start": "Start:",
+    "hoursPerDay": "Hours/day:",
+    "computing": "Calculating…",
+    "build": "Build",
+    "loadingSnapshot": "Loading snapshot…"
+  },
+  "standupModal": {
+    "title": "Standup · Sprint {{num}}",
+    "subtitle": "{{date}} · {{count}} participants · {{tasks}} tasks",
+    "step1": {
+      "standupDate": "Standup date",
+      "sprintStartDate": "Sprint start date",
+      "sprintStartHint": "(for Gantt chart calculation)",
+      "hoursPerDay": "Working hours per day",
+      "rolesLabel": "Standup participant roles",
+      "leadSuffix": "(lead)",
+      "noRoles": "No roles configured in the sprint config."
+    },
+    "step2": {
+      "tasksCount": "{{count}} tasks",
+      "statusLabel": "Status",
+      "commentLabel": "Comment",
+      "commentPlaceholder": "Optional…",
+      "onSchedule": "completed on schedule",
+      "pushToJira": "Push to Jira"
+    },
+    "step3": {
+      "done": "Standup completed · {{date}}",
+      "commentAdded": "✓ Comment added to Jira",
+      "withoutSending": "+ {{count}} tasks not sent to Jira"
+    },
+    "statusValues": {
+      "done": "Done",
+      "inProgress": "In progress",
+      "blocked": "Blocked",
+      "notStarted": "Not started"
+    },
+    "buckets": {
+      "analysis": "Analysis",
+      "development": "Development",
+      "codeReview": "Code review",
+      "testing": "Testing",
+      "design": "Design",
+      "designReview": "Design review"
+    },
+    "footer": {
+      "cancel": "Cancel",
+      "loading": "Loading…",
+      "loadTasks": "Load tasks →",
+      "back": "← Back",
+      "pushSummary": "{{pushed}} of {{total}} tasks → Jira",
+      "submitting": "Submitting…",
+      "submit": "Run standup",
+      "close": "Close"
+    },
+    "toast": {
+      "noTasksFound": "No tasks found for the selected parameters. Check the sprint start date and roles.",
+      "loadError": "Failed to load",
+      "submitError": "Failed to submit",
+      "submittedWithPush": "Standup completed · {{count}} comment(s) sent to Jira",
+      "submitted": "Standup completed"
+    }
+  },
+  "closedView": {
+    "summaryTitle": "Closure Summary",
+    "metrics": {
+      "tasksDone": "Tasks completed",
+      "ofTotal": "{{done}} of {{total}}",
+      "onPlan": "On plan (expected → actual: ✓)",
+      "exceeded": "Overdelivered",
+      "hoursDone": "Hours completed",
+      "hoursOfTotal": "{{done}} of {{total}} h"
+    },
+    "byPerson": {
+      "title": "By person",
+      "consultant": "Consultant",
+      "tasks": "Tasks",
+      "hours": "Hours",
+      "tasksPercent": "% tasks",
+      "hoursPercent": "% hours"
+    },
+    "diffTable": {
+      "title": "Before → After",
+      "task": "Task",
+      "name": "Name",
+      "consultant": "Consultant",
+      "expectedResult": "Expected result",
+      "before": "Before",
+      "after": "After",
+      "hours": "Hours",
+      "pseudo": "(pseudo)",
+      "noData": "no data"
+    }
+  },
+  "intrusions": {
+    "empty": "No intrusions — all tasks in the Jira sprint were accounted for at approval.",
+    "title": "Intrusions ({{count}} tasks, {{hours}} h)",
+    "description": "Tasks that appeared in the Jira sprint after approval and are assigned to people on your team.",
+    "byPerson": {
+      "title": "By person",
+      "consultant": "Consultant",
+      "role": "Role",
+      "tasks": "Tasks",
+      "hours": "Hours",
+      "done": "Done",
+      "doneRatio": "{{done}}/{{total}} ({{hours}}h)"
+    },
+    "list": {
+      "title": "Task list",
+      "task": "Task",
+      "name": "Name",
+      "consultant": "Consultant",
+      "role": "Role",
+      "status": "Status",
+      "hours": "Hours"
+    }
+  }
+}

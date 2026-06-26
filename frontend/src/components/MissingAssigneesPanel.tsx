@@ -1,17 +1,11 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { type IssueFieldsUpdate, updateJiraIssueFields } from "../api/jira-client";
 import { extractError } from "../lib/api-error";
 import type { JiraUserSearchResult } from "../types/intrusions";
 import type { MissingAssigneeItem, MissingRole } from "../types/api";
 import { JiraUserSearchModal } from "./JiraUserSearchModal";
 import { useToast } from "./Toast";
-
-const ROLE_LABELS: Record<MissingRole, string> = {
-  responsible: "Аналитик",
-  developer: "Разработчик",
-  designer: "Дизайнер",
-  tester: "Тестировщик",
-};
 
 const ROLE_COLORS: Record<MissingRole, string> = {
   responsible: "bg-blue-50 border-blue-300 text-blue-700",
@@ -35,9 +29,17 @@ interface Props {
 }
 
 export function MissingAssigneesPanel({ items, onAssigned }: Props) {
+  const { t } = useTranslation(["forecast", "common"]);
   const toast = useToast();
   const [picking, setPicking] = useState<{ key: string; role: MissingRole } | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+
+  const roleLabels: Record<MissingRole, string> = {
+    responsible: t("missingAssignees.roleLabels.responsible"),
+    developer: t("missingAssignees.roleLabels.developer"),
+    designer: t("missingAssignees.roleLabels.designer"),
+    tester: t("missingAssignees.roleLabels.tester"),
+  };
 
   const handlePick = async (user: JiraUserSearchResult) => {
     if (!picking) return;
@@ -47,7 +49,7 @@ export function MissingAssigneesPanel({ items, onAssigned }: Props) {
     setSaving(cell);
     try {
       await updateJiraIssueFields(key, buildUpdate(role, user.account_id));
-      toast.success(`${key}: ${ROLE_LABELS[role]} — ${user.display_name}`);
+      toast.success(t("missingAssignees.toast.assigned", { key, role: roleLabels[role], name: user.display_name }));
       onAssigned(key, role);
     } catch (e) {
       toast.error(extractError(e));
@@ -59,7 +61,7 @@ export function MissingAssigneesPanel({ items, onAssigned }: Props) {
   if (items.length === 0) {
     return (
       <div className="text-center text-gray-400 py-10">
-        Все задачи направлений design/development обеспечены исполнителями.
+        {t("missingAssignees.allCovered")}
       </div>
     );
   }
@@ -70,10 +72,10 @@ export function MissingAssigneesPanel({ items, onAssigned }: Props) {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="text-left px-3 py-2 font-semibold">Задача</th>
-              <th className="text-left px-3 py-2 font-semibold">Название</th>
-              <th className="text-left px-3 py-2 font-semibold">Направление</th>
-              <th className="text-left px-3 py-2 font-semibold">Кого не хватает</th>
+              <th className="text-left px-3 py-2 font-semibold">{t("missingAssignees.table.task")}</th>
+              <th className="text-left px-3 py-2 font-semibold">{t("missingAssignees.table.title")}</th>
+              <th className="text-left px-3 py-2 font-semibold">{t("missingAssignees.table.direction")}</th>
+              <th className="text-left px-3 py-2 font-semibold">{t("missingAssignees.table.missingRole")}</th>
             </tr>
           </thead>
           <tbody>
@@ -92,7 +94,7 @@ export function MissingAssigneesPanel({ items, onAssigned }: Props) {
                 <td className="px-3 py-2 text-gray-700 max-w-md truncate" title={it.summary}>
                   {it.summary}
                 </td>
-                <td className="px-3 py-2 text-gray-500">{it.direction ?? "—"}</td>
+                <td className="px-3 py-2 text-gray-500">{it.direction ?? t("missingAssignees.table.noDirection")}</td>
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap gap-1.5">
                     {it.missing.map((role) => {
@@ -104,7 +106,7 @@ export function MissingAssigneesPanel({ items, onAssigned }: Props) {
                           disabled={saving === cell}
                           className={`px-2 py-1 rounded-lg text-xs font-medium border transition hover:opacity-80 disabled:opacity-50 ${ROLE_COLORS[role]}`}
                         >
-                          {saving === cell ? "Сохраняю…" : `+ ${ROLE_LABELS[role]}`}
+                          {saving === cell ? t("missingAssignees.saving") : t("missingAssignees.addRole", { role: roleLabels[role] })}
                         </button>
                       );
                     })}

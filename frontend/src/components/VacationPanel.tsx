@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { addVacation, deleteVacation, fetchVacations } from "../api/client";
 import { useToast } from "./Toast";
 import { extractError } from "../lib/api-error";
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
+  const { t } = useTranslation(["forecast", "common"]);
   const toast = useToast();
   const [vacations, setVacations] = useState<EmployeeVacation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,13 +48,16 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
     const existing = vacations.filter((v) => v.jira_account_id === selOwner);
     const overlap = existing.find((v) => startDate <= v.end_date && endDate >= v.start_date);
     if (!overlap) return null;
-    return `Пересекается с отпуском ${fmtDateDotted(overlap.start_date)}–${fmtDateDotted(overlap.end_date)}`;
+    return t("vacationPanel.overlapWarning", {
+      start: fmtDateDotted(overlap.start_date),
+      end: fmtDateDotted(overlap.end_date),
+    });
   })();
 
   const handleAdd = async () => {
     if (!selOwner || !startDate || !endDate) return;
     if (endDate < startDate) {
-      toast.error("Дата окончания не может быть раньше даты начала");
+      toast.error(t("vacationPanel.toast.endBeforeStart"));
       return;
     }
     const owner = owners.find((o) => o.owner_id === selOwner);
@@ -69,7 +74,7 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
       setStartDate("");
       setEndDate("");
       onChanged();
-      toast.success(`Отпуск добавлен: ${owner.display_name}`);
+      toast.success(t("vacationPanel.toast.vacationAdded", { name: owner.display_name }));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -83,7 +88,7 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
       await deleteVacation(id);
       setVacations((prev) => prev.filter((v) => v.id !== id));
       onChanged();
-      toast.success("Отпуск удалён");
+      toast.success(t("vacationPanel.toast.vacationDeleted"));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -100,7 +105,7 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
   return (
     <div className="fixed inset-y-0 right-0 w-80 bg-white border-l shadow-xl z-30 flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-        <h2 className="text-sm font-semibold text-gray-800">Отпуска</h2>
+        <h2 className="text-sm font-semibold text-gray-800">{t("vacationPanel.title")}</h2>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
       </div>
 
@@ -108,9 +113,9 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
         {/* Список отпусков по сотрудникам */}
         <div className="mb-4">
           {loading ? (
-            <div className="text-xs text-gray-400">Загрузка…</div>
+            <div className="text-xs text-gray-400">{t("common:loading")}</div>
           ) : Object.keys(byOwner).length === 0 ? (
-            <div className="text-xs text-gray-400 italic">Нет отпусков</div>
+            <div className="text-xs text-gray-400 italic">{t("vacationPanel.noVacations")}</div>
           ) : (
             <div className="space-y-3">
               {owners
@@ -132,7 +137,7 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
                             onClick={() => handleDelete(v.id)}
                             disabled={saving}
                             className="text-red-400 hover:text-red-600 text-sm ml-2 disabled:opacity-40"
-                            title="Удалить"
+                            title={t("vacationPanel.removeTitle")}
                           >
                             ×
                           </button>
@@ -147,16 +152,16 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
 
         {/* Форма добавления */}
         <div className="border-t pt-4">
-          <p className="text-xs font-semibold text-gray-600 mb-2">Добавить отпуск</p>
+          <p className="text-xs font-semibold text-gray-600 mb-2">{t("vacationPanel.addSectionTitle")}</p>
           <div className="space-y-2">
             <div>
-              <label className="text-xs text-gray-500 block mb-0.5">Сотрудник</label>
+              <label className="text-xs text-gray-500 block mb-0.5">{t("vacationPanel.employeeLabel")}</label>
               <select
                 value={selOwner}
                 onChange={(e) => setSelOwner(e.target.value)}
                 className="w-full border rounded px-2 py-1 text-xs"
               >
-                <option value="">— выберите сотрудника —</option>
+                <option value="">{t("vacationPanel.selectEmployeeOption")}</option>
                 {owners.map((o) => (
                   <option key={o.owner_id} value={o.owner_id}>{o.display_name}</option>
                 ))}
@@ -164,7 +169,7 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
             </div>
             <div className="flex gap-2">
               <div className="flex-1">
-                <label className="text-xs text-gray-500 block mb-0.5">С</label>
+                <label className="text-xs text-gray-500 block mb-0.5">{t("vacationPanel.fromLabel")}</label>
                 <input
                   type="date"
                   value={startDate}
@@ -173,7 +178,7 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
                 />
               </div>
               <div className="flex-1">
-                <label className="text-xs text-gray-500 block mb-0.5">По</label>
+                <label className="text-xs text-gray-500 block mb-0.5">{t("vacationPanel.toLabel")}</label>
                 <input
                   type="date"
                   value={endDate}
@@ -193,7 +198,7 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
               disabled={!selOwner || !startDate || !endDate || saving}
               className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-xs font-semibold"
             >
-              {saving ? "Сохраняю…" : "Добавить отпуск"}
+              {saving ? t("vacationPanel.saving") : t("vacationPanel.addVacation")}
             </button>
           </div>
         </div>
@@ -201,7 +206,7 @@ export function VacationPanel({ ganttItems, onClose, onChanged }: Props) {
 
       <div className="px-4 py-3 border-t bg-gray-50">
         <p className="text-xs text-gray-400">
-          Отпуска хранятся в конфиге и влияют на все спринты. После изменений нажмите «Построить».
+          {t("vacationPanel.footerHint")}
         </p>
       </div>
     </div>

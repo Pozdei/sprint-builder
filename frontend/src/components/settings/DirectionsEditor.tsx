@@ -1,37 +1,22 @@
+import { useTranslation } from "react-i18next";
 import type { DirectionOut, RoleOut, TeamMemberOut } from "../../types/api";
 
-export const WORK_TYPE_LABELS: Record<string, string> = {
-  analytics:     "Аналитика",
-  development:   "Разработка",
-  design:        "Дизайн",
-  code_review:   "Код-ревью",
-  design_review: "Дизайн-ревью",
-  testing:       "Тестирование",
-  release:       "Релиз",
-};
-
 // Зеркало backend _WORK_TYPE_INFO (app/sprint/logic.py) — только для отображения.
-const WORK_TYPE_INFO: Record<string, { role: string; bucket: string }> = {
-  analytics:     { role: "analyst",        bucket: "Анализ" },
-  development:   { role: "developer",      bucket: "Разработка" },
-  testing:       { role: "analyst",        bucket: "Тестирование" },
-  design:        { role: "designer",       bucket: "Дизайн" },
-  code_review:   { role: "developer_lead", bucket: "Код-ревью" },
-  design_review: { role: "designer_lead",  bucket: "Дизайн-ревью" },
-  release:       { role: "developer_lead", bucket: "Релиз" },
+// role/bucket-имена ключей здесь технические (используются как i18n-ключи в directions.buckets.*).
+const WORK_TYPE_INFO: Record<string, { role: string; bucketKey: string }> = {
+  analytics:     { role: "analyst",        bucketKey: "analytics" },
+  development:   { role: "developer",      bucketKey: "development" },
+  testing:       { role: "analyst",        bucketKey: "testing" },
+  design:        { role: "designer",       bucketKey: "design" },
+  code_review:   { role: "developer_lead", bucketKey: "code_review" },
+  design_review: { role: "designer_lead",  bucketKey: "design_review" },
+  release:       { role: "developer_lead", bucketKey: "release" },
 };
 
 // Виды работ, для которых backend учитывает переопределение роли (role_overrides).
 const OVERRIDABLE_WORK_TYPES = new Set(["development", "testing", "analytics"]);
 
-// "developer" в _WORK_TYPE_INFO — не настоящая роль, а обобщённое имя для любой
-// роли разработчика (developer_backend/frontend/lead) — её нет в списке ролей конфига,
-// поэтому даём отдельную человекочитаемую подпись.
-const GENERIC_ROLE_LABELS: Record<string, string> = {
-  developer: "любой разработчик",
-};
-
-const ALL_WORK_TYPES = Object.keys(WORK_TYPE_LABELS);
+const ALL_WORK_TYPES = Object.keys(WORK_TYPE_INFO);
 
 interface Props {
   value: DirectionOut[];
@@ -41,15 +26,20 @@ interface Props {
 }
 
 export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Props) {
+  const { t } = useTranslation(["settings", "common"]);
   const devRoleOptions     = roles.filter((r) => !r.is_lead && r.name !== "analyst" && r.name !== "designer");
   const contentRoleOptions = roles.filter((r) => !r.is_lead && r.name !== "designer" && !r.name.startsWith("developer"));
   const designerMembers    = Object.entries(team).filter(([, m]) => m.role === "designer");
 
+  // "developer" в WORK_TYPE_INFO — не настоящая роль, а обобщённое имя для любой
+  // роли разработчика (developer_backend/frontend/lead) — её нет в списке ролей конфига,
+  // поэтому даём отдельную человекочитаемую подпись.
   const roleDisplayName = (roleName: string | undefined): string => {
-    if (!roleName) return "—";
-    return roles.find((r) => r.name === roleName)?.display_name
-      ?? GENERIC_ROLE_LABELS[roleName]
-      ?? roleName;
+    if (!roleName) return t("directions.noValue");
+    const found = roles.find((r) => r.name === roleName)?.display_name;
+    if (found) return found;
+    if (roleName === "developer") return t("directions.genericRole.developer");
+    return roleName;
   };
 
   const updateField = (i: number, field: keyof DirectionOut, val: unknown) => {
@@ -108,10 +98,14 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
     onChange(value.filter((_, idx) => idx !== i));
   };
 
+  const workTypeLabel = (wt: string): string => t(`directions.workTypes.${wt}`, { defaultValue: wt });
+  const bucketLabel = (bucketKey: string | undefined): string =>
+    bucketKey ? t(`directions.buckets.${bucketKey}`) : t("directions.noValue");
+
   return (
     <div className="space-y-3">
       {value.length === 0 && (
-        <p className="text-sm text-gray-400 italic">Нет направлений. Добавьте первое.</p>
+        <p className="text-sm text-gray-400 italic">{t("directions.empty")}</p>
       )}
       {value.map((dir, i) => {
         const available    = ALL_WORK_TYPES.filter((wt) => !dir.work_types.includes(wt));
@@ -121,19 +115,19 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
             {/* Название + удалить */}
             <div className="flex items-center gap-2">
               <div className="flex-1">
-                <label className="block text-xs text-gray-500 mb-0.5">Название</label>
+                <label className="block text-xs text-gray-500 mb-0.5">{t("directions.nameLabel")}</label>
                 <input
                   type="text"
                   value={dir.name}
                   onChange={(e) => updateField(i, "name", e.target.value)}
-                  placeholder="Например: Backend"
+                  placeholder={t("directions.namePlaceholder")}
                   className="w-full px-2 py-1 border rounded text-sm"
                 />
               </div>
               <button
                 onClick={() => handleRemove(i)}
                 className="text-red-500 hover:text-red-700 text-xl mt-4 px-1"
-                title="Удалить направление"
+                title={t("directions.removeDirection")}
               >
                 ×
               </button>
@@ -143,14 +137,14 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
             {hasDesign && designerMembers.length > 1 && (
               <div>
                 <label className="block text-xs text-gray-500 mb-0.5">
-                  Дизайнер
+                  {t("directions.designerLabel")}
                 </label>
                 <select
                   value={dir.designer_id ?? ""}
                   onChange={(e) => updateField(i, "designer_id", e.target.value)}
                   className="w-full px-2 py-1 border rounded text-sm"
                 >
-                  <option value="">автовыбор (единственный в команде)</option>
+                  <option value="">{t("directions.designerAutoOption")}</option>
                   {designerMembers.map(([accId, m]) => (
                     <option key={accId} value={accId}>
                       {m.file_name || m.jira_name}
@@ -163,7 +157,7 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
             {/* Метки Jira */}
             <div>
               <label className="block text-xs text-gray-500 mb-0.5">
-                Метки Jira (через запятую)
+                {t("directions.labelsLabel")}
               </label>
               <input
                 type="text"
@@ -178,7 +172,7 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
                       .filter(Boolean),
                   )
                 }
-                placeholder="Например: Backend или frontend-web, frontend-mobile"
+                placeholder={t("directions.labelsPlaceholder")}
                 className="w-full px-2 py-1 border rounded text-sm font-mono"
               />
             </div>
@@ -186,21 +180,19 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
             {/* Pipeline видов работ + роли — единая таблица */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">
-                Pipeline видов работ и роли (порядок важен)
+                {t("directions.pipelineLabel")}
               </label>
               <p className="text-xs text-gray-400 mb-1">
-                В колонке «Роль»: выпадашка — можно закрепить за этим направлением свою
-                роль вместо системной по умолчанию; обычный текст — роль фиксированная,
-                переопределить нельзя.
+                {t("directions.pipelineHint")}
               </p>
               <div className="border rounded overflow-hidden bg-white">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-100 text-xs text-gray-500">
                     <tr>
                       <th className="text-left px-2 py-1 w-6">#</th>
-                      <th className="text-left px-2 py-1">Вид работ</th>
-                      <th className="text-left px-2 py-1">Бакет</th>
-                      <th className="text-left px-2 py-1">Роль</th>
+                      <th className="text-left px-2 py-1">{t("directions.table.workType")}</th>
+                      <th className="text-left px-2 py-1">{t("directions.table.bucket")}</th>
+                      <th className="text-left px-2 py-1">{t("directions.table.role")}</th>
                       <th className="px-2 py-1 w-20" />
                     </tr>
                   </thead>
@@ -213,8 +205,8 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
                       return (
                         <tr key={wt} className="border-t">
                           <td className="px-2 py-1 text-gray-400">{wi + 1}</td>
-                          <td className="px-2 py-1 font-medium">{WORK_TYPE_LABELS[wt] ?? wt}</td>
-                          <td className="px-2 py-1 text-gray-500">{info?.bucket ?? "—"}</td>
+                          <td className="px-2 py-1 font-medium">{workTypeLabel(wt)}</td>
+                          <td className="px-2 py-1 text-gray-500">{bucketLabel(info?.bucketKey)}</td>
                           <td className="px-2 py-1">
                             {overridable ? (
                               <select
@@ -222,7 +214,9 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
                                 onChange={(e) => updateOverride(i, wt, e.target.value)}
                                 className="w-full px-1.5 py-0.5 border rounded text-sm"
                               >
-                                <option value="">{defaultRoleLabel} (по умолчанию)</option>
+                                <option value="">
+                                  {t("directions.roleDefaultSuffix", { role: defaultRoleLabel })}
+                                </option>
                                 {roleOptions.map((r) => (
                                   <option key={r.name} value={r.name}>
                                     {r.display_name}
@@ -238,7 +232,7 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
                               onClick={() => moveUp(i, wi)}
                               disabled={wi === 0}
                               className="px-1 text-gray-400 hover:text-gray-700 disabled:opacity-20"
-                              title="Вверх"
+                              title={t("directions.moveUp")}
                             >
                               ↑
                             </button>
@@ -246,14 +240,14 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
                               onClick={() => moveDown(i, wi)}
                               disabled={wi === dir.work_types.length - 1}
                               className="px-1 text-gray-400 hover:text-gray-700 disabled:opacity-20"
-                              title="Вниз"
+                              title={t("directions.moveDown")}
                             >
                               ↓
                             </button>
                             <button
                               onClick={() => removeWt(i, wi)}
                               className="px-1 text-red-400 hover:text-red-600"
-                              title="Удалить шаг"
+                              title={t("directions.removeStep")}
                             >
                               ×
                             </button>
@@ -275,10 +269,10 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
                       e.target.value = "";
                     }}
                   >
-                    <option value="" disabled>+ Добавить шаг…</option>
+                    <option value="" disabled>{t("directions.addStepOption")}</option>
                     {available.map((wt) => (
                       <option key={wt} value={wt}>
-                        {WORK_TYPE_LABELS[wt] ?? wt}
+                        {workTypeLabel(wt)}
                       </option>
                     ))}
                   </select>
@@ -292,7 +286,7 @@ export function DirectionsEditor({ value, onChange, roles = [], team = {} }: Pro
         onClick={handleAdd}
         className="text-sm text-blue-600 hover:text-blue-800"
       >
-        + Добавить направление
+        {t("directions.addDirection")}
       </button>
     </div>
   );

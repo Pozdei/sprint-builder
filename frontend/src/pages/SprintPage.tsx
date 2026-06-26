@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   approveSprint,
   buildAndSaveSprint,
@@ -63,6 +64,7 @@ function IconCheck() {
 }
 
 export function SprintPage({ jiraReady }: Props) {
+  const { t } = useTranslation(["sprint", "common"]);
   const toast = useToast();
   const [candidates, setCandidates] = useState<TaskOut[] | null>(null);
   const [maxSprint, setMaxSprint] = useState<number | null>(null);
@@ -118,7 +120,7 @@ export function SprintPage({ jiraReady }: Props) {
       setCandidates(r.candidates);
       setMaxSprint(r.max_sprint_num);
       setDiagnostics(r.diagnostics);
-      toast.success(`Загружено кандидатов: ${r.candidates.length}`);
+      toast.success(t("toast.candidatesLoaded", { count: r.candidates.length }));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -137,7 +139,7 @@ export function SprintPage({ jiraReady }: Props) {
       setOverflow(r.overflow);
       setOwnerStats(r.owner_stats);
       setDiagnostics(r.diagnostics);
-      toast.success(`Sprint ${r.sprint.sprint_num} сформирован и сохранён`);
+      toast.success(t("toast.sprintBuilt", { num: r.sprint.sprint_num }));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -148,15 +150,15 @@ export function SprintPage({ jiraReady }: Props) {
   const handleApprove = async () => {
     if (!sprint) return;
     const ok = window.confirm(
-      `Утвердить Sprint ${sprint.sprint_num}?\n\n` +
-      `В Jira уже должен существовать Sprint ${sprint.sprint_num}.`
+      `${t("confirm.approveTitle", { num: sprint.sprint_num })}\n\n` +
+      t("confirm.approveBody", { num: sprint.sprint_num })
     );
     if (!ok) return;
     setApproving(true);
     try {
       const updated = await approveSprint(sprint.id);
       setSprint(updated);
-      toast.success(`Sprint ${updated.sprint_num} утверждён`);
+      toast.success(t("toast.sprintApproved", { num: updated.sprint_num }));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -210,7 +212,7 @@ export function SprintPage({ jiraReady }: Props) {
       setAllocated(updated.tasks);
       setOwnerStats(updated.owner_stats);
       setEditing(false);
-      toast.success("Состав спринта обновлён");
+      toast.success(t("toast.compositionUpdated"));
     } catch (e) {
       toast.error(extractError(e));
     }
@@ -295,7 +297,7 @@ export function SprintPage({ jiraReady }: Props) {
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
           >
             <IconRefresh />
-            {loadingCandidates ? "Загружаю…" : candidates ? "Обновить кандидатов" : "Загрузить кандидатов"}
+            {loadingCandidates ? t("toolbar.loading") : candidates ? t("toolbar.refreshCandidates") : t("toolbar.loadCandidates")}
           </button>
 
           <button
@@ -304,7 +306,7 @@ export function SprintPage({ jiraReady }: Props) {
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
           >
             <IconDownload />
-            {downloadingC ? "Скачиваю…" : "Скачать кандидатов"}
+            {downloadingC ? t("toolbar.downloading") : t("toolbar.downloadCandidates")}
           </button>
 
           <div className="w-px self-stretch bg-gray-200 mx-1" />
@@ -315,7 +317,7 @@ export function SprintPage({ jiraReady }: Props) {
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 shadow-sm transition"
           >
             <IconBolt />
-            {loadingSprint ? "Формирую и сохраняю…" : "Сформировать спринт"}
+            {loadingSprint ? t("toolbar.building") : t("toolbar.buildSprint")}
           </button>
 
           <div className="flex-1" />
@@ -323,11 +325,11 @@ export function SprintPage({ jiraReady }: Props) {
           {sprint && sprint.status === "draft" && allocated && (
             <button
               onClick={() => setEditing(true)}
-              title="Изменить состав вручную"
+              title={t("toolbar.editCompositionTitle")}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 shadow-sm transition"
             >
               <IconEdit />
-              Редактировать состав
+              {t("toolbar.editComposition")}
             </button>
           )}
 
@@ -337,7 +339,7 @@ export function SprintPage({ jiraReady }: Props) {
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
           >
             <IconDownload />
-            {downloadingS ? "Скачиваю…" : "Скачать спринт"}
+            {downloadingS ? t("toolbar.downloading") : t("toolbar.downloadSprint")}
           </button>
 
           {sprint && sprint.status === "draft" && (
@@ -347,7 +349,7 @@ export function SprintPage({ jiraReady }: Props) {
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 disabled:bg-gray-300 shadow-sm transition"
             >
               <IconCheck />
-              {approving ? "Утверждаю…" : "Утвердить"}
+              {approving ? t("toolbar.approving") : t("toolbar.approve")}
             </button>
           )}
         </div>
@@ -355,7 +357,7 @@ export function SprintPage({ jiraReady }: Props) {
 
       {!candidates && !loadingCandidates && (
         <div className="text-center text-gray-500 mt-20">
-          Нажмите «Загрузить кандидатов», чтобы подтянуть задачи из Jira.
+          {t("empty")}
         </div>
       )}
 
@@ -363,12 +365,12 @@ export function SprintPage({ jiraReady }: Props) {
         <>
           <div className="text-sm text-gray-600 mb-3 flex flex-wrap items-center gap-4">
             {maxSprint !== null && (
-              <span>Макс. в Jira: <b>SHN Sprint {maxSprint}</b></span>
+              <span>{t("summary.maxInJira")}: <b>SHN Sprint {maxSprint}</b></span>
             )}
             <span>
-              Кандидатов: <b>{candidatesCount}</b>
+              {t("summary.candidates")}: <b>{candidatesCount}</b>
               {formalCount > 0 && (
-                <span className="text-gray-400"> (формальных: {formalCount})</span>
+                <span className="text-gray-400"> ({t("summary.formal")}: {formalCount})</span>
               )}
             </span>
             {sprint && <SprintStatusBadge sprint={sprint} />}
@@ -391,13 +393,13 @@ export function SprintPage({ jiraReady }: Props) {
               {/* Фильтры — только когда спринт сформирован */}
               {allocated && sprint && (ownerOptions.length > 1 || bucketOptions.length > 1) && (
                 <div className="flex flex-wrap items-center gap-3 mb-3">
-                  <span className="text-sm text-gray-500">Фильтр:</span>
+                  <span className="text-sm text-gray-500">{t("filter.label")}</span>
                   <select
                     value={filterOwner}
                     onChange={(e) => setFilterOwner(e.target.value)}
                     className="text-sm border rounded px-2 py-1 bg-white"
                   >
-                    <option value="">Все исполнители</option>
+                    <option value="">{t("filter.allExecutors")}</option>
                     {ownerOptions.map((o) => (
                       <option key={o} value={o}>{o}</option>
                     ))}
@@ -407,7 +409,7 @@ export function SprintPage({ jiraReady }: Props) {
                     onChange={(e) => setFilterBucket(e.target.value)}
                     className="text-sm border rounded px-2 py-1 bg-white"
                   >
-                    <option value="">Все фазы</option>
+                    <option value="">{t("filter.allPhases")}</option>
                     {bucketOptions.map((b) => (
                       <option key={b} value={b}>{b}</option>
                     ))}
@@ -417,7 +419,7 @@ export function SprintPage({ jiraReady }: Props) {
                       onClick={() => { setFilterOwner(""); setFilterBucket(""); }}
                       className="text-sm text-blue-600 hover:underline"
                     >
-                      Сбросить
+                      {t("filter.reset")}
                     </button>
                   )}
                 </div>
@@ -426,8 +428,8 @@ export function SprintPage({ jiraReady }: Props) {
               {allocated && sprint ? (
                 <>
                   <h2 className="font-semibold text-gray-700 mb-2">
-                    В спринт ({applyFilters(allocated).length}
-                    {filterOwner || filterBucket ? ` из ${allocated.length}` : " задач"})
+                    {t("sections.inSprint")} ({applyFilters(allocated).length}
+                    {filterOwner || filterBucket ? ` ${t("sections.ofTotal")} ${allocated.length}` : ` ${t("sections.tasksSuffix")}`})
                   </h2>
                   <SprintTable
                     tasks={applyFilters(allocated)}
@@ -436,8 +438,8 @@ export function SprintPage({ jiraReady }: Props) {
                   {overflow.length > 0 && (
                     <>
                       <h2 className="font-semibold text-gray-700 mt-6 mb-2">
-                        Не влезло ({applyFilters(overflow).length}
-                        {filterOwner || filterBucket ? ` из ${overflow.length}` : ""})
+                        {t("sections.overflow")} ({applyFilters(overflow).length}
+                        {filterOwner || filterBucket ? ` ${t("sections.ofTotal")} ${overflow.length}` : ""})
                       </h2>
                       <SprintTable
                         tasks={applyFilters(overflow)}
@@ -450,7 +452,7 @@ export function SprintPage({ jiraReady }: Props) {
               ) : (
                 <>
                   <h2 className="font-semibold text-gray-700 mb-2">
-                    Кандидаты ({candidatesCount})
+                    {t("sections.candidates")} ({candidatesCount})
                   </h2>
                   <SprintTable
                     tasks={candidates}
@@ -479,6 +481,7 @@ export function SprintPage({ jiraReady }: Props) {
 }
 
 function SprintStatusBadge({ sprint }: { sprint: SprintOut }) {
+  const { t } = useTranslation("sprint");
   const isApproved = sprint.status === "approved";
   return (
     <span
@@ -488,7 +491,7 @@ function SprintStatusBadge({ sprint }: { sprint: SprintOut }) {
           : "bg-yellow-100 text-yellow-800"
       }`}
     >
-      Sprint {sprint.sprint_num} · {isApproved ? "approved" : "draft"}
+      Sprint {sprint.sprint_num} · {isApproved ? t("status.approved") : t("status.draft")}
     </span>
   );
 }

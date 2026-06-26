@@ -5,6 +5,7 @@
 
 from sqlalchemy.orm import Session
 
+from app.core.i18n import DEFAULT_LANG, make_translator
 from app.db import users_repository
 from app.jira.client import JiraClient
 from app.services import config_service
@@ -14,22 +15,29 @@ from app.sprint.logic import (
     compute_sprint_expected_results, derive_pipeline_tasks,
 )
 
+_MSG: dict[str, dict[str, str]] = {
+    "user_not_found": {"ru": "Пользователь {user_id} не найден", "en": "User {user_id} not found"},
+    "no_active_config": {
+        "ru": "У вас нет активного конфига. Создайте его в шапке через 'Конфиг'.",
+        "en": "You have no active config. Create one in the header via 'Config'.",
+    },
+}
+_t = make_translator(_MSG)
+
 
 class ConfigNotFoundError(Exception):
     """У пользователя нет конфига (даже после ensure)."""
 
 
-def _load_user_config(db: Session, user_id: int):
+def _load_user_config(db: Session, user_id: int, lang: str = DEFAULT_LANG):
     """Грузим активный конфиг пользователя; если нет — ensure создаст пустой."""
     user = users_repository.get_user_by_id(db, user_id)
     if not user:
-        raise ConfigNotFoundError(f"Пользователь {user_id} не найден")
+        raise ConfigNotFoundError(_t("user_not_found", lang, user_id=user_id))
 
     cfg_model = config_service.ensure_active_config(db, user)
     if not cfg_model:
-        raise ConfigNotFoundError(
-            "У вас нет активного конфига. Создайте его в шапке через 'Конфиг'."
-        )
+        raise ConfigNotFoundError(_t("no_active_config", lang))
     from app.db import repository
     return from_dict(repository.model_to_sprint_config_dict(cfg_model))
 
@@ -58,8 +66,10 @@ def _apply_manual_assignments(candidates: list[dict], team: dict) -> list[dict]:
     return updated
 
 
-def collect_sprint_candidates(db: Session, jira: JiraClient, user_id: int) -> dict:
-    cfg = _load_user_config(db, user_id)
+def collect_sprint_candidates(
+    db: Session, jira: JiraClient, user_id: int, lang: str = DEFAULT_LANG,
+) -> dict:
+    cfg = _load_user_config(db, user_id, lang)
     candidates, diagnostics = collect_candidates(jira, cfg)
     compute_priorities(candidates, cfg)
     max_n = max((c["sprint_num"] for c in candidates if c.get("sprint_num")), default=None)
@@ -76,8 +86,9 @@ def build_sprint(
     user_id: int,
     candidates_in: list[dict] | None = None,
     target_sprint_num: int | None = None,
+    lang: str = DEFAULT_LANG,
 ) -> dict:
-    cfg = _load_user_config(db, user_id)
+    cfg = _load_user_config(db, user_id, lang)
 
     if candidates_in:
         candidates = _apply_manual_assignments(candidates_in, cfg.team)

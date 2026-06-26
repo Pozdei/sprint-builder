@@ -4,9 +4,19 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.i18n import get_lang, make_translator
 from app.core.security import TokenError, decode_token
 from app.db import models, users_repository
 from app.db.session import get_db
+
+_MSG: dict[str, dict[str, str]] = {
+    "auth_required": {"ru": "Требуется авторизация", "en": "Authentication required"},
+    "user_not_found": {"ru": "Пользователь не найден", "en": "User not found"},
+    "user_deactivated": {"ru": "Пользователь деактивирован", "en": "User is deactivated"},
+    "admin_only": {"ru": "Только для администраторов", "en": "Administrators only"},
+    "access_denied": {"ru": "Доступ запрещён", "en": "Access denied"},
+}
+_t = make_translator(_MSG)
 
 
 _bearer = HTTPBearer(auto_error=False)
@@ -15,11 +25,12 @@ _bearer = HTTPBearer(auto_error=False)
 def get_current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ) -> models.User:
     if not creds:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Требуется авторизация",
+            detail=_t("auth_required", lang),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -42,21 +53,25 @@ def get_current_user(
 
     user = users_repository.get_user_by_id(db, user_id)
     if not user:
-        raise HTTPException(status_code=401, detail="Пользователь не найден")
+        raise HTTPException(status_code=401, detail=_t("user_not_found", lang))
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Пользователь деактивирован")
+        raise HTTPException(status_code=403, detail=_t("user_deactivated", lang))
     return user
 
 
-def require_admin(user: models.User = Depends(get_current_user)) -> models.User:
+def require_admin(
+    user: models.User = Depends(get_current_user), lang: str = Depends(get_lang),
+) -> models.User:
     if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Только для администраторов")
+        raise HTTPException(status_code=403, detail=_t("admin_only", lang))
     return user
 
 
-def require_lead(user: models.User = Depends(get_current_user)) -> models.User:
+def require_lead(
+    user: models.User = Depends(get_current_user), lang: str = Depends(get_lang),
+) -> models.User:
     if user.role not in ("lead", "admin"):
-        raise HTTPException(status_code=403, detail="Доступ запрещён")
+        raise HTTPException(status_code=403, detail=_t("access_denied", lang))
     return user
 
 

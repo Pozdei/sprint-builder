@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { IntrusionRecord } from "../types/intrusions";
 
 interface Props {
@@ -8,10 +9,11 @@ interface Props {
 /** Секция "Врывы" в раскрытом виде closed-спринта.
  *  Разбивка: сводка по (человек, роль), затем подробная таблица. */
 export function IntrusionsView({ intrusions, terminalStatuses }: Props) {
+  const { t } = useTranslation(["history", "common"]);
   if (intrusions.length === 0) {
     return (
       <div className="mt-4 text-sm text-gray-500 italic">
-        Врывов нет — все задачи в Jira-спринте были учтены при утверждении.
+        {t("history:intrusions.empty")}
       </div>
     );
   }
@@ -53,25 +55,24 @@ export function IntrusionsView({ intrusions, terminalStatuses }: Props) {
   return (
     <div className="mt-6 border-t pt-4">
       <h3 className="font-semibold text-gray-700 mb-3">
-        Врывы ({intrusions.length} задач, {totalHours.toFixed(1)} ч)
+        {t("history:intrusions.title", { count: intrusions.length, hours: totalHours.toFixed(1) })}
       </h3>
 
       <p className="text-xs text-gray-500 mb-3">
-        Задачи, которые появились в Jira-спринте после утверждения и привязаны
-        к людям из вашей команды.
+        {t("history:intrusions.description")}
       </p>
 
       {/* Сводка */}
       <div className="mb-4">
-        <h4 className="text-sm font-semibold text-gray-600 mb-2">По людям</h4>
+        <h4 className="text-sm font-semibold text-gray-600 mb-2">{t("history:intrusions.byPerson.title")}</h4>
         <table className="w-full text-sm border bg-white">
           <thead className="bg-gray-100">
             <tr>
-              <th className="text-left px-3 py-1 border-b">Консультант</th>
-              <th className="text-left px-3 py-1 border-b">Роль</th>
-              <th className="text-center px-3 py-1 border-b">Задач</th>
-              <th className="text-center px-3 py-1 border-b">Часы</th>
-              <th className="text-center px-3 py-1 border-b">Выполнено</th>
+              <th className="text-left px-3 py-1 border-b">{t("history:intrusions.byPerson.consultant")}</th>
+              <th className="text-left px-3 py-1 border-b">{t("history:intrusions.byPerson.role")}</th>
+              <th className="text-center px-3 py-1 border-b">{t("history:intrusions.byPerson.tasks")}</th>
+              <th className="text-center px-3 py-1 border-b">{t("history:intrusions.byPerson.hours")}</th>
+              <th className="text-center px-3 py-1 border-b">{t("history:intrusions.byPerson.done")}</th>
             </tr>
           </thead>
           <tbody>
@@ -82,7 +83,7 @@ export function IntrusionsView({ intrusions, terminalStatuses }: Props) {
                 <td className="text-center px-3 py-1">{rec.count}</td>
                 <td className="text-center px-3 py-1">{rec.hours.toFixed(1)}</td>
                 <td className="text-center px-3 py-1">
-                  {rec.doneCount}/{rec.count} ({rec.doneHours.toFixed(1)}ч)
+                  {t("history:intrusions.byPerson.doneRatio", { done: rec.doneCount, total: rec.count, hours: rec.doneHours.toFixed(1) })}
                 </td>
               </tr>
             ))}
@@ -91,18 +92,18 @@ export function IntrusionsView({ intrusions, terminalStatuses }: Props) {
       </div>
 
       {/* Подробно */}
-      <h4 className="text-sm font-semibold text-gray-600 mb-2">Список задач</h4>
+      <h4 className="text-sm font-semibold text-gray-600 mb-2">{t("history:intrusions.list.title")}</h4>
       <div className="border rounded-lg overflow-hidden bg-white">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 border-b">
             <tr>
               <th className="text-left px-3 py-1.5 w-10"></th>
-              <th className="text-left px-3 py-1.5 w-20">Задача</th>
-              <th className="text-left px-3 py-1.5">Название</th>
-              <th className="text-left px-3 py-1.5">Консультант</th>
-              <th className="text-left px-3 py-1.5">Роль</th>
-              <th className="text-left px-3 py-1.5">Статус</th>
-              <th className="text-right px-3 py-1.5">Часы</th>
+              <th className="text-left px-3 py-1.5 w-20">{t("history:intrusions.list.task")}</th>
+              <th className="text-left px-3 py-1.5">{t("history:intrusions.list.name")}</th>
+              <th className="text-left px-3 py-1.5">{t("history:intrusions.list.consultant")}</th>
+              <th className="text-left px-3 py-1.5">{t("history:intrusions.list.role")}</th>
+              <th className="text-left px-3 py-1.5">{t("history:intrusions.list.status")}</th>
+              <th className="text-right px-3 py-1.5">{t("history:intrusions.list.hours")}</th>
             </tr>
           </thead>
           <tbody>

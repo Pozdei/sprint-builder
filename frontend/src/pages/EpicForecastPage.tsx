@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   addEpicDependency, deleteEpicGanttSnapshot, downloadEpicForecastXlsx, fetchEpicDependencies,
   fetchEpicForecast, fetchEpicSnapshots, fetchRootTasks, getEpicGanttSnapshot, listEpicGanttSnapshots,
@@ -19,12 +20,14 @@ import { useRootTasks } from "../hooks/useRootTasks";
 import { extractError } from "../lib/api-error";
 import { daysUntil, fmtDateLong, fmtDateTime, fmtNum, fmtRub, todayISO } from "../lib/format";
 import { loadRecentEpics, pushRecentEpic, removeRecentEpic } from "../lib/recent-epics";
+import { bucketLabel } from "../lib/bucket-label";
 import type {
   CostBreakdownItem, EpicForecastResponse, EpicForecastSnapshot, GanttItem,
   MissingAssigneeItem, MissingRole, SprintSummary, TaskDependency,
 } from "../types/api";
 
 export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
+  const { t } = useTranslation(["forecast", "common"]);
   const toast = useToast();
   const [epicKey,    setEpicKey]    = useState("");
   const [startDate,  setStartDate]  = useState(todayISO());
@@ -84,11 +87,11 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
       fetchEpicDependencies(depKey).then(setEpicDeps).catch(() => setEpicDeps([]));
       fetchEpicSnapshots(depKey).then(setSnapshots).catch(() => {});
       if (!sprint) setRecentEpics(pushRecentEpic(key));
-      const label = sprint ? `Спринт ${sprint.sprint_num}` : data.epic_key;
+      const label = sprint ? t("page.toast.sprintLabel", { num: sprint.sprint_num }) : data.epic_key;
       toast.success(
         data.completion_date
-          ? `${label}: прогноз построен — ${fmtDateLong(data.completion_date)}`
-          : `${label}: прогноз построен`,
+          ? t("page.toast.forecastBuiltWithDate", { label, date: fmtDateLong(data.completion_date) })
+          : t("page.toast.forecastBuilt", { label }),
       );
     } catch (e: unknown) {
       toast.error(extractError(e));
@@ -127,7 +130,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
     if (!result?.gantt_items?.length) return;
     try {
       const summary = await ganttSnap.save(liveGanttStart, hoursPerDay, result.gantt_items);
-      toast.success(`Снимок Ганта сохранён (${fmtDateTime(summary.captured_at)})`);
+      toast.success(t("page.toast.ganttSnapshotSaved", { datetime: fmtDateTime(summary.captured_at) }));
     } catch (e) {
       toast.error(extractError(e));
     }
@@ -142,11 +145,11 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
   };
 
   const handleDeleteGanttSnapshot = async (id: number) => {
-    const ok = window.confirm("Удалить этот снимок Ганта?");
+    const ok = window.confirm(t("page.confirmDeleteGanttSnapshot"));
     if (!ok) return;
     try {
       await ganttSnap.remove(id);
-      toast.success("Снимок удалён");
+      toast.success(t("page.toast.ganttSnapshotDeleted"));
     } catch (e) {
       toast.error(extractError(e));
     }
@@ -155,11 +158,9 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-800 mb-1">Прогноз реализации</h1>
+        <h1 className="text-xl font-bold text-gray-800 mb-1">{t("page.title")}</h1>
         <p className="text-sm text-gray-500">
-          Введите ключ родителя (эпик / стори / задача) — можно несколько через запятую,
-          если они одного типа (например, два эпика) — или выберите спринт. Система рассчитает
-          расписание оставшихся этапов и предскажет дату завершения.
+          {t("page.intro")}
         </p>
       </div>
 
@@ -168,7 +169,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
         <div className="flex flex-wrap gap-4 items-end">
           <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg px-3 py-1.5">
             <label className="flex items-center gap-1 text-sm font-medium text-indigo-700 mb-1">
-              <span>📅</span> Старт расчёта
+              <span>📅</span> {t("page.startDateLabel")}
             </label>
             <input
               type="date"
@@ -179,20 +180,20 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
           </div>
           <span className="w-px h-10 bg-gray-200 self-center" />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">По родителю (эпик / стори)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t("page.byParentLabel")}</label>
             <input
               type="text"
               value={epicKey}
               onChange={(e) => { setEpicKey(e.target.value); if (e.target.value.trim()) setSprintId(null); }}
               onKeyDown={(e) => e.key === "Enter" && handleForecast()}
-              placeholder="напр. SHN-3969 или SHN-3969, SHN-4012"
-              title="Несколько ключей через запятую — должны быть одного типа (два эпика или два стори, но не вперемешку)"
+              placeholder={t("page.epicKeyPlaceholder")}
+              title={t("page.epicKeyTitle")}
               disabled={sprintId !== null}
               className="px-3 py-2 border rounded-lg text-sm font-mono w-64 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-100 disabled:text-gray-400"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">или утверждённый спринт</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t("page.orApprovedSprintLabel")}</label>
             <select
               value={sprintId ?? ""}
               disabled={approvedSprints.length === 0}
@@ -204,13 +205,13 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
               className="px-3 py-2 border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-100 disabled:text-gray-400"
             >
               {approvedSprints.length === 0 ? (
-                <option value="">нет утверждённых спринтов</option>
+                <option value="">{t("page.noApprovedSprints")}</option>
               ) : (
                 <>
-                  <option value="">— по родителю —</option>
+                  <option value="">{t("page.byParentOption")}</option>
                   {approvedSprints.map((s) => (
                     <option key={s.id} value={s.id}>
-                      Спринт {s.sprint_num} ({s.tasks_count} задач)
+                      {t("page.sprintOption", { num: s.sprint_num, count: s.tasks_count })}
                     </option>
                   ))}
                 </>
@@ -218,7 +219,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Ч/день</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t("page.hoursPerDayLabel")}</label>
             <input
               type="number"
               min={1} max={24} step={1}
@@ -234,23 +235,23 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
             className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300
                        text-white font-semibold px-5 py-2 rounded-lg text-sm transition"
           >
-            {loading ? "Считаю…" : "Построить прогноз"}
+            {loading ? t("page.calculating") : t("page.buildForecast")}
           </button>
           <label
             className="flex items-center gap-2 cursor-pointer select-none ml-1"
-            title="Восстановить прошлые фазы по истории Jira (кто и когда был на аналитике/разработке/тесте) и показать их на одной шкале с прогнозом"
+            title={t("page.useHistoryTitle")}
             onClick={() => setUseHistory(v => !v)}
           >
             <div className={`relative w-9 h-5 rounded-full transition-colors ${useHistory ? "bg-indigo-500" : "bg-gray-300"}`}>
               <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${useHistory ? "translate-x-4" : "translate-x-0.5"}`} />
             </div>
-            <span className="text-sm text-gray-600">По истории статусов</span>
+            <span className="text-sm text-gray-600">{t("page.useHistoryLabel")}</span>
           </label>
         </div>
 
         {recentEpics.length > 0 && (
           <div className="mt-3 flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-gray-400">Недавние:</span>
+            <span className="text-xs text-gray-400">{t("page.recentLabel")}</span>
             {recentEpics.map((k) => (
               <span
                 key={k}
@@ -262,14 +263,14 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                   onClick={() => handleForecast(k)}
                   disabled={loading}
                   className="hover:text-indigo-700 disabled:opacity-50"
-                  title={`Построить прогноз для ${k}`}
+                  title={t("page.buildForecastForTitle", { key: k })}
                 >
                   {k}
                 </button>
                 <button
                   onClick={() => setRecentEpics(removeRecentEpic(k))}
                   className="text-gray-300 hover:text-red-500 leading-none px-0.5"
-                  title="Убрать из недавних"
+                  title={t("page.removeFromRecentTitle")}
                 >
                   ×
                 </button>
@@ -293,7 +294,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                             "border-indigo-300 bg-indigo-50"
             }`}>
               <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
-                Прогноз завершения
+                {t("page.completionCard.title")}
               </div>
               {result.completion_date ? (
                 <>
@@ -307,14 +308,14 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                   </div>
                   {days !== null && (
                     <div className="text-sm mt-0.5 text-gray-500">
-                      {days < 0  ? `просрочено на ${Math.abs(days)} дн.` :
-                       days === 0 ? "сегодня" :
-                                    `через ${days} дн.`}
+                      {days < 0  ? t("page.completionCard.overdueBy", { count: Math.abs(days) }) :
+                       days === 0 ? t("page.completionCard.today") :
+                                    t("page.completionCard.inDays", { count: days })}
                     </div>
                   )}
                 </>
               ) : (
-                <div className="text-lg text-gray-400 italic">нет данных</div>
+                <div className="text-lg text-gray-400 italic">{t("page.completionCard.noData")}</div>
               )}
             </div>
 
@@ -325,22 +326,22 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { label: "Всего задач",     value: result.stats.total_issues,
+                  { label: t("page.metrics.totalIssues"),     value: result.stats.total_issues,
                     icon: METRIC_ICONS.total, accent: "text-slate-500 bg-slate-100" },
-                  { label: "Выполнено",        value: result.stats.done_issues,
+                  { label: t("page.metrics.doneIssues"),        value: result.stats.done_issues,
                     icon: METRIC_ICONS.done, accent: "text-green-600 bg-green-100",
                     sub: `${Math.round(result.stats.done_issues / Math.max(result.stats.total_issues,1)*100)}%` },
-                  { label: "Осталось задач",  value: result.stats.total_issues - result.stats.done_issues,
+                  { label: t("page.metrics.remainingIssues"),  value: result.stats.total_issues - result.stats.done_issues,
                     icon: METRIC_ICONS.remaining, accent: "text-indigo-600 bg-indigo-100",
-                    sub: `${result.stats.remaining_work_items} эт. в расписании` },
-                  { label: "Плановых часов",  value: `${result.stats.total_planned_hours} ч`,
+                    sub: t("page.metrics.remainingWorkItemsSub", { count: result.stats.remaining_work_items }) },
+                  { label: t("page.metrics.plannedHours"),  value: `${result.stats.total_planned_hours} ${t("page.metrics.hoursUnit")}`,
                     warn: result.stats.default_hours_count > 0,
                     icon: METRIC_ICONS.hours,
                     accent: result.stats.default_hours_count > 0
                       ? "text-amber-600 bg-amber-100" : "text-blue-600 bg-blue-100",
                     sub: result.stats.default_hours_count > 0
-                      ? `${result.stats.default_hours_count} без оценки`
-                      : "все оценены" },
+                      ? t("page.metrics.missingEstimatesSub", { count: result.stats.default_hours_count })
+                      : t("page.metrics.allEstimatedSub") },
                 ].map((m) => (
                   <div
                     key={m.label}
@@ -377,9 +378,9 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                     >
                       <path fillRule="evenodd" d="M7.3 5.3a1 1 0 011.4 0l4 4a1 1 0 010 1.4l-4 4a1 1 0 01-1.4-1.4L10.6 10 7.3 6.7a1 1 0 010-1.4z" clipRule="evenodd" />
                     </svg>
-                    <span className="text-sm font-medium text-blue-600">Стоимость проекта</span>
+                    <span className="text-sm font-medium text-blue-600">{t("page.cost.title")}</span>
                     {!costOpen && (
-                      <span className="text-xs text-blue-400 ml-auto">показать расчёт</span>
+                      <span className="text-xs text-blue-400 ml-auto">{t("page.cost.showCalculation")}</span>
                     )}
                   </button>
 
@@ -389,20 +390,20 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                         <span className="text-2xl font-bold text-blue-700">
                           {fmtRub(result.stats.total_cost)}
                         </span>
-                        <span className="text-xs text-blue-400">по окладам команды</span>
+                        <span className="text-xs text-blue-400">{t("page.cost.byTeamSalaries")}</span>
                         <div className="ml-auto flex items-center gap-3">
                           <button
                             onClick={() => setShowRoi(true)}
                             className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1.5 transition"
                           >
-                            Посчитать ROI
+                            {t("page.cost.calculateRoi")}
                           </button>
                           {isAdmin && (
                             <button
                               onClick={() => setShowCostBreakdown(true)}
                               className="text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2"
                             >
-                              Подробный расчёт
+                              {t("page.cost.detailedCalculation")}
                             </button>
                           )}
                         </div>
@@ -410,17 +411,17 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                       {result.today_hours != null && (
                         <div className="mt-2 flex items-center gap-3 flex-wrap text-sm">
                           <span className="inline-flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-                            <span className="text-xs text-gray-500">Потрачено</span>
+                            <span className="text-xs text-gray-500">{t("page.cost.spent")}</span>
                             <span className="font-semibold text-gray-700">{fmtRub(result.stats.spent_cost ?? 0)}</span>
-                            <span className="text-xs text-gray-400">· {fmtNum(result.stats.spent_hours ?? 0, 1)} ч</span>
+                            <span className="text-xs text-gray-400">· {fmtNum(result.stats.spent_hours ?? 0, 1)} {t("page.metrics.hoursUnit")}</span>
                           </span>
                           <span className="inline-flex items-center gap-2 bg-indigo-50 rounded-lg px-3 py-1.5">
-                            <span className="text-xs text-indigo-500">Осталось</span>
+                            <span className="text-xs text-indigo-500">{t("page.cost.remaining")}</span>
                             <span className="font-semibold text-indigo-700">{fmtRub(result.stats.remaining_cost ?? 0)}</span>
-                            <span className="text-xs text-indigo-400">· {fmtNum(result.stats.remaining_hours ?? 0, 1)} ч</span>
+                            <span className="text-xs text-indigo-400">· {fmtNum(result.stats.remaining_hours ?? 0, 1)} {t("page.metrics.hoursUnit")}</span>
                           </span>
                           <span className="text-xs text-gray-400">
-                            левее красной линии на диаграмме — факт по истории Jira
+                            {t("page.cost.factNote")}
                           </span>
                         </div>
                       )}
@@ -435,12 +436,12 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
           {result.warnings.length > 0 && (
             <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
               <div className="font-semibold text-amber-800 text-sm mb-1">
-                ⚠ Задачи с неизвестным статусом ({result.warnings.length}) — расписаны с начала pipeline
+                ⚠ {t("page.warnings.title", { count: result.warnings.length })}
               </div>
               <div className="text-xs text-amber-700 space-y-0.5">
                 {result.warnings.slice(0, 8).map((w, i) => <div key={i}>{w}</div>)}
                 {result.warnings.length > 8 && (
-                  <div>…и ещё {result.warnings.length - 8}</div>
+                  <div>{t("page.warnings.andMore", { count: result.warnings.length - 8 })}</div>
                 )}
               </div>
             </div>
@@ -452,7 +453,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
               {/* Шапка с кнопками */}
               <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                 <p className="text-xs text-gray-400">
-                  Клик — все этапы · двойной — Jira
+                  {t("page.gantt.clickHint")}
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <GanttSnapshotControls
@@ -465,10 +466,10 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                   />
                   <button
                     onClick={() => setShowTodayExport(true)}
-                    title="Текстовая выгрузка задач, активных сегодня, по направлениям"
+                    title={t("page.gantt.todayExportTitle")}
                     className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
                   >
-                    📤 Выгрузка на сегодня
+                    📤 {t("page.gantt.todayExportButton")}
                   </button>
                   <button
                     onClick={() => {
@@ -487,7 +488,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                         {missingAssignees.length}
                       </span>
                     )}
-                    Без исполнителей
+                    {t("page.gantt.missingAssignees")}
                   </button>
                   {!showMissingOnly && (
                     <>
@@ -500,14 +501,14 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                           activeClass="bg-red-50 text-red-700"
                           onClick={() => { setShowDeps((v) => !v); setShowVacations(false); }}
                         >
-                          🔗 Зависимости{epicDeps.length > 0 ? ` (${epicDeps.length})` : ""}
+                          🔗 {t("page.gantt.dependencies")}{epicDeps.length > 0 ? ` (${epicDeps.length})` : ""}
                         </SegmentButton>
                         <SegmentButton
                           active={showVacations}
                           activeClass="bg-orange-50 text-orange-700"
                           onClick={() => { setShowVacations((v) => !v); setShowDeps(false); }}
                         >
-                          🏖️ Отпуска
+                          🏖️ {t("page.gantt.vacations")}
                         </SegmentButton>
                       </div>
 
@@ -516,31 +517,31 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                       {/* Своды: Epic / User Story / Консолидировано — независимые тумблеры,
                           можно включать одновременно */}
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-gray-400">Свод:</span>
+                        <span className="text-xs text-gray-400">{t("page.gantt.rollupLabel")}</span>
                         <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden divide-x divide-gray-300">
                           <SegmentButton
                             active={byEpic}
                             activeClass="bg-violet-50 text-violet-700"
                             onClick={() => setByEpic((v) => !v)}
-                            title="Добавить сверху сводную полосу с суммарной длительностью каждого эпика"
+                            title={t("page.gantt.rollupEpicTitle")}
                           >
-                            Epic
+                            {t("page.gantt.rollupEpic")}
                           </SegmentButton>
                           <SegmentButton
                             active={byStory}
                             activeClass="bg-indigo-50 text-indigo-700"
                             onClick={() => setByStory((v) => !v)}
-                            title="Сводная полоса по родительской задаче с типом «История» (аналог свода по эпику)"
+                            title={t("page.gantt.rollupStoryTitle")}
                           >
-                            User Story
+                            {t("page.gantt.rollupStory")}
                           </SegmentButton>
                           <SegmentButton
                             active={byParent}
                             activeClass="bg-teal-50 text-teal-700"
                             onClick={() => setByParent((v) => !v)}
-                            title="Кластеры связанных между собой задач (по issue-link'ам Blocks/Relates/Duplicate и т.п.); одиночные задачи не показываются"
+                            title={t("page.gantt.rollupParentTitle")}
                           >
-                            Консолидировано
+                            {t("page.gantt.rollupParent")}
                           </SegmentButton>
                         </div>
                       </div>
@@ -554,7 +555,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                           <span className="w-5 h-5 bg-amber-400 text-white rounded-full text-xs flex items-center justify-center font-bold">
                             {result.stats.default_hours_count}
                           </span>
-                          Без оценок
+                          {t("page.gantt.missingEstimates")}
                         </button>
                       )}
                     </>
@@ -570,7 +571,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                     onReturn={() => handleGanttSnapshotChange("current")}
                   />
                   {ganttSnap.detailLoading ? (
-                    <div className="text-gray-500 text-sm py-4">Загрузка снимка…</div>
+                    <div className="text-gray-500 text-sm py-4">{t("page.gantt.loadingSnapshot")}</div>
                   ) : displayedGanttItems && displayedGanttItems.length > 0 && (
                     <GanttChart
                       items={displayedGanttItems}
@@ -614,7 +615,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
             </>
           ) : (
             <div className="text-center text-gray-400 py-10">
-              Все задачи эпика выполнены или нет задач с известными исполнителями.
+              {t("page.gantt.noTasksScheduled")}
             </div>
           )}
 
@@ -802,6 +803,7 @@ function CostBreakdownModal({
   epicKey: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation(["forecast", "common"]);
   const [tab, setTab] = useState<CostTab>("phases");
   const [xlsxLoading, setXlsxLoading] = useState(false);
 
@@ -830,9 +832,9 @@ function CostBreakdownModal({
   }, [ganttItems]);
 
   const TABS: { key: CostTab; label: string }[] = [
-    { key: "phases",  label: "По фазам" },
-    { key: "tasks",   label: "По задачам" },
-    { key: "people",  label: "По исполнителям" },
+    { key: "phases",  label: t("costBreakdown.tabs.phases") },
+    { key: "tasks",   label: t("costBreakdown.tabs.tasks") },
+    { key: "people",  label: t("costBreakdown.tabs.people") },
   ];
 
   return (
@@ -846,14 +848,14 @@ function CostBreakdownModal({
       >
         {/* Шапка */}
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
-          <h3 className="font-semibold text-gray-800">Расчёт стоимости</h3>
+          <h3 className="font-semibold text-gray-800">{t("costBreakdown.title")}</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={handleDownloadXlsx}
               disabled={xlsxLoading}
               className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 rounded px-2 py-1 disabled:opacity-50"
             >
-              {xlsxLoading ? "Формирую…" : "Скачать xlsx"}
+              {xlsxLoading ? t("costBreakdown.preparing") : t("costBreakdown.downloadXlsx")}
             </button>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
           </div>
@@ -861,17 +863,17 @@ function CostBreakdownModal({
 
         {/* Табы */}
         <div className="flex gap-1 mb-4 flex-shrink-0 border-b">
-          {TABS.map((t) => (
+          {TABS.map((tabDef) => (
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
+              key={tabDef.key}
+              onClick={() => setTab(tabDef.key)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition -mb-px ${
-                tab === t.key
+                tab === tabDef.key
                   ? "border-indigo-500 text-indigo-700"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
-              {t.label}
+              {tabDef.label}
             </button>
           ))}
         </div>
@@ -882,11 +884,11 @@ function CostBreakdownModal({
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b sticky top-0">
                 <tr>
-                  <th className="text-left px-3 py-1.5">Задача</th>
-                  <th className="text-left px-3 py-1.5">Фаза</th>
-                  <th className="text-left px-3 py-1.5">Исполнитель</th>
-                  <th className="text-right px-3 py-1.5">Часов</th>
-                  <th className="text-right px-3 py-1.5">Стоимость, ₽</th>
+                  <th className="text-left px-3 py-1.5">{t("costBreakdown.table.task")}</th>
+                  <th className="text-left px-3 py-1.5">{t("costBreakdown.table.phase")}</th>
+                  <th className="text-left px-3 py-1.5">{t("costBreakdown.table.executor")}</th>
+                  <th className="text-right px-3 py-1.5">{t("costBreakdown.table.hours")}</th>
+                  <th className="text-right px-3 py-1.5">{t("costBreakdown.table.cost")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -899,18 +901,18 @@ function CostBreakdownModal({
                           {it.key}
                         </a>
                       </td>
-                      <td className="px-3 py-1.5 text-gray-600">{it.bucket}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{bucketLabel(it.bucket, t)}</td>
                       <td className="px-3 py-1.5">{it.owner_file_name}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{it.hours}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums font-medium">
-                        {(it.phase_cost ?? 0) > 0 ? fmtNum(it.phase_cost!) : "—"}
+                        {(it.phase_cost ?? 0) > 0 ? fmtNum(it.phase_cost!) : t("costBreakdown.table.noValue")}
                       </td>
                     </tr>
                   ))}
               </tbody>
               <tfoot className="border-t-2 border-gray-300 bg-gray-50 sticky bottom-0">
                 <tr>
-                  <td colSpan={4} className="px-3 py-1.5 font-semibold text-right">Итого</td>
+                  <td colSpan={4} className="px-3 py-1.5 font-semibold text-right">{t("costBreakdown.table.total")}</td>
                   <td className="px-3 py-1.5 text-right font-bold text-blue-700 tabular-nums">
                     {fmtRub(totalCost)}
                   </td>
@@ -923,11 +925,11 @@ function CostBreakdownModal({
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b sticky top-0">
                 <tr>
-                  <th className="text-left px-3 py-1.5">Задача</th>
-                  <th className="text-left px-3 py-1.5">Название</th>
-                  <th className="text-left px-3 py-1.5">Исполнители</th>
-                  <th className="text-right px-3 py-1.5">Часов</th>
-                  <th className="text-right px-3 py-1.5">Стоимость, ₽</th>
+                  <th className="text-left px-3 py-1.5">{t("costBreakdown.table.task")}</th>
+                  <th className="text-left px-3 py-1.5">{t("costBreakdown.table.title")}</th>
+                  <th className="text-left px-3 py-1.5">{t("costBreakdown.table.executors")}</th>
+                  <th className="text-right px-3 py-1.5">{t("costBreakdown.table.hours")}</th>
+                  <th className="text-right px-3 py-1.5">{t("costBreakdown.table.cost")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -942,14 +944,14 @@ function CostBreakdownModal({
                     <td className="px-3 py-1.5 text-gray-500 text-xs">{[...d.executors].sort().join(", ")}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(d.hours * 10) / 10}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums font-medium">
-                      {d.cost > 0 ? fmtNum(Math.round(d.cost)) : "—"}
+                      {d.cost > 0 ? fmtNum(Math.round(d.cost)) : t("costBreakdown.table.noValue")}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="border-t-2 border-gray-300 bg-gray-50 sticky bottom-0">
                 <tr>
-                  <td colSpan={4} className="px-3 py-1.5 font-semibold text-right">Итого</td>
+                  <td colSpan={4} className="px-3 py-1.5 font-semibold text-right">{t("costBreakdown.table.total")}</td>
                   <td className="px-3 py-1.5 text-right font-bold text-blue-700 tabular-nums">
                     {fmtRub(totalCost)}
                   </td>
@@ -960,14 +962,14 @@ function CostBreakdownModal({
 
           {tab === "people" && (
             breakdown.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-4">Оклады не настроены</p>
+              <p className="text-gray-400 text-sm text-center py-4">{t("costBreakdown.noSalaries")}</p>
             ) : (
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b sticky top-0">
                   <tr>
-                    <th className="text-left px-3 py-1.5">Исполнитель</th>
-                    <th className="text-right px-3 py-1.5">Часов</th>
-                    <th className="text-right px-3 py-1.5">Стоимость, ₽</th>
+                    <th className="text-left px-3 py-1.5">{t("costBreakdown.table.executor")}</th>
+                    <th className="text-right px-3 py-1.5">{t("costBreakdown.table.hours")}</th>
+                    <th className="text-right px-3 py-1.5">{t("costBreakdown.table.cost")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -976,14 +978,14 @@ function CostBreakdownModal({
                       <td className="px-3 py-1.5">{row.name}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{row.hours}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums font-medium">
-                        {row.cost > 0 ? fmtNum(row.cost) : "—"}
+                        {row.cost > 0 ? fmtNum(row.cost) : t("costBreakdown.table.noValue")}
                       </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot className="border-t-2 border-gray-300 bg-gray-50 sticky bottom-0">
                   <tr>
-                    <td colSpan={2} className="px-3 py-1.5 font-semibold text-right">Итого</td>
+                    <td colSpan={2} className="px-3 py-1.5 font-semibold text-right">{t("costBreakdown.table.total")}</td>
                     <td className="px-3 py-1.5 text-right font-bold text-blue-700 tabular-nums">
                       {fmtRub(totalCost)}
                     </td>
@@ -995,7 +997,7 @@ function CostBreakdownModal({
         </div>
 
         <p className="text-xs text-gray-400 mt-3 flex-shrink-0">
-          Расчёт: оклад ÷ 160 ч/мес × плановые часы в прогнозе
+          {t("costBreakdown.formulaNote")}
         </p>
       </div>
     </div>
@@ -1003,6 +1005,7 @@ function CostBreakdownModal({
 }
 
 function RoiModal({ totalCost, onClose }: { totalCost: number; onClose: () => void }) {
+  const { t } = useTranslation(["forecast", "common"]);
   const [revenueStr, setRevenueStr] = useState("");
 
   // Принимаем «1 200 000», «1200000», «1 200 000,50» — оставляем только цифры и разделитель
@@ -1023,13 +1026,13 @@ function RoiModal({ totalCost, onClose }: { totalCost: number; onClose: () => vo
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-800">Расчёт ROI</h3>
+          <h3 className="font-semibold text-gray-800">{t("roiModal.title")}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
 
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Доход от проекта, ₽
+            {t("roiModal.revenueLabel")}
           </label>
           <input
             type="text"
@@ -1037,26 +1040,26 @@ function RoiModal({ totalCost, onClose }: { totalCost: number; onClose: () => vo
             autoFocus
             value={revenueStr}
             onChange={(e) => setRevenueStr(e.target.value)}
-            placeholder="Например, 5 000 000"
+            placeholder={t("roiModal.revenuePlaceholder")}
             className="w-full px-3 py-2 border rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-300"
           />
         </div>
 
         <div className="space-y-2 text-sm">
           <div className="flex items-center justify-between px-3 py-2 bg-blue-50 rounded-lg">
-            <span className="text-blue-500">Стоимость проекта</span>
+            <span className="text-blue-500">{t("roiModal.projectCost")}</span>
             <span className="font-semibold text-blue-700 tabular-nums">{fmtRub(totalCost)}</span>
           </div>
           {hasInput && (
             <>
               <div className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
-                <span className="text-gray-500">Прибыль</span>
+                <span className="text-gray-500">{t("roiModal.profit")}</span>
                 <span className={`font-semibold tabular-nums ${positive ? "text-green-700" : "text-red-700"}`}>
                   {profit >= 0 ? "+" : "−"}{fmtRub(Math.abs(profit))}
                 </span>
               </div>
               <div className={`flex items-center justify-between px-3 py-2.5 rounded-lg ${positive ? "bg-green-50" : "bg-red-50"}`}>
-                <span className={positive ? "text-green-600" : "text-red-600"}>ROI</span>
+                <span className={positive ? "text-green-600" : "text-red-600"}>{t("roiModal.roi")}</span>
                 <span className={`text-2xl font-bold tabular-nums ${positive ? "text-green-700" : "text-red-700"}`}>
                   {roiPct >= 0 ? "+" : "−"}{fmtNum(Math.abs(roiPct), 1)} %
                 </span>
@@ -1066,7 +1069,7 @@ function RoiModal({ totalCost, onClose }: { totalCost: number; onClose: () => vo
         </div>
 
         <p className="mt-4 text-xs text-gray-400">
-          ROI = (доход − стоимость проекта) ÷ стоимость проекта × 100 %
+          {t("roiModal.formulaNote")}
         </p>
       </div>
     </div>

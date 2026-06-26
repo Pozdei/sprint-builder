@@ -1,0 +1,13 @@
+{
+  "nav": {
+    "sprint": "Sprint",
+    "history": "History",
+    "forecast": "Delivery Forecast",
+    "settings": "Settings",
+    "docs": "Docs",
+    "admin": "Admin"
+  },
+  "loadingApp": "Loading…",
+  "checkingJira": "Checking…",
+  "logout": "Log out"
+}

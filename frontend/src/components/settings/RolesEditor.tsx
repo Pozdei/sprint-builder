@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { RoleOut } from "../../types/api";
 
 interface Props {
@@ -6,6 +7,7 @@ interface Props {
 }
 
 export function RolesEditor({ value, onChange }: Props) {
+  const { t } = useTranslation(["settings", "common"]);
   const updateField = (i: number, field: keyof RoleOut, val: unknown) => {
     const next = [...value];
     next[i] = { ...next[i], [field]: val };
@@ -16,8 +18,8 @@ export function RolesEditor({ value, onChange }: Props) {
     onChange([
       ...value,
       {
-        name: "new_role",
-        display_name: "Новая роль",
+        name: t("roles.newRoleName"),
+        display_name: t("roles.newRoleDisplayName"),
         enabled: false,
         is_lead: false,
         sort_order: value.length,
@@ -34,10 +36,10 @@ export function RolesEditor({ value, onChange }: Props) {
       <table className="w-full text-sm border">
         <thead className="bg-gray-100">
           <tr>
-            <th className="text-left px-2 py-1 border-b font-semibold">name</th>
-            <th className="text-left px-2 py-1 border-b font-semibold">Отображаемое имя</th>
-            <th className="text-center px-2 py-1 border-b font-semibold">В спринт</th>
-            <th className="text-center px-2 py-1 border-b font-semibold">Лид</th>
+            <th className="text-left px-2 py-1 border-b font-semibold">{t("roles.table.name")}</th>
+            <th className="text-left px-2 py-1 border-b font-semibold">{t("roles.table.displayName")}</th>
+            <th className="text-center px-2 py-1 border-b font-semibold">{t("roles.table.inSprint")}</th>
+            <th className="text-center px-2 py-1 border-b font-semibold">{t("roles.table.lead")}</th>
             <th className="px-2 py-1 border-b w-12"></th>
           </tr>
         </thead>
@@ -78,7 +80,7 @@ export function RolesEditor({ value, onChange }: Props) {
                 <button
                   onClick={() => handleRemove(i)}
                   className="text-red-500 hover:text-red-700 text-lg"
-                  title="Удалить"
+                  title={t("roles.remove")}
                 >
                   ×
                 </button>
@@ -91,7 +93,7 @@ export function RolesEditor({ value, onChange }: Props) {
         onClick={handleAdd}
         className="mt-2 text-sm text-blue-600 hover:text-blue-800"
       >
-        + Добавить роль
+        {t("roles.addRole")}
       </button>
     </div>
   );

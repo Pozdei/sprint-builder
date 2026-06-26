@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { RoleOut, RoleStatusBucketOut } from "../../types/api";
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function RoleStatusBucketsEditor({ value, onChange, roles, buckets }: Props) {
+  const { t } = useTranslation(["settings", "common"]);
   const update = (i: number, field: keyof RoleStatusBucketOut, v: string) => {
     const next = [...value];
     next[i] = { ...next[i], [field]: v };
@@ -35,9 +37,9 @@ export function RoleStatusBucketsEditor({ value, onChange, roles, buckets }: Pro
       <table className="w-full text-sm border">
         <thead className="bg-gray-100">
           <tr>
-            <th className="text-left px-2 py-1 border-b font-semibold w-1/4">Роль</th>
-            <th className="text-left px-2 py-1 border-b font-semibold w-1/3">Статус Jira</th>
-            <th className="text-left px-2 py-1 border-b font-semibold w-1/3">Бакет</th>
+            <th className="text-left px-2 py-1 border-b font-semibold w-1/4">{t("statusBuckets.table.role")}</th>
+            <th className="text-left px-2 py-1 border-b font-semibold w-1/3">{t("statusBuckets.table.jiraStatus")}</th>
+            <th className="text-left px-2 py-1 border-b font-semibold w-1/3">{t("statusBuckets.table.bucket")}</th>
             <th className="px-2 py-1 border-b w-12"></th>
           </tr>
         </thead>
@@ -78,7 +80,7 @@ export function RoleStatusBucketsEditor({ value, onChange, roles, buckets }: Pro
                 <button
                   onClick={() => handleRemove(i)}
                   className="text-red-500 hover:text-red-700 text-lg"
-                  title="Удалить"
+                  title={t("statusBuckets.remove")}
                 >
                   ×
                 </button>
@@ -96,7 +98,7 @@ export function RoleStatusBucketsEditor({ value, onChange, roles, buckets }: Pro
         onClick={handleAdd}
         className="mt-2 text-sm text-blue-600 hover:text-blue-800"
       >
-        + Добавить
+        {t("statusBuckets.add")}
       </button>
     </div>
   );

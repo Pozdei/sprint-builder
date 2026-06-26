@@ -1,16 +1,18 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 type Section = "concept" | "features";
 
 export function DocsPage() {
+  const { t } = useTranslation("docs");
   const [active, setActive] = useState<Section>("concept");
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Справка — Sprint Builder</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">{t("title")}</h1>
         <p className="text-gray-500 text-sm">
-          Инструмент управления разработкой продукта по методологии SDLC
+          {t("subtitle")}
         </p>
       </div>
 
@@ -24,7 +26,7 @@ export function DocsPage() {
               : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
-          1. Концепция и логика процесса
+          {t("tabs.concept")}
         </button>
         <button
           onClick={() => setActive("features")}
@@ -34,7 +36,7 @@ export function DocsPage() {
               : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
-          2. Функциональность и настройки
+          {t("tabs.features")}
         </button>
       </div>
 
@@ -47,46 +49,70 @@ export function DocsPage() {
 /* ─────────────────────────── РАЗДЕЛ 1: КОНЦЕПЦИЯ ─────────────────────────── */
 
 function ConceptSection() {
+  const { t } = useTranslation("docs");
+
+  const pipelineStages = t("concept.pipeline.stages", { returnObjects: true }) as Array<{
+    label: string;
+    desc: string;
+  }>;
+  const pipelineColors = [
+    "bg-amber-100 text-amber-800 border-amber-300",
+    "bg-pink-100 text-pink-800 border-pink-300",
+    "bg-emerald-100 text-emerald-800 border-emerald-300",
+    "bg-teal-100 text-teal-800 border-teal-300",
+    "bg-blue-100 text-blue-800 border-blue-300",
+    "bg-yellow-100 text-yellow-800 border-yellow-300",
+  ];
+
+  const directionItems = t("concept.directions.items", { returnObjects: true }) as Array<{
+    name: string;
+    labels: string;
+    pipeline: string[];
+    who: string;
+  }>;
+  const directionStyles = [
+    { color: "border-emerald-400 bg-emerald-50", badge: "bg-emerald-100 text-emerald-800" },
+    { color: "border-blue-400 bg-blue-50", badge: "bg-blue-100 text-blue-800" },
+    { color: "border-pink-400 bg-pink-50", badge: "bg-pink-100 text-pink-800" },
+  ];
+
+  const roleRows = t("concept.roles.rows", { returnObjects: true }) as Array<{
+    code: string;
+    label: string;
+    phases: string;
+    priority: string;
+  }>;
+
+  const historySteps = t("concept.historyMode.steps", { returnObjects: true }) as string[];
+
   return (
     <div className="space-y-8">
 
       {/* Что это такое */}
       <DocCard accent="indigo">
-        <DocCardTitle icon="🎯">Для чего нужен Sprint Builder</DocCardTitle>
+        <DocCardTitle icon="🎯">{t("concept.purpose.title")}</DocCardTitle>
         <p className="text-gray-600 leading-relaxed">
-          Sprint Builder — инструмент менеджерского контроля над разработкой продукта. Он
-          автоматически распределяет задачи из Jira по исполнителям, строит расписание этапов,
-          прогнозирует дату завершения и считает стоимость работ.
+          {t("concept.purpose.p1")}
         </p>
         <p className="text-gray-600 leading-relaxed mt-3">
-          В основе лежит методология <strong>SDLC</strong> (Software Development Life Cycle) —
-          каждая задача не «просто делается», а проходит по цепочке фаз: кто-то анализирует,
-          кто-то рисует, кто-то разрабатывает, кто-то проверяет. Система знает, кто отвечает за
-          каждую фазу, и строит реалистичное расписание с учётом загрузки команды, отпусков и
-          зависимостей между задачами.
+          {t("concept.purpose.p2Before")} <strong>{t("concept.purpose.p2Sdlc")}</strong>{" "}
+          {t("concept.purpose.p2Middle")}
         </p>
       </DocCard>
 
       {/* Жизненный цикл задачи */}
       <DocCard accent="violet">
-        <DocCardTitle icon="🔄">Жизненный цикл задачи (pipeline)</DocCardTitle>
+        <DocCardTitle icon="🔄">{t("concept.pipeline.title")}</DocCardTitle>
         <p className="text-gray-600 leading-relaxed mb-5">
-          Каждая задача проходит через последовательность этапов — <strong>pipeline</strong>.
-          Набор этапов зависит от типа (направления) задачи, но общая логика одна:
+          {t("concept.pipeline.introBefore")} <strong>{t("concept.pipeline.introBold")}</strong>
+          {t("concept.pipeline.introAfter")}
         </p>
         <div className="flex items-start mb-5">
-          {[
-            { label: "Анализ", color: "bg-amber-100 text-amber-800 border-amber-300", desc: "Аналитик" },
-            { label: "Дизайн", color: "bg-pink-100 text-pink-800 border-pink-300", desc: "Дизайнер" },
-            { label: "Разработка", color: "bg-emerald-100 text-emerald-800 border-emerald-300", desc: "Разработчик" },
-            { label: "Код-ревью", color: "bg-teal-100 text-teal-800 border-teal-300", desc: "Лид разработки" },
-            { label: "Тестирование", color: "bg-blue-100 text-blue-800 border-blue-300", desc: "Тестировщик" },
-            { label: "Релиз", color: "bg-yellow-100 text-yellow-800 border-yellow-300", desc: "Лид разработки" },
-          ].map((s, i) => (
+          {pipelineStages.map((s, i) => (
             <div key={i} className="flex items-center flex-1 min-w-0">
               {i > 0 && <span className="text-gray-300 font-bold text-lg flex-none w-5 text-center">→</span>}
               <div className="flex-1 min-w-0 flex flex-col items-center gap-1 text-center">
-                <span className={`whitespace-nowrap px-2 py-1 rounded-lg border text-xs font-semibold ${s.color}`}>
+                <span className={`whitespace-nowrap px-2 py-1 rounded-lg border text-xs font-semibold ${pipelineColors[i]}`}>
                   {s.label}
                 </span>
                 <span className="text-xs text-gray-400 leading-tight">{s.desc}</span>
@@ -95,123 +121,82 @@ function ConceptSection() {
           ))}
         </div>
         <p className="text-gray-600 leading-relaxed text-sm">
-          Статусы в Jira автоматически маппируются на эти фазы через таблицу
-          «Статус → Бакет» в настройках. Система знает, что задача в статусе
-          «В разработке» — это фаза <em>Разработка</em>, а «К тестированию» — это
-          <em>Тестирование</em>.
+          {t("concept.pipeline.statusMappingBefore")}{" "}
+          <em>{t("concept.pipeline.statusMappingDevelopment")}</em>
+          {t("concept.pipeline.statusMappingMiddle")}{" "}
+          <em>{t("concept.pipeline.statusMappingTesting")}</em>
+          {t("concept.pipeline.statusMappingEnd")}
         </p>
         <p className="text-gray-600 leading-relaxed text-sm mt-2">
-          Для задач Backend/Frontend финальный этап pipeline — <strong>Релиз</strong>
-          (статусы Jira «Готово к релизу» и «Перенесено на PROD»). Релиз — это не
-          работа, занимающая время, а готовность выкатить: пачку готовых задач можно
-          релизить разом за секунды, поэтому он не встаёт в очередь исполнителя и не
-          считается часами на графике. На Ганте в детальной сетке по исполнителям все
-          задачи Релиза сворачиваются в один маркер на сегодняшнем дне — наведение
-          показывает список задач, готовых к выкатке. В сводных полосах по стори/эпику
-          этап Релиз не растягивает полосу, чтобы не перегружать свод деталями по
-          каждой задаче.
+          {t("concept.pipeline.releaseBefore")} <strong>{t("concept.pipeline.releaseBold")}</strong>{" "}
+          {t("concept.pipeline.releaseAfter")}
         </p>
         <p className="text-gray-600 leading-relaxed text-sm mt-2">
-          Если задача уже сейчас стоит в Jira на статусе «Готово к релизу» или
-          «Перенесено на PROD», но ещё не отмечена выполненной — рядом с именем
-          исполнителя и с ключом стори/эпика (в историчном режиме прогноза)
-          появляется бейдж <strong>🚀 N</strong>. Он показывает, что есть N таких
-          задач, которые можно выкатывать прямо сейчас. Клик по бейджу открывает
-          список этих задач с разбивкой по статусу и ссылками на Jira.
+          {t("concept.pipeline.badgeBefore")} <strong>{t("concept.pipeline.badgeBold")}</strong>
+          {t("concept.pipeline.badgeAfter")}
         </p>
       </DocCard>
 
       {/* Направления */}
       <DocCard accent="emerald">
-        <DocCardTitle icon="🗂️">Направления разработки</DocCardTitle>
+        <DocCardTitle icon="🗂️">{t("concept.directions.title")}</DocCardTitle>
         <p className="text-gray-600 leading-relaxed mb-5">
-          Разные типы задач требуют разных наборов этапов. Поэтому в системе настраиваются
-          <strong> Направления</strong> — каждое определяет свой pipeline и ответственных.
-          Принадлежность задачи к направлению определяется по{" "}
-          <strong>меткам (labels) в Jira</strong>, поиск регистронезависимый.
+          {t("concept.directions.introBefore")}
+          <strong> {t("concept.directions.introBold")}</strong> {t("concept.directions.introAfter")}{" "}
+          <strong>{t("concept.directions.introLabelsBold")}</strong>
+          {t("concept.directions.introEnd")}
         </p>
         <div className="space-y-3">
-          {[
-            {
-              name: "Backend",
-              labels: "backend, Backend",
-              color: "border-emerald-400 bg-emerald-50",
-              badge: "bg-emerald-100 text-emerald-800",
-              pipeline: ["Анализ", "Разработка", "Код-ревью", "Тестирование", "Релиз"],
-              who: "Аналитик → Разработчик backend → Лид разработки → Тестировщик → Релиз (Разработчик → Лид разработки)",
-            },
-            {
-              name: "Frontend",
-              labels: "frontend-web, frontend-mobile, Frontend",
-              color: "border-blue-400 bg-blue-50",
-              badge: "bg-blue-100 text-blue-800",
-              pipeline: ["Анализ", "Разработка", "Код-ревью", "Тестирование", "Релиз"],
-              who: "Аналитик → Разработчик frontend → Лид разработки → Тестировщик → Релиз (Разработчик → Лид разработки)",
-            },
-            {
-              name: "Дизайн",
-              labels: "design (метки не заданы — все задачи без меток)",
-              color: "border-pink-400 bg-pink-50",
-              badge: "bg-pink-100 text-pink-800",
-              pipeline: ["Анализ", "Дизайн", "Дизайн-ревью"],
-              who: "Аналитик → Дизайнер → Лид дизайна",
-            },
-          ].map((d) => (
-            <div key={d.name} className={`rounded-xl border-l-4 p-4 ${d.color}`}>
-              <div className="flex items-center gap-3 mb-2">
-                <span className={`px-2 py-0.5 rounded text-xs font-bold ${d.badge}`}>
-                  {d.name}
-                </span>
-                <span className="text-xs text-gray-500">метки: {d.labels}</span>
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                {d.pipeline.map((step, i) => (
-                  <span key={i} className="flex items-center gap-1.5">
-                    <span className="text-xs bg-white border rounded px-2 py-0.5 font-medium text-gray-700">
-                      {step}
-                    </span>
-                    {i < d.pipeline.length - 1 && (
-                      <span className="text-gray-400 text-xs">→</span>
-                    )}
+          {directionItems.map((d, idx) => {
+            const style = directionStyles[idx];
+            return (
+              <div key={d.name} className={`rounded-xl border-l-4 p-4 ${style.color}`}>
+                <div className="flex items-center gap-3 mb-2">
+                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${style.badge}`}>
+                    {d.name}
                   </span>
-                ))}
+                  <span className="text-xs text-gray-500">{t("concept.directions.labelsPrefix")} {d.labels}</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                  {d.pipeline.map((step, i) => (
+                    <span key={i} className="flex items-center gap-1.5">
+                      <span className="text-xs bg-white border rounded px-2 py-0.5 font-medium text-gray-700">
+                        {step}
+                      </span>
+                      {i < d.pipeline.length - 1 && (
+                        <span className="text-gray-400 text-xs">→</span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500">{d.who}</p>
               </div>
-              <p className="text-xs text-gray-500">{d.who}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </DocCard>
 
       {/* Роли команды */}
       <DocCard accent="amber">
-        <DocCardTitle icon="👥">Роли команды</DocCardTitle>
+        <DocCardTitle icon="👥">{t("concept.roles.title")}</DocCardTitle>
         <p className="text-gray-600 leading-relaxed mb-5">
-          Каждый участник команды имеет <strong>роль</strong>, которая определяет какие этапы
-          pipeline он выполняет. Роль задаётся в Настройках → Команда и используется при
-          автоматическом назначении исполнителей.
+          {t("concept.roles.introBefore")} <strong>{t("concept.roles.introBold")}</strong>
+          {t("concept.roles.introAfter")}
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-gray-50">
-                <th className="text-left px-3 py-2 text-gray-600 font-semibold">Роль</th>
-                <th className="text-left px-3 py-2 text-gray-600 font-semibold">Выполняет этапы</th>
-                <th className="text-left px-3 py-2 text-gray-600 font-semibold">Приоритет выбора</th>
+                <th className="text-left px-3 py-2 text-gray-600 font-semibold">{t("concept.roles.table.role")}</th>
+                <th className="text-left px-3 py-2 text-gray-600 font-semibold">{t("concept.roles.table.phases")}</th>
+                <th className="text-left px-3 py-2 text-gray-600 font-semibold">{t("concept.roles.table.priority")}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {[
-                { role: "analyst", label: "Аналитик", phases: "Анализ, Тестирование (по умолчанию)", priority: "Assignee → Responsible → Reporter" },
-                { role: "tester", label: "Тестировщик", phases: "Тестирование (если у направления задана отдельная роль)", priority: "Поле «Тестировщик» → историчный тестировщик (changelog) → тестировщик направления → дефолт (аналитик)" },
-                { role: "developer_backend", label: "Разработчик backend", phases: "Разработка", priority: "Поле «Разработчик» → Assignee → автовыбор" },
-                { role: "developer_frontend", label: "Разработчик frontend", phases: "Разработка", priority: "Поле «Разработчик» → Assignee → автовыбор" },
-                { role: "developer_lead", label: "Лид разработки", phases: "Разработка, Код-ревью, Релиз", priority: "Поле «Разработчик» → Assignee (Релиз: Поле «Разработчик» → Лид разработки)" },
-                { role: "designer", label: "Дизайнер", phases: "Дизайн", priority: "Поле «Дизайнер» → Assignee → designer_id направления → автовыбор" },
-                { role: "designer_lead", label: "Лид дизайна", phases: "Дизайн, Дизайн-ревью", priority: "Первый лид дизайна в команде" },
-              ].map((r) => (
-                <tr key={r.role} className="hover:bg-gray-50">
+              {roleRows.map((r) => (
+                <tr key={r.code} className="hover:bg-gray-50">
                   <td className="px-3 py-2">
-                    <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{r.role}</code>
+                    <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{r.code}</code>
                     <span className="ml-2 text-gray-600">{r.label}</span>
                   </td>
                   <td className="px-3 py-2 text-gray-600">{r.phases}</td>
@@ -222,35 +207,22 @@ function ConceptSection() {
           </table>
         </div>
         <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200 text-sm text-amber-800">
-          <strong>Важно:</strong> если в задаче явно заполнено поле «Разработчик» / «Дизайнер» /
-          «Тестировщик» (настраивается в разделе Настройки) — система всегда берёт именно
-          этого человека, независимо от роли в команде. Это позволяет лиду делегировать
-          задачу конкретному исполнителю прямо в Jira, без подбора по ролям. Подробнее —
-          в разделе «Поля Дизайнер/Тестировщик» ниже.
+          <strong>{t("concept.roles.noteBold")}</strong> {t("concept.roles.noteText")}
         </div>
       </DocCard>
 
       {/* Исторический режим — концепция */}
       <DocCard accent="rose">
-        <DocCardTitle icon="🕐">Режим «По истории статусов» — как это работает</DocCardTitle>
+        <DocCardTitle icon="🕐">{t("concept.historyMode.title")}</DocCardTitle>
         <p className="text-gray-600 leading-relaxed mb-4">
-          Стандартный прогноз строит только <em>будущее</em>: кто и когда доделает оставшиеся
-          этапы. Но часто важно увидеть полную картину — что уже было сделано, кто реально
-          работал над каждой фазой, и сколько это стоило.
+          {t("concept.historyMode.p1")}
         </p>
         <p className="text-gray-600 leading-relaxed mb-4">
-          Режим «По истории статусов» читает <strong>полный changelog</strong> каждой задачи из
-          Jira и восстанавливает реальные фазы:
+          {t("concept.historyMode.p2Before")} <strong>{t("concept.historyMode.p2Bold")}</strong>{" "}
+          {t("concept.historyMode.p2After")}
         </p>
         <ol className="space-y-2 text-sm text-gray-600 mb-4">
-          {[
-            "Находит все переходы статусов и смены assignee по времени",
-            "Для каждого сегмента определяет фазу по статусу и роли исполнителя: developer_lead в статусе «В разработке» → это фаза Разработка, а не Анализ",
-            "Если внутри одной фазы assignee сменился — берётся последний (он реально довёл работу)",
-            "Фазы с несовместимой ролью пропускаются: разработчик не может быть в Анализе",
-            "Прошлые фазы выводятся на Гант-диаграмме приглушённо, красная линия разделяет факт и прогноз",
-            "Считается раздельно: «Потрачено» (прошлое) и «Осталось» (будущее) в часах и деньгах",
-          ].map((step, i) => (
+          {historySteps.map((step, i) => (
             <li key={i} className="flex gap-3">
               <span className="flex-none w-5 h-5 rounded-full bg-rose-100 text-rose-700 text-xs font-bold flex items-center justify-center mt-0.5">
                 {i + 1}
@@ -260,8 +232,7 @@ function ConceptSection() {
           ))}
         </ol>
         <div className="p-3 bg-rose-50 rounded-lg border border-rose-200 text-sm text-rose-800">
-          <strong>Примечание:</strong> режим делает дополнительные запросы к Jira API
-          (по одному на каждую задачу эпика), поэтому может работать немного медленнее обычного.
+          <strong>{t("concept.historyMode.noteBold")}</strong> {t("concept.historyMode.noteText")}
         </div>
       </DocCard>
 
@@ -272,8 +243,20 @@ function ConceptSection() {
 /* ──────────────────────── РАЗДЕЛ 2: ФУНКЦИОНАЛЬНОСТЬ ─────────────────────── */
 
 function FeaturesSection() {
+  const { t } = useTranslation("docs");
   const [open, setOpen] = useState<string | null>("sprint");
   const toggle = (id: string) => setOpen((prev) => (prev === id ? null : id));
+
+  const settingsBlocks = t("features.settings.blocks", { returnObjects: true }) as Array<{
+    title: string;
+    items: string[];
+  }>;
+
+  const jiraApiRows = t("features.jiraApi.rows", { returnObjects: true }) as Array<{
+    method: string;
+    path: string;
+    desc: string;
+  }>;
 
   const items: Array<{
     id: string;
@@ -284,25 +267,16 @@ function FeaturesSection() {
     {
       id: "sprint",
       icon: "📋",
-      title: "Формирование спринта",
+      title: t("features.sprint.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Страница <strong>Спринт</strong> — основной рабочий инструмент. Система запрашивает
-            актуальные задачи из Jira и автоматически распределяет их по исполнителям с учётом
-            бюджета часов.
+            {t("features.sprint.p1Before")} <strong>{t("features.sprint.p1Bold")}</strong>{" "}
+            {t("features.sprint.p1After")}
           </p>
-          <FeatureList items={[
-            "Задачи берутся из настроенных Jira-досок для текущего конфига",
-            "Каждому участнику выделяется бюджет часов (настраивается в «Часов на человека»)",
-            "Лиды дополнительно получают часы на управленческие активности",
-            "Задачи, не влезшие в бюджет, попадают в «Переполнение» с указанием причины",
-            "Псевдо-задачи (встречи, онбординг) добавляются автоматически и учитываются в бюджете",
-            "Черновик спринта можно сохранить и утвердить — после утверждения запись фиксируется",
-          ]} />
+          <FeatureList items={t("features.sprint.list", { returnObjects: true }) as string[]} />
           <FeatureTip>
-            После утверждения спринта активируется кнопка «Стендап» — она показывает актуальное
-            расписание задач на текущий день с учётом реального статуса в Jira.
+            {t("features.sprint.tip")}
           </FeatureTip>
         </div>
       ),
@@ -310,79 +284,77 @@ function FeaturesSection() {
     {
       id: "today-export",
       icon: "📤",
-      title: "Выгрузка на сегодня",
+      title: t("features.todayExport.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Кнопка <strong>«📤 Выгрузка на сегодня»</strong> на странице Прогноза формирует
-            текстовую сводку задач, активных сегодня по расписанию, — удобно вставить в чат
-            команде.
+            {t("features.todayExport.p1Before")} <strong>{t("features.todayExport.p1Bold")}</strong>{" "}
+            {t("features.todayExport.p1After")}
           </p>
-          <FeatureList items={[
-            "Берёт уже построенный Гант текущего прогноза — отдельных запросов к Jira не делает",
-            "Отбирает задачи, чей плановый период захватывает сегодняшний день (без псевдо-задач)",
-            "Группирует их по направлению (Backend, Frontend и т.п.): ключ задачи со ссылкой на Jira, исполнитель, фаза",
-            "Результат открывается в текстовом поле; кнопка «Копировать» переносит его в буфер обмена",
-          ]} />
+          <FeatureList items={t("features.todayExport.list", { returnObjects: true }) as string[]} />
+        </div>
+      ),
+    },
+    {
+      id: "telegram",
+      icon: "🤖",
+      title: t("features.telegram.title"),
+      content: (
+        <div className="space-y-3 text-sm text-gray-600">
+          <p>
+            {t("features.telegram.p1Before")} <strong>{t("features.telegram.p1Bold")}</strong>{" "}
+            {t("features.telegram.p1After")}
+          </p>
+          <FeatureList items={t("features.telegram.list", { returnObjects: true }) as string[]} />
+          <h4 className="font-semibold text-gray-700 mt-4">{t("features.telegram.botHeading")}</h4>
+          <ol className="space-y-1.5 text-sm text-gray-600 list-decimal pl-5">
+            {(t("features.telegram.botSteps", { returnObjects: true }) as string[]).map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+          <h4 className="font-semibold text-gray-700 mt-4">{t("features.telegram.setupHeading")}</h4>
+          <FeatureList items={t("features.telegram.setupList", { returnObjects: true }) as string[]} />
+          <FeatureTip>
+            {t("features.telegram.tip")}
+          </FeatureTip>
         </div>
       ),
     },
     {
       id: "forecast",
       icon: "📈",
-      title: "Прогноз реализации (Гант)",
+      title: t("features.forecast.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Страница <strong>Прогноз реализации</strong> строит полное расписание всех оставшихся
-            этапов для эпика или задачи и предсказывает дату завершения.
+            {t("features.forecast.p1Before")} <strong>{t("features.forecast.p1Bold")}</strong>{" "}
+            {t("features.forecast.p1After")}
           </p>
-          <FeatureList items={[
-            "Введите ключ эпика (SHN-1947) или обычной задачи — система найдёт все дочерние",
-            "Можно указать несколько родителей через запятую (SHN-1947, SHN-2034) — но только одного типа: либо все эпики, либо все стори; смешать эпик со стори система не даст",
-            "Каждая задача расписывается по pipeline её направления с реальными исполнителями",
-            "Гант-диаграмма: по строкам — исполнители, по оси X — рабочие дни",
-            "Масштаб диаграммы регулируется кнопками «−» / «+»",
-            "Клик по бару — открывает окно этапов задачи; для Анализа/Разработки/Дизайна/Тестирования там можно поменять часы и сразу отправить их в Jira; двойной клик по бару — открывает саму задачу в Jira",
-            "Стоимость считается по формуле: оклад ÷ 160 ч/мес × плановые часы",
-            "Недавние эпики сохраняются — можно быстро переключиться",
-          ]} />
-          <h4 className="font-semibold text-gray-700 mt-4">Своды: Эпик / Стори / Консолидировано</h4>
+          <FeatureList items={t("features.forecast.list", { returnObjects: true }) as string[]} />
+          <h4 className="font-semibold text-gray-700 mt-4">{t("features.forecast.rollupHeading")}</h4>
           <p>
-            Переключатели над Ганом группируют бары в сводные полосы — по эпику, по
-            User Story или «Консолидировано».
+            {t("features.forecast.rollupP1")}
           </p>
-          <FeatureList items={[
-            "Эпик / Стори — группировка по предку нужного типа в дереве parent у задачи",
-            "Консолидировано — кластеризация по ЛЮБЫМ связям задачи: общий родитель (эпик/стори) и любые issue-link'и Jira (clones, blocks, relates, duplicate и т.п.)",
-            "Задача, связанная с другой только через уже закрытый клон или через общую стори, всё равно попадёт в один консолидированный кластер — связывающий узел не обязан сам иметь бар на графике",
-            "Если у всех задач есть только общая стори и нет боковых issue-link'ов — Консолидировано совпадёт со сводом по Стори, это ожидаемо",
-          ]} />
-          <h4 className="font-semibold text-gray-700 mt-4">Зависимости (FS)</h4>
+          <FeatureList items={t("features.forecast.rollupList", { returnObjects: true }) as string[]} />
+          <h4 className="font-semibold text-gray-700 mt-4">{t("features.forecast.depsHeading")}</h4>
           <p>
-            Кнопка <strong>«Зависимости»</strong> позволяет задать порядок выполнения задач:
-            задача B не начнётся, пока не закончится задача A (Finish-Start).
+            {t("features.forecast.depsP1Before")} <strong>{t("features.forecast.depsP1Bold")}</strong>{" "}
+            {t("features.forecast.depsP1After")}
           </p>
-          <FeatureList items={[
-            "Зависимость можно поставить на всю задачу целиком (по умолчанию) или на конкретный этап («колбаску») — например, разработка B только после дизайна A, при этом аналитика B может идти параллельно",
-            "Добавление/удаление зависимостей не пересчитывает прогноз автоматически — можно накопить сразу несколько изменений, кнопка «Пересчитать прогноз» внизу панели запускает пересчёт по требованию",
-            "Зависимость, сохранённая для одного родителя (SHN-1947), автоматически учитывается и в прогнозе по нескольким родителям, если он включает этот ключ (SHN-1947, SHN-2034) — отдельно настраивать не нужно",
-          ]} />
-          <h4 className="font-semibold text-gray-700 mt-2">Отпуска</h4>
+          <FeatureList items={t("features.forecast.depsList", { returnObjects: true }) as string[]} />
+          <h4 className="font-semibold text-gray-700 mt-2">{t("features.forecast.vacationsHeading")}</h4>
           <p>
-            Кнопка <strong>«Отпуска»</strong> позволяет указать периоды отсутствия сотрудников.
-            В эти дни система не планирует работу — задачи автоматически сдвигаются.
+            {t("features.forecast.vacationsP1Before")} <strong>{t("features.forecast.vacationsP1Bold")}</strong>{" "}
+            {t("features.forecast.vacationsP1After")}
           </p>
-          <h4 className="font-semibold text-gray-700 mt-2">Без оценок</h4>
+          <h4 className="font-semibold text-gray-700 mt-2">{t("features.forecast.missingEstimatesHeading")}</h4>
           <p>
-            Если задача не имеет оценки в Jira, система использует дефолтное значение (настраивается).
-            Оранжевый индикатор показывает количество таких задач — по клику открывается редактор
-            оценок прямо в интерфейсе без перехода в Jira.
+            {t("features.forecast.missingEstimatesP1")}
           </p>
-          <h4 className="font-semibold text-gray-700 mt-2">ROI</h4>
+          <h4 className="font-semibold text-gray-700 mt-2">{t("features.forecast.roiHeading")}</h4>
           <p>
-            Кнопка <strong>«Посчитать ROI»</strong> рассчитывает окупаемость:
-            вводите ожидаемый доход от проекта — система покажет прибыль и ROI в %.
+            {t("features.forecast.roiP1Before")} <strong>{t("features.forecast.roiP1Bold")}</strong>{" "}
+            {t("features.forecast.roiP1After")}
           </p>
         </div>
       ),
@@ -390,67 +362,45 @@ function FeaturesSection() {
     {
       id: "root-tasks",
       icon: "📌",
-      title: "Стартовая задача сотрудника",
+      title: t("features.rootTasks.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Иногда нужно явно зафиксировать, что сотрудник <em>прямо сейчас</em> держит в
-            работе конкретную задачу — независимо от приоритета. Для этого есть
-            <strong> стартовая задача</strong>: она встаёт первой в очереди исполнителя на
-            Гант-диаграмме.
+            {t("features.rootTasks.p1Before")} <em>{t("features.rootTasks.p1Em")}</em>{" "}
+            {t("features.rootTasks.p1Middle")}
+            <strong> {t("features.rootTasks.p1Bold")}</strong>: {t("features.rootTasks.p1After")}
           </p>
-          <FeatureList items={[
-            "Назначается в панели «Зависимости» на странице Прогноза — блок «📌 Стартовые задачи»",
-            "Выберите сотрудника и задачу из списка его задач, нажмите «Назначить стартовой»",
-            "На Гант-диаграмме стартовая задача помечена значком 📌 у бара",
-            "Снять можно крестиком × в списке стартовых задач — она вернётся к обычному порядку по приоритету",
-            "При просмотре исторического снимка Ганта (см. ниже) стартовые задачи не показываются — снимок заморожен как есть",
-          ]} />
+          <FeatureList items={t("features.rootTasks.list", { returnObjects: true }) as string[]} />
         </div>
       ),
     },
     {
       id: "missing-assignees",
       icon: "🚩",
-      title: "Фильтр «Без исполнителей»",
+      title: t("features.missingAssignees.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Вкладка <strong>«Без исполнителей»</strong> на странице Прогноза (рядом со
-            Свод по Epic / Story / Консолидировано) показывает задачи, в которых не заполнен
-            кто-то из обязательных участников — без этого расписание по ним будет неточным.
+            {t("features.missingAssignees.p1Before")} <strong>{t("features.missingAssignees.p1Bold")}</strong>{" "}
+            {t("features.missingAssignees.p1After")}
           </p>
-          <FeatureList items={[
-            "Счётчик на вкладке показывает количество таких задач",
-            "Правило зависит от pipeline направления: для дизайна обязательны Аналитик и Дизайнер, для разработки — Аналитик, Разработчик и Тестировщик",
-            "Таблица: задача, название, направление, кого не хватает",
-            "Прямо в таблице кнопки «+ Роль» открывают поиск пользователя Jira и назначают его без перехода в Jira",
-            "После назначения задача сразу пропадает из списка — поле в Jira обновляется немедленно",
-          ]} />
+          <FeatureList items={t("features.missingAssignees.list", { returnObjects: true }) as string[]} />
         </div>
       ),
     },
     {
       id: "history-mode",
       icon: "🕐",
-      title: "Режим «По истории статусов»",
+      title: t("features.historyMode.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Переключатель <strong>«По истории статусов»</strong> на странице Прогноза включает
-            расширенный режим: к будущему прогнозу добавляется реконструкция прошлого.
+            {t("features.historyMode.p1Before")} <strong>{t("features.historyMode.p1Bold")}</strong>{" "}
+            {t("features.historyMode.p1After")}
           </p>
-          <FeatureList items={[
-            "На Ганте показывается вся история: от самой ранней фазы до сегодня (приглушённые бары) и прогноз (яркие бары)",
-            "Красная пунктирная линия «сегодня» разделяет факт и прогноз",
-            "Владелец исторической фазы — тот, кто был назначен в Jira на момент перехода статуса",
-            "Если исполнитель несовместим с типом работы (разработчик в анализе) — фаза пропускается",
-            "Если assignee сменился внутри фазы — берётся последний (он и довёл до конца)",
-            "Под метриками появляется строка «Потрачено / Осталось» в часах и рублях",
-          ]} />
+          <FeatureList items={t("features.historyMode.list", { returnObjects: true }) as string[]} />
           <FeatureTip>
-            Стоимость исторических фаз считается по плановым часам из Jira (не по реально
-            затраченному времени), что даёт корректное сравнение план/факт.
+            {t("features.historyMode.tip")}
           </FeatureTip>
         </div>
       ),
@@ -458,128 +408,49 @@ function FeaturesSection() {
     {
       id: "snapshots",
       icon: "📊",
-      title: "Тренд завершения (снапшоты)",
+      title: t("features.snapshots.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Каждый раз при построении прогноза система автоматически сохраняет
-            <strong> снапшот</strong> — фиксирует предиктную дату завершения на сегодня.
-            Из этих точек строится <strong>график тренда</strong> — видно, сдвигается ли
-            дата завершения или остаётся стабильной.
+            {t("features.snapshots.p1Before")}
+            <strong> {t("features.snapshots.p1Bold1")}</strong> {t("features.snapshots.p1Middle")}{" "}
+            <strong>{t("features.snapshots.p1Bold2")}</strong> {t("features.snapshots.p1After")}
           </p>
-          <FeatureList items={[
-            "График отображается под Гант-диаграммой автоматически при накоплении данных",
-            "Снапшоты можно закреплять (📌) — они не исчезают при очистке старых",
-            "Незакреплённые снапшоты хранятся по одному на каждый день",
-            "Тренд вверх (дата откладывается) — сигнал о проблемах с прогрессом",
-          ]} />
+          <FeatureList items={t("features.snapshots.list", { returnObjects: true }) as string[]} />
         </div>
       ),
     },
     {
       id: "history-page",
       icon: "📜",
-      title: "История спринтов",
+      title: t("features.historyPage.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Страница <strong>История</strong> показывает все сохранённые спринты с возможностью
-            просмотра состава и статуса задач.
+            {t("features.historyPage.p1Before")} <strong>{t("features.historyPage.p1Bold")}</strong>{" "}
+            {t("features.historyPage.p1After")}
           </p>
-          <FeatureList items={[
-            "Фильтрация по статусу: Черновик / Утверждён / Закрыт",
-            "Просмотр полного состава задач каждого спринта",
-            "Для закрытых спринтов — финальный статус каждой задачи из Jira",
-            "Возможность закрыть спринт вручную с фиксацией фактических статусов",
-          ]} />
-          <h4 className="font-semibold text-gray-700 mt-4">Снимки Ганта</h4>
+          <FeatureList items={t("features.historyPage.list", { returnObjects: true }) as string[]} />
+          <h4 className="font-semibold text-gray-700 mt-4">{t("features.historyPage.snapshotsHeading")}</h4>
           <p>
-            В детальном просмотре спринта можно построить и сохранить <strong>снимок</strong>
-            {" "}Гант-диаграммы — «фотографию» расписания на момент времени.
+            {t("features.historyPage.snapshotsP1Before")} <strong>{t("features.historyPage.snapshotsP1Bold")}</strong>
+            {" "}{t("features.historyPage.snapshotsP1After")}
           </p>
-          <FeatureList items={[
-            "Кнопка «💾 Сохранить снимок» фиксирует текущий расчёт Ганта целиком, а не только дату завершения",
-            "Переключатель «Вид» позволяет открыть любой из сохранённых снимков вместо текущего расчёта",
-            "При просмотре снимка появляется баннер «📷 Исторический снимок от …» — это режим только для просмотра",
-            "Вернуться к актуальному расчёту — кнопкой «Вернуться к текущему», удалить снимок — «Удалить снимок»",
-          ]} />
+          <FeatureList items={t("features.historyPage.snapshotsList", { returnObjects: true }) as string[]} />
         </div>
       ),
     },
     {
       id: "settings",
       icon: "⚙️",
-      title: "Настройки конфига",
+      title: t("features.settings.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            В системе может быть несколько конфигураций (переключатель в шапке). Каждая конфигурация
-            — это отдельный набор настроек для команды или проекта.
+            {t("features.settings.p1")}
           </p>
           <div className="space-y-4">
-            {[
-              {
-                title: "Основные параметры",
-                items: [
-                  "Ключ проекта Jira — фильтрует задачи по проекту",
-                  "Поле спринта (Sprint field) — кастомное поле Jira для привязки к спринту",
-                  "Поле разработчика — кастомное поле, в котором указывается ответственный разработчик",
-                  "Поле дизайнера / Поле тестировщика — кастомные поля Jira с явным ответственным за дизайн или тестирование (приоритетнее автовыбора по роли)",
-                  "Часов на человека — рабочий бюджет одного участника в спринте",
-                  "Дефолтные часы задачи — используются если оценка не заполнена",
-                  "Часы руководителя — дополнительное время для лидов на управление",
-                ],
-              },
-              {
-                title: "Подключение к Jira",
-                items: [
-                  "Jira Base URL / Email / API Token — нужны только если у этого конфига свой Jira-аккаунт или инстанс, отдельный от сервера",
-                  "Пусто — используются серверные настройки (.env); большинству конфигов это и нужно",
-                  "Токен write-only: после сохранения не показывается, только отметка, что он задан",
-                ],
-              },
-              {
-                title: "Команда",
-                items: [
-                  "Список участников: Jira-логин, имя в системе, роль, оклад",
-                  "Оклад используется для расчёта стоимости: оклад ÷ 160 ч/мес × часы",
-                  "Один человек может быть в нескольких конфигах с разными окладами",
-                ],
-              },
-              {
-                title: "Роли",
-                items: [
-                  "Включение/выключение ролей — отключённые роли не участвуют в планировании",
-                  "Роль «Лид» получает дополнительные часы на управление",
-                  "Порядок ролей определяет приоритет при автовыборе исполнителя",
-                ],
-              },
-              {
-                title: "Маппинг статусов → Бакеты",
-                items: [
-                  "Задаёт соответствие: статус Jira + роль → этап (бакет)",
-                  "Например: «В разработке» + analyst → Тестирование (аналитик контролирует разработку)",
-                  "Один статус может иметь разные бакеты для разных ролей",
-                ],
-              },
-              {
-                title: "Направления",
-                items: [
-                  "Название, метки Jira (labels) — по ним задачи привязываются к направлению, поиск регистронезависимый",
-                  "Pipeline видов работ и роли собраны в одной таблице: для каждого этапа видны его бакет и роль",
-                  "Для Аналитики, Разработки и Тестирования роль — выпадашка: можно закрепить за направлением свою роль вместо системной по умолчанию. Для Дизайна, Код-ревью и Дизайн-ревью роль фиксированная и не переопределяется",
-                  "Если в pipeline есть этап «Дизайн» и в команде больше одного дизайнера — появляется отдельный выбор конкретного дизайнера направления",
-                ],
-              },
-              {
-                title: "Псевдо-задачи",
-                items: [
-                  "Фиксированные задачи сотрудника (встречи, дежурства, обучение)",
-                  "Автоматически добавляются в каждый спринт и учитываются в бюджете часов",
-                  "Можно привязать к конкретному номеру спринта или делать повторяющимися",
-                ],
-              },
-            ].map((block) => (
+            {settingsBlocks.map((block) => (
               <div key={block.title}>
                 <h4 className="font-semibold text-gray-700 mb-1.5">{block.title}</h4>
                 <FeatureList items={block.items} />
@@ -592,117 +463,83 @@ function FeaturesSection() {
     {
       id: "designer-tester-fields",
       icon: "🧩",
-      title: "Поля Дизайнер/Тестировщик",
+      title: t("features.designerTesterFields.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Если в задаче явно указан конкретный человек — дизайнер или тестировщик —
-            система должна брать именно его, а не подбирать по роли. Для этого в Настройках
-            есть поля «Поле дизайнера» и «Поле тестировщика» (кастомные поля Jira типа
-            «пользователь»). У дизайнера и тестировщика цепочки приоритета немного разные —
-            у тестировщика есть дополнительный шаг с историей changelog.
+            {t("features.designerTesterFields.p1")}
           </p>
-          <h4 className="font-semibold text-gray-700 mt-2">Дизайнер — порядок выбора</h4>
+          <h4 className="font-semibold text-gray-700 mt-2">{t("features.designerTesterFields.designerHeading")}</h4>
           <ol className="space-y-1.5 text-sm text-gray-600 list-decimal pl-5">
-            <li>Значение поля «Дизайнер» из Jira, если оно заполнено — безусловный приоритет</li>
-            <li>Assignee задачи, если он входит в команду с ролью designer</li>
-            <li>Дизайнер, явно выбранный для направления (Настройки → Направления, если в команде их несколько)</li>
-            <li>Автовыбор — единственный/первый дизайнер в команде</li>
+            {(t("features.designerTesterFields.designerSteps", { returnObjects: true }) as string[]).map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
           </ol>
-          <h4 className="font-semibold text-gray-700 mt-2">Тестировщик — порядок выбора</h4>
+          <h4 className="font-semibold text-gray-700 mt-2">{t("features.designerTesterFields.testerHeading")}</h4>
           <ol className="space-y-1.5 text-sm text-gray-600 list-decimal pl-5">
-            <li>Значение поля «Тестировщик» из Jira, если оно заполнено — безусловный приоритет</li>
-            <li>Историчный тестировщик — кто реально тестировал задачу в прошлом, по changelog (если задача уже проходила тестирование)</li>
-            <li>Если у направления задана отдельная роль тестировщика (Настройки → Направления) — тестировщик этой роли</li>
-            <li>Дефолт — если роль тестировщика не задана, тестирует аналитик: Assignee → Responsible → Reporter</li>
+            {(t("features.designerTesterFields.testerSteps", { returnObjects: true }) as string[]).map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
           </ol>
-          <FeatureList items={[
-            "Поле «Время дизайнера(ч.)» — отдельная оценка часов на дизайн-этап, если у задачи есть и аналитика, и дизайн",
-            "Оба поля опциональны: если не настроены — система работает по ролям команды, как и раньше",
-          ]} />
+          <FeatureList items={t("features.designerTesterFields.list", { returnObjects: true }) as string[]} />
         </div>
       ),
     },
     {
       id: "standup",
       icon: "🎙️",
-      title: "Стендап",
+      title: t("features.standup.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Режим <strong>Стендап</strong> доступен через историю утверждённых спринтов.
-            Показывает задачи каждого участника на текущий день с учётом реального статуса в Jira.
+            {t("features.standup.p1Before")} <strong>{t("features.standup.p1Bold")}</strong>{" "}
+            {t("features.standup.p1After")}
           </p>
-          <FeatureList items={[
-            "Подсвечивает просроченные задачи — те, что должны были завершиться раньше",
-            "Показывает плановые часы и период работы по каждой задаче",
-            "Одним кликом можно отправить статус задачи в Jira (переключить статус)",
-            "Фильтрация по конкретному исполнителю",
-          ]} />
+          <FeatureList items={t("features.standup.list", { returnObjects: true }) as string[]} />
         </div>
       ),
     },
     {
       id: "configs",
       icon: "🔀",
-      title: "Несколько конфигураций",
+      title: t("features.configs.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Переключатель конфигурации в правом верхнем углу шапки позволяет работать с
-            несколькими проектами или командами из одного интерфейса.
+            {t("features.configs.p1")}
           </p>
-          <FeatureList items={[
-            "Каждый конфиг — отдельная команда, бюджеты, направления, маппинги статусов",
-            "Переключение мгновенное — все страницы обновляются автоматически",
-            "Оклады участников синхронизируются между конфигами: если в конфиге A оклад выше — он используется везде",
-            "Один человек (по accountId Jira) может быть в нескольких конфигах с разными ролями",
-            "Создать новый конфиг или удалить существующий — в разделе Настройки",
-          ]} />
+          <FeatureList items={t("features.configs.list", { returnObjects: true }) as string[]} />
         </div>
       ),
     },
     {
       id: "jira-api",
       icon: "🔌",
-      title: "Используемые методы Jira API",
+      title: t("features.jiraApi.title"),
       content: (
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            Все запросы идут под кредами Jira-подключения активного конфига (Настройки →
-            «Подключение к Jira»), либо, если оно не задано, под серверными настройками по
-            умолчанию. Ниже — полный список используемых эндпоинтов Jira REST API v3 и Agile API.
+            {t("features.jiraApi.p1")}
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-gray-50">
-                  <th className="text-left px-3 py-2 text-gray-600 font-semibold">Метод</th>
-                  <th className="text-left px-3 py-2 text-gray-600 font-semibold">Endpoint</th>
-                  <th className="text-left px-3 py-2 text-gray-600 font-semibold">Для чего и где</th>
+                  <th className="text-left px-3 py-2 text-gray-600 font-semibold">{t("features.jiraApi.table.method")}</th>
+                  <th className="text-left px-3 py-2 text-gray-600 font-semibold">{t("features.jiraApi.table.endpoint")}</th>
+                  <th className="text-left px-3 py-2 text-gray-600 font-semibold">{t("features.jiraApi.table.description")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {[
-                  { m: "GET", path: "/rest/api/3/myself", desc: "Проверка подключения — статус «Jira: …» в шапке приложения" },
-                  { m: "GET", path: "/rest/api/3/field", desc: "Поиск customfield «Story Points» — дефолтная оценка часов, если в задаче не указана своя" },
-                  { m: "GET", path: "/rest/agile/1.0/board/{boardId}/issue", desc: "Задачи с настроенных Jira-досок — источник кандидатов в разделе «Спринт»" },
-                  { m: "GET", path: "/rest/agile/1.0/board/{boardId}/sprint", desc: "Активный спринт борды (даты) — отметка границ спринта на Ганте «Прогноза»" },
-                  { m: "GET", path: "/rest/api/3/search/jql", desc: "JQL-поиск: по компоненту проекта (доп. кандидаты в Спринт), дочерние задачи эпика/истории и батчи по ключам (Прогноз, режим по утверждённому спринту)" },
-                  { m: "GET", path: "/rest/api/3/issue/{key}", desc: "Сама задача + issuelinks — определение типа (эпик/история/задача) и поиск детей/родителей в «Прогнозе»" },
-                  { m: "GET", path: "/rest/api/3/issue/{key}/changelog", desc: "Полная история переходов статусов — режим «По истории статусов»" },
-                  { m: "PUT", path: "/rest/api/3/issue/{key}", desc: "Запись полей задачи (часы ролей, разработчик/дизайнер/тестировщик/аналитик) — вкладка «Без исполнителей», редактор оценок" },
-                  { m: "POST", path: "/rest/api/3/issue/{key}/comment", desc: "Комментарий с итогами — режим «Стендап»" },
-                  { m: "GET", path: "/rest/api/3/user/search", desc: "Поиск пользователей Jira — модалки назначения исполнителя без перехода в Jira" },
-                ].map((r, i) => (
+                {jiraApiRows.map((r, i) => (
                   <tr key={i} className="hover:bg-gray-50 align-top">
                     <td className="px-3 py-2">
                       <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                        r.m === "GET" ? "bg-blue-100 text-blue-800"
-                          : r.m === "PUT" ? "bg-amber-100 text-amber-800"
+                        r.method === "GET" ? "bg-blue-100 text-blue-800"
+                          : r.method === "PUT" ? "bg-amber-100 text-amber-800"
                           : "bg-emerald-100 text-emerald-800"
                       }`}>
-                        {r.m}
+                        {r.method}
                       </span>
                     </td>
                     <td className="px-3 py-2"><code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{r.path}</code></td>
@@ -713,8 +550,9 @@ function FeaturesSection() {
             </table>
           </div>
           <FeatureTip>
-            Только два метода что-то меняют в Jira: <code>PUT .../fields</code> (поля задачи) и
-            <code> POST .../comment</code> (комментарий стендапа). Все остальные — только чтение.
+            {t("features.jiraApi.tipBefore")} <code>{t("features.jiraApi.tipPutCode")}</code>{" "}
+            {t("features.jiraApi.tipMiddle")}
+            <code> {t("features.jiraApi.tipPostCode")}</code> {t("features.jiraApi.tipAfter")}
           </FeatureTip>
         </div>
       ),

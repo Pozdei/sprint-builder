@@ -11,11 +11,29 @@
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.core.i18n import make_translator
 from app.db import models, repository, users_repository
 from app.db.repository import (
     upsert_directions, upsert_role_status_buckets, upsert_role_status_default_hours,
     upsert_roles, upsert_terminal_statuses,
 )
+
+_MSG: dict[str, dict[str, str]] = {
+    "config_not_found_or_not_owned": {
+        "ru": "Конфиг {id} не найден или вам не принадлежит",
+        "en": "Config {id} not found or does not belong to you",
+    },
+    "config_name_empty": {
+        "ru": "Имя конфига не может быть пустым",
+        "en": "Config name cannot be empty",
+    },
+    "source_config_not_found": {
+        "ru": "Исходный конфиг {id} не найден",
+        "en": "Source config {id} not found",
+    },
+}
+_t = make_translator(_MSG)
 
 
 class ConfigServiceError(Exception):
@@ -86,10 +104,10 @@ def ensure_active_config(db: Session, user: models.User) -> models.Config:
 
 
 def set_active_config(db: Session, user: models.User,
-                       config_id: int) -> models.Config:
+                       config_id: int, lang: str = "ru") -> models.Config:
     cfg = repository.get_config(db, config_id)
     if not cfg or cfg.owner_user_id != user.id:
-        raise ConfigServiceError(f"Конфиг {config_id} не найден или вам не принадлежит")
+        raise ConfigServiceError(_t("config_not_found_or_not_owned", lang, id=config_id))
     users_repository.set_active_config(db, user, config_id)
     return cfg
 
@@ -106,10 +124,10 @@ def _unique_name(db: Session, user_id: int, desired: str) -> str:
     return base
 
 
-def create_empty_config(db: Session, user: models.User, *, name: str) -> models.Config:
+def create_empty_config(db: Session, user: models.User, *, name: str, lang: str = "ru") -> models.Config:
     """Пустой конфиг с дефолтным набором ролей. Имя — уникально в рамках user."""
     if not name.strip():
-        raise ConfigServiceError("Имя конфига не может быть пустым")
+        raise ConfigServiceError(_t("config_name_empty", lang))
 
     cfg_name = _unique_name(db, user.id, name.strip())
 
@@ -149,14 +167,14 @@ def create_empty_config(db: Session, user: models.User, *, name: str) -> models.
 
 
 def create_config_from(db: Session, user: models.User, *,
-                        source_config_id: int, name: str) -> models.Config:
+                        source_config_id: int, name: str, lang: str = "ru") -> models.Config:
     """Создать новый конфиг копированием из source. Псевдо-задачи НЕ копируем."""
     source = repository.get_config(db, source_config_id)
     if not source:
-        raise ConfigServiceError(f"Исходный конфиг {source_config_id} не найден")
+        raise ConfigServiceError(_t("source_config_not_found", lang, id=source_config_id))
 
     if not name.strip():
-        raise ConfigServiceError("Имя конфига не может быть пустым")
+        raise ConfigServiceError(_t("config_name_empty", lang))
     cfg_name = _unique_name(db, user.id, name.strip())
 
     src_dict = repository.model_to_sprint_config_dict(source)
@@ -205,10 +223,10 @@ def create_config_from(db: Session, user: models.User, *,
     return cfg
 
 
-def delete_config(db: Session, user: models.User, config_id: int) -> None:
+def delete_config(db: Session, user: models.User, config_id: int, lang: str = "ru") -> None:
     cfg = repository.get_config(db, config_id)
     if not cfg or cfg.owner_user_id != user.id:
-        raise ConfigServiceError(f"Конфиг {config_id} не найден или вам не принадлежит")
+        raise ConfigServiceError(_t("config_not_found_or_not_owned", lang, id=config_id))
 
     # Защита от удаления последнего конфига — не делаем, lead может остаться
     # без конфига. При следующем обращении ensure_active_config создаст ему
@@ -240,5 +258,11 @@ def to_out_dict(config: models.Config) -> dict:
         "jira_base_url": config.jira_base_url or "",
         "jira_email": config.jira_email or "",
         "jira_api_token_set": bool(config.jira_api_token_enc),
+        "telegram_chat_id": config.telegram_chat_id or "",
+        "telegram_daily_enabled": bool(config.telegram_daily_enabled),
+        "telegram_daily_time": config.telegram_daily_time or "",
+        "telegram_bot_token_set": bool(config.telegram_bot_token_enc),
+        # Доступна ли отправка вообще: токен конфига ИЛИ глобальный .env.
+        "telegram_bot_configured": bool(config.telegram_bot_token_enc) or bool(settings.telegram_bot_token),
         **base,
     }

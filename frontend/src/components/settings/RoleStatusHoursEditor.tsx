@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { RoleOut, RoleStatusDefaultHoursOut } from "../../types/api";
 
 interface Props {
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export function RoleStatusHoursEditor({ value, onChange, roles }: Props) {
+  const { t } = useTranslation(["settings", "common"]);
   const update = (i: number, field: keyof RoleStatusDefaultHoursOut, v: string | number) => {
     const next = [...value];
     next[i] = { ...next[i], [field]: v } as RoleStatusDefaultHoursOut;
@@ -27,9 +29,9 @@ export function RoleStatusHoursEditor({ value, onChange, roles }: Props) {
       <table className="w-full text-sm border">
         <thead className="bg-gray-100">
           <tr>
-            <th className="text-left px-2 py-1 border-b font-semibold w-1/3">Роль</th>
-            <th className="text-left px-2 py-1 border-b font-semibold w-1/3">Статус Jira</th>
-            <th className="text-left px-2 py-1 border-b font-semibold w-1/4">Часы</th>
+            <th className="text-left px-2 py-1 border-b font-semibold w-1/3">{t("statusHours.table.role")}</th>
+            <th className="text-left px-2 py-1 border-b font-semibold w-1/3">{t("statusHours.table.jiraStatus")}</th>
+            <th className="text-left px-2 py-1 border-b font-semibold w-1/4">{t("statusHours.table.hours")}</th>
             <th className="px-2 py-1 border-b w-12"></th>
           </tr>
         </thead>
@@ -71,6 +73,7 @@ export function RoleStatusHoursEditor({ value, onChange, roles }: Props) {
                 <button
                   onClick={() => handleRemove(i)}
                   className="text-red-500 hover:text-red-700 text-lg"
+                  title={t("statusHours.remove")}
                 >
                   ×
                 </button>
@@ -83,7 +86,7 @@ export function RoleStatusHoursEditor({ value, onChange, roles }: Props) {
         onClick={handleAdd}
         className="mt-2 text-sm text-blue-600 hover:text-blue-800"
       >
-        + Добавить
+        {t("statusHours.add")}
       </button>
     </div>
   );

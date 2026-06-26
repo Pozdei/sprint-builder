@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { JiraUserSearchModal } from "../JiraUserSearchModal";
 import type { TeamMemberOut } from "../../types/api";
 import type { JiraUserSearchResult } from "../../types/intrusions";
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function TeamEditor({ value, onChange, roleOptions }: Props) {
+  const { t } = useTranslation(["settings", "common"]);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const handlePickFromJira = (user: JiraUserSearchResult) => {
@@ -35,7 +37,7 @@ export function TeamEditor({ value, onChange, roleOptions }: Props) {
   };
 
   const handleRemove = (accId: string) => {
-    if (!window.confirm("Удалить человека из команды?")) return;
+    if (!window.confirm(t("team.removeConfirm"))) return;
     const next = { ...value };
     delete next[accId];
     onChange(next);
@@ -59,10 +61,10 @@ export function TeamEditor({ value, onChange, roleOptions }: Props) {
       <table className="w-full text-sm bg-white border rounded-lg overflow-hidden">
         <thead className="bg-gray-100 border-b">
           <tr>
-            <th className="text-left px-3 py-1.5">Имя в Jira</th>
-            <th className="text-left px-3 py-1.5 w-48">Имя для файла</th>
-            <th className="text-left px-3 py-1.5 w-40">Роль</th>
-            <th className="text-left px-3 py-1.5 w-64">accountId</th>
+            <th className="text-left px-3 py-1.5">{t("team.table.jiraName")}</th>
+            <th className="text-left px-3 py-1.5 w-48">{t("team.table.fileName")}</th>
+            <th className="text-left px-3 py-1.5 w-40">{t("team.table.role")}</th>
+            <th className="text-left px-3 py-1.5 w-64">{t("team.table.accountId")}</th>
             <th className="w-10"></th>
           </tr>
         </thead>
@@ -70,7 +72,7 @@ export function TeamEditor({ value, onChange, roleOptions }: Props) {
           {rows.length === 0 && (
             <tr>
               <td colSpan={4} className="text-center text-gray-400 py-3 italic">
-                Команда пуста. Добавьте через «+ Добавить из Jira».
+                {t("team.empty")}
               </td>
             </tr>
           )}
@@ -82,7 +84,7 @@ export function TeamEditor({ value, onChange, roleOptions }: Props) {
                   type="text"
                   value={m.file_name}
                   onChange={(e) => updateField(accId, "file_name", e.target.value)}
-                  placeholder="напр. Бадамова А."
+                  placeholder={t("team.fileNamePlaceholder")}
                   className="w-full px-2 py-1 border rounded text-sm"
                 />
               </td>
@@ -107,7 +109,7 @@ export function TeamEditor({ value, onChange, roleOptions }: Props) {
                 <button
                   onClick={() => handleRemove(accId)}
                   className="text-red-500 hover:text-red-700"
-                  title="Удалить"
+                  title={t("team.remove")}
                 >
                   ×
                 </button>
@@ -121,7 +123,7 @@ export function TeamEditor({ value, onChange, roleOptions }: Props) {
         onClick={() => setSearchOpen(true)}
         className="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-semibold"
       >
-        + Добавить из Jira
+        {t("team.addFromJira")}
       </button>
 
       {searchOpen && (

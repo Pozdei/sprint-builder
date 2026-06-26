@@ -427,6 +427,7 @@ def _build_with_history(
     for p in past_phases:
         sd = p.pop("_start_dt")
         ed = p.pop("_end_dt")
+        is_current_open = p.pop("_is_current_open", False)
         sh = dt_to_work_hours(sd, origin, hours_per_day)
         eh = dt_to_work_hours(ed, origin, hours_per_day, end=True)
         if eh - sh < min_width:
@@ -435,6 +436,12 @@ def _build_with_history(
         p["end_hours"] = round(eh, 3)
         p["start"] = sd.isoformat()
         p["end"] = ed.isoformat()
+        if is_current_open:
+            # Текущий статус ещё не завершён — этот же этап уже сидит в work_items
+            # как будущая работа (с полной оценкой часов). Бар оставляем для
+            # наглядности «висит в статусе с такой-то даты», но без часов/стоимости,
+            # чтобы не задваивать с прогнозом остатка.
+            p["hours"] = 0.0
         past_items.append(p)
 
     gantt_items = past_items + forecast_items

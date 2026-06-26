@@ -1,0 +1,254 @@
+{
+  "page": {
+    "title": "Delivery Forecast",
+    "intro": "Enter a parent key (epic / story / task) — you can list several separated by commas if they are of the same type (e.g. two epics) — or select a sprint. The system will schedule the remaining stages and predict the completion date.",
+    "startDateLabel": "Calculation start",
+    "byParentLabel": "By parent (epic / story)",
+    "epicKeyPlaceholder": "e.g. SHN-3969 or SHN-3969, SHN-4012",
+    "epicKeyTitle": "Several keys separated by commas — must be the same type (two epics or two stories, not mixed)",
+    "orApprovedSprintLabel": "or an approved sprint",
+    "noApprovedSprints": "no approved sprints",
+    "byParentOption": "— by parent —",
+    "sprintOption": "Sprint {{num}} ({{count}} tasks)",
+    "hoursPerDayLabel": "Hrs/day",
+    "calculating": "Calculating…",
+    "buildForecast": "Build forecast",
+    "useHistoryTitle": "Restore past stages from Jira history (who worked on analytics/development/testing and when) and show them on the same timeline as the forecast",
+    "useHistoryLabel": "By status history",
+    "recentLabel": "Recent:",
+    "buildForecastForTitle": "Build forecast for {{key}}",
+    "removeFromRecentTitle": "Remove from recent",
+    "toast": {
+      "sprintLabel": "Sprint {{num}}",
+      "forecastBuiltWithDate": "{{label}}: forecast built — {{date}}",
+      "forecastBuilt": "{{label}}: forecast built",
+      "ganttSnapshotSaved": "Gantt chart snapshot saved ({{datetime}})",
+      "ganttSnapshotDeleted": "Snapshot deleted"
+    },
+    "confirmDeleteGanttSnapshot": "Delete this Gantt chart snapshot?",
+    "completionCard": {
+      "title": "Predicted completion date",
+      "noData": "no data",
+      "overdueBy": "overdue by {{count}} d.",
+      "today": "today",
+      "inDays": "in {{count}} d."
+    },
+    "metrics": {
+      "totalIssues": "Total tasks",
+      "doneIssues": "Done",
+      "remainingIssues": "Remaining tasks",
+      "remainingWorkItemsSub": "{{count}} stages scheduled",
+      "plannedHours": "Planned hours",
+      "hoursUnit": "h",
+      "missingEstimatesSub": "{{count}} without estimate",
+      "allEstimatedSub": "all estimated"
+    },
+    "cost": {
+      "title": "Project cost",
+      "showCalculation": "show calculation",
+      "byTeamSalaries": "based on team salaries",
+      "calculateRoi": "Calculate ROI",
+      "detailedCalculation": "Detailed calculation",
+      "spent": "Spent",
+      "remaining": "Remaining",
+      "factNote": "left of the red line on the chart — actuals from Jira history"
+    },
+    "warnings": {
+      "title": "Tasks with unknown status ({{count}}) — scheduled from the start of the pipeline",
+      "andMore": "…and {{count}} more"
+    },
+    "gantt": {
+      "clickHint": "Click — all stages · double-click — Jira",
+      "todayExportButton": "Today's export",
+      "todayExportTitle": "Text export of tasks active today, grouped by direction",
+      "missingAssignees": "Missing assignees",
+      "dependencies": "Dependencies",
+      "vacations": "Vacations",
+      "rollupLabel": "Rollup:",
+      "rollupEpicTitle": "Add a summary bar on top with the total duration of each epic",
+      "rollupEpic": "Epic",
+      "rollupStoryTitle": "Summary bar for the parent task of type \"Story\" (similar to the epic rollup)",
+      "rollupStory": "Story",
+      "rollupParentTitle": "Clusters of tasks linked to each other (via Blocks/Relates/Duplicate issue links, etc.); standalone tasks are not shown",
+      "rollupParent": "Consolidated",
+      "missingEstimates": "Missing estimates",
+      "loadingSnapshot": "Loading snapshot…",
+      "noTasksScheduled": "All epic tasks are done, or there are no tasks with known assignees."
+    }
+  },
+  "costBreakdown": {
+    "title": "Cost calculation",
+    "preparing": "Preparing…",
+    "downloadXlsx": "Download xlsx",
+    "tabs": {
+      "phases": "By stage",
+      "tasks": "By task",
+      "people": "By assignee"
+    },
+    "table": {
+      "task": "Task",
+      "phase": "Stage",
+      "executor": "Assignee",
+      "executors": "Assignees",
+      "title": "Title",
+      "hours": "Hours",
+      "cost": "Cost, ₽",
+      "total": "Total",
+      "noValue": "—"
+    },
+    "noSalaries": "Salaries are not configured",
+    "formulaNote": "Calculation: salary ÷ 160 h/month × planned hours in the forecast"
+  },
+  "roiModal": {
+    "title": "ROI calculation",
+    "revenueLabel": "Project revenue, ₽",
+    "revenuePlaceholder": "E.g. 5,000,000",
+    "projectCost": "Project cost",
+    "profit": "Profit",
+    "roi": "ROI",
+    "formulaNote": "ROI = (revenue − project cost) ÷ project cost × 100%"
+  },
+  "dependencyPanel": {
+    "title": "Dependencies (Finish-Start)",
+    "description": "Task B starts after task A — entirely, or after a specific stage of A if a stage is specified (e.g. \"Design\"). A stage can also be chosen for B — then the dependency is limited to it, and B's other stages are not linked by this dependency.",
+    "loading": "Loading…",
+    "noDependencies": "No dependencies",
+    "inheritedTitle": "Inherited from a smaller combination of parents",
+    "removeTitle": "Remove",
+    "addSectionTitle": "Add dependency",
+    "predecessorLabel": "Predecessor (A)",
+    "successorLabel": "Successor (B)",
+    "stageLabel": "Stage",
+    "taskOption": "— task —",
+    "wholeTaskOption": "whole task",
+    "saving": "Saving…",
+    "addDependency": "Add dependency",
+    "toast": {
+      "dependencyAdded": "Dependency added: {{from}} → {{to}}",
+      "dependencyRemoved": "Dependency removed",
+      "rootTaskSet": "Root task assigned",
+      "rootTaskUnset": "Root task removed"
+    },
+    "rootTasks": {
+      "title": "Root tasks",
+      "description": "An employee's root task is placed first in their queue on the Gantt chart — reflecting what they are actually working on right now.",
+      "loading": "Loading…",
+      "notAssigned": "Not assigned",
+      "unsetTitle": "Remove",
+      "employeeLabel": "Employee",
+      "selectEmployeeOption": "— select an employee —",
+      "rootTaskLabel": "Root task",
+      "selectTaskOption": "— select a task —",
+      "saving": "Saving…",
+      "assignAsRoot": "Assign as root task"
+    },
+    "footer": {
+      "recompute": "Recompute forecast",
+      "hint": "After making changes, click \"Build forecast\" to recompute."
+    }
+  },
+  "vacationPanel": {
+    "title": "Vacations",
+    "noVacations": "No vacations",
+    "removeTitle": "Remove",
+    "addSectionTitle": "Add vacation",
+    "employeeLabel": "Employee",
+    "selectEmployeeOption": "— select an employee —",
+    "fromLabel": "From",
+    "toLabel": "To",
+    "overlapWarning": "Overlaps with vacation {{start}}–{{end}}",
+    "saving": "Saving…",
+    "addVacation": "Add vacation",
+    "footerHint": "Vacations are stored at the config level and affect all sprints. After making changes, click \"Build\".",
+    "toast": {
+      "endBeforeStart": "End date cannot be earlier than the start date",
+      "vacationAdded": "Vacation added: {{name}}",
+      "vacationDeleted": "Vacation deleted"
+    }
+  },
+  "trendChart": {
+    "title": "Completion trend",
+    "pinnedLegend": "📌 — pinned snapshot",
+    "trendLater": "shifting later",
+    "trendEarlier": "shifting earlier",
+    "trendFlat": "stable",
+    "pinnedTitle": "Pinned",
+    "forecastLabel": "Forecast:",
+    "tasksDone": "{{done}}/{{total}} tasks done",
+    "unpinTitle": "Unpin (snapshot will be overwritten)",
+    "pinTitle": "Pin (will not be overwritten)",
+    "unpin": "📌 Unpin",
+    "pin": "📌 Pin",
+    "deleteTitle": "Delete",
+    "unpinFirstTitle": "Unpin the snapshot before deleting",
+    "delete": "Delete"
+  },
+  "todayExport": {
+    "title": "Today's export",
+    "summary": "{{date}} · {{count}} tasks",
+    "noDirection": "No direction",
+    "dateLabel": "Date: {{date}}",
+    "empty": "No tasks are scheduled to be active today.",
+    "close": "Close",
+    "copy": "Copy",
+    "toast": {
+      "copied": "Copied to clipboard",
+      "copyFailed": "Failed to copy"
+    }
+  },
+  "estimateModal": {
+    "title": "Tasks without estimates",
+    "summary": "{{tasks}} tasks · {{fields}} fields not filled in",
+    "allEstimated": "All tasks have estimates in Jira 🎉",
+    "currentDefaultHours": "(currently ~{{hours}}h default)",
+    "hoursPlaceholder": "hours",
+    "hoursUnit": "h",
+    "savedToJira": "✓ Saved to Jira",
+    "filledOf": "Filled in: {{filled}} of {{total}}",
+    "cancel": "Cancel",
+    "close": "Close",
+    "saving": "Saving…",
+    "saveToJira": "Save to Jira ({{count}})",
+    "recompute": "Recompute forecast",
+    "toast": {
+      "noFilledEstimates": "No filled-in estimates to save",
+      "savedCount": "Estimates saved: {{count}}",
+      "savedWithErrors": "Saved {{ok}}, failed {{failed}}"
+    }
+  },
+  "pipelineModal": {
+    "saveTitle": "Save to Jira",
+    "hoursUnit": "h",
+    "savedTitle": "Saved to Jira",
+    "footerNote": "Hours saved to Jira. Gantt chart dates still use the old estimate — recompute if needed.",
+    "recompute": "Recompute forecast",
+    "stagesCount": "{{count}} stages",
+    "totalHours": "{{hours}} h total",
+    "completion": "Completion:",
+    "toast": {
+      "hoursMustBePositive": "Hours must be a positive number",
+      "hoursSaved": "{{key}}: {{hours}} h saved to Jira"
+    }
+  },
+  "missingAssignees": {
+    "allCovered": "All tasks in the design/development directions have assignees.",
+    "table": {
+      "task": "Task",
+      "title": "Title",
+      "direction": "Direction",
+      "missingRole": "Missing role",
+      "noDirection": "—"
+    },
+    "roleLabels": {
+      "responsible": "Analyst",
+      "developer": "Developer",
+      "designer": "Designer",
+      "tester": "Tester"
+    },
+    "saving": "Saving…",
+    "addRole": "+ {{role}}",
+    "toast": {
+      "assigned": "{{key}}: {{role}} — {{name}}"
+    }
+  }
+}

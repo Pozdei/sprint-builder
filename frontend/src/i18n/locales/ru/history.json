@@ -1,0 +1,173 @@
+{
+  "page": {
+    "loading": "Загрузка истории…",
+    "empty": "Нет сохранённых спринтов. Сформируй спринт на вкладке «Спринт».",
+    "title": "История спринтов"
+  },
+  "table": {
+    "num": "№",
+    "status": "Статус",
+    "created": "Создан",
+    "approved": "Утверждён",
+    "closed": "Закрыт",
+    "tasksCount": "Задач"
+  },
+  "status": {
+    "draft": "draft",
+    "approved": "approved",
+    "closed": "closed"
+  },
+  "row": {
+    "loading": "Загрузка…",
+    "downloading": "Скачиваю…",
+    "downloadXlsx": "Скачать xlsx",
+    "approving": "Утверждаю…",
+    "approve": "Утвердить",
+    "deleting": "Удаляю…",
+    "reopening": "Возвращаю…",
+    "reopenToDraft": "Вернуть в драфт",
+    "standup": "📋 Стендап",
+    "closing": "Закрываю…",
+    "closeSprint": "Закрыть спринт"
+  },
+  "confirm": {
+    "approveTitle": "Утвердить Sprint {{num}}?",
+    "approveBody": "В Jira уже должен существовать Sprint {{num}}.",
+    "approveDepsWarning_one": "\n\n⚠ В спринте {{count}} FS-зависимость между задачами — убедитесь, что расписание корректно.",
+    "approveDepsWarning_few": "\n\n⚠ В спринте {{count}} FS-зависимости между задачами — убедитесь, что расписание корректно.",
+    "approveDepsWarning_many": "\n\n⚠ В спринте {{count}} FS-зависимостей между задачами — убедитесь, что расписание корректно.",
+    "reopenTitle": "Вернуть Sprint {{num}} в драфт?",
+    "reopenBody": "Статус изменится на draft, дата утверждения будет сброшена.",
+    "closeTitle": "Закрыть Sprint {{num}}?",
+    "closeBody": "В Jira спринт уже должен быть закрыт (state=closed). Будут получены статусы задач и список \"врывов\" — это может занять минуту.",
+    "deleteTitle": "Удалить Sprint {{num}}?",
+    "deleteSnapshotTitle": "Удалить этот снимок Ганта?"
+  },
+  "toast": {
+    "approved": "Sprint {{num}} утверждён",
+    "reopened": "Sprint {{num}} возвращён в драфт",
+    "closed": "Sprint {{num}} закрыт",
+    "deleted": "Sprint {{num}} удалён",
+    "snapshotSaved": "Снимок Ганта сохранён ({{time}})",
+    "snapshotDeleted": "Снимок удалён"
+  },
+  "gantt": {
+    "sectionTitle": "Диаграмма Ганта",
+    "start": "Старт:",
+    "hoursPerDay": "Ч/день:",
+    "computing": "Считаю…",
+    "build": "Построить",
+    "loadingSnapshot": "Загрузка снимка…"
+  },
+  "standupModal": {
+    "title": "Стендап · Sprint {{num}}",
+    "subtitle": "{{date}} · {{count}} участников · {{tasks}} задач",
+    "step1": {
+      "standupDate": "Дата стендапа",
+      "sprintStartDate": "Дата начала спринта",
+      "sprintStartHint": "(для расчёта Ганта)",
+      "hoursPerDay": "Рабочих часов в день",
+      "rolesLabel": "Роли участников стендапа",
+      "leadSuffix": "(лид)",
+      "noRoles": "Нет настроенных ролей в конфиге спринта."
+    },
+    "step2": {
+      "tasksCount": "{{count}} задач",
+      "statusLabel": "Статус",
+      "commentLabel": "Комментарий",
+      "commentPlaceholder": "Опционально…",
+      "onSchedule": "по плану завершена",
+      "pushToJira": "Отправить в Jira"
+    },
+    "step3": {
+      "done": "Стендап проведён · {{date}}",
+      "commentAdded": "✓ Комментарий добавлен в Jira",
+      "withoutSending": "+ {{count}} задач без отправки в Jira"
+    },
+    "statusValues": {
+      "done": "Выполнено",
+      "inProgress": "В работе",
+      "blocked": "Заблокировано",
+      "notStarted": "Не начинал"
+    },
+    "buckets": {
+      "analysis": "Анализ",
+      "development": "Разработка",
+      "codeReview": "Код-ревью",
+      "testing": "Тестирование",
+      "design": "Дизайн",
+      "designReview": "Дизайн-ревью"
+    },
+    "footer": {
+      "cancel": "Отмена",
+      "loading": "Загружаю…",
+      "loadTasks": "Загрузить задачи →",
+      "back": "← Назад",
+      "pushSummary": "{{pushed}} из {{total}} задач → Jira",
+      "submitting": "Отправляю…",
+      "submit": "Провести стендап",
+      "close": "Закрыть"
+    },
+    "toast": {
+      "noTasksFound": "По выбранным параметрам задач не найдено. Проверьте дату начала спринта и роли.",
+      "loadError": "Ошибка загрузки",
+      "submitError": "Ошибка отправки",
+      "submittedWithPush": "Стендап проведён · {{count}} коммент. отправлено в Jira",
+      "submitted": "Стендап проведён"
+    }
+  },
+  "closedView": {
+    "summaryTitle": "Итоги закрытия",
+    "metrics": {
+      "tasksDone": "Задач выполнено",
+      "ofTotal": "{{done}} из {{total}}",
+      "onPlan": "По плану (ожид. → факт: ✓)",
+      "exceeded": "Перевыполнено",
+      "hoursDone": "Часов выполнено",
+      "hoursOfTotal": "{{done}} из {{total}} ч"
+    },
+    "byPerson": {
+      "title": "По людям",
+      "consultant": "Консультант",
+      "tasks": "Задач",
+      "hours": "Часы",
+      "tasksPercent": "% задач",
+      "hoursPercent": "% часов"
+    },
+    "diffTable": {
+      "title": "Было → Стало",
+      "task": "Задача",
+      "name": "Название",
+      "consultant": "Консультант",
+      "expectedResult": "Ожид. итог",
+      "before": "Было",
+      "after": "Стало",
+      "hours": "Часы",
+      "pseudo": "(псевдо)",
+      "noData": "нет данных"
+    }
+  },
+  "intrusions": {
+    "empty": "Врывов нет — все задачи в Jira-спринте были учтены при утверждении.",
+    "title": "Врывы ({{count}} задач, {{hours}} ч)",
+    "description": "Задачи, которые появились в Jira-спринте после утверждения и привязаны к людям из вашей команды.",
+    "byPerson": {
+      "title": "По людям",
+      "consultant": "Консультант",
+      "role": "Роль",
+      "tasks": "Задач",
+      "hours": "Часы",
+      "done": "Выполнено",
+      "doneRatio": "{{done}}/{{total}} ({{hours}}ч)"
+    },
+    "list": {
+      "title": "Список задач",
+      "task": "Задача",
+      "name": "Название",
+      "consultant": "Консультант",
+      "role": "Роль",
+      "status": "Статус",
+      "hours": "Часы"
+    }
+  }
+}

@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.db.seed import seed_default_config
 from app.db.session import SessionLocal
 from app.services.auth_service import ensure_admin_exists
+from app import scheduler
 
 
 @asynccontextmanager
@@ -35,7 +36,15 @@ async def lifespan(_app: FastAPI):
         print(f"[seed] Админ не создан: {e}")
 
     db.close()
+
+    try:
+        scheduler.start()
+    except Exception as e:
+        print(f"[telegram] Планировщик не запущен: {e}")
+
     yield
+
+    scheduler.shutdown()
 
 
 app = FastAPI(

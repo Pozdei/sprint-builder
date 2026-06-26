@@ -18,13 +18,56 @@ from typing import TYPE_CHECKING
 import requests
 
 from app.core.config import settings
+from app.core.i18n import DEFAULT_LANG, make_translator
 
 if TYPE_CHECKING:
     from app.db.models import Config
 
 
+_MSG: dict[str, dict[str, str]] = {
+    "proxy_error": {
+        "ru": "Прокси не отвечает: {detail}",
+        "en": "Proxy is not responding: {detail}",
+    },
+    "ssl_error": {
+        "ru": "SSL-ошибка: {detail}",
+        "en": "SSL error: {detail}",
+    },
+    "connection_error": {
+        "ru": "Нет связи с Jira (VPN включён?): {detail}",
+        "en": "Can't reach Jira (is VPN on?): {detail}",
+    },
+    "timeout": {
+        "ru": "Таймаут запроса к Jira: {url}",
+        "en": "Jira request timed out: {url}",
+    },
+    "http_error": {
+        "ru": "HTTP {status} от {url}: {body}",
+        "en": "HTTP {status} from {url}: {body}",
+    },
+    "not_initialized": {
+        "ru": "Jira-клиент не инициализирован для этого запроса",
+        "en": "Jira client is not initialized for this request",
+    },
+}
+_t = make_translator(_MSG)
+
+
 class JiraError(Exception):
-    """Любая проблема с Jira (auth, network, HTTP-ошибка)."""
+    """Любая проблема с Jira (auth, network, HTTP-ошибка).
+
+    Конструируется по ключу сообщения (см. `_MSG`), а не готовой строкой —
+    `str(e)` отдаёт ru-вариант (обратная совместимость со старыми catch-сайтами),
+    `.text(lang)` отдаёт нужную локаль для ответа API.
+    """
+
+    def __init__(self, key: str, **kwargs):
+        self._key = key
+        self._kwargs = kwargs
+        super().__init__(self.text(DEFAULT_LANG))
+
+    def text(self, lang: str) -> str:
+        return _t(self._key, lang, **self._kwargs)
 
 
 class JiraClient:
@@ -64,17 +107,17 @@ class JiraClient:
                 **kwargs,
             )
         except requests.exceptions.ProxyError as e:
-            raise JiraError(f"Прокси не отвечает: {e}") from e
+            raise JiraError("proxy_error", detail=str(e)) from e
         except requests.exceptions.SSLError as e:
-            raise JiraError(f"SSL-ошибка: {e}") from e
+            raise JiraError("ssl_error", detail=str(e)) from e
         except requests.exceptions.ConnectionError as e:
-            raise JiraError(f"Нет связи с Jira (VPN включён?): {e}") from e
+            raise JiraError("connection_error", detail=str(e)) from e
         except requests.exceptions.Timeout:
-            raise JiraError(f"Таймаут запроса к Jira: {url}")
+            raise JiraError("timeout", url=url)
 
     def _check(self, r: requests.Response, url: str) -> requests.Response:
         if r.status_code >= 400:
-            raise JiraError(f"HTTP {r.status_code} от {url}: {r.text[:300]}")
+            raise JiraError("http_error", status=r.status_code, url=url, body=r.text[:300])
         return r
 
     def get(self, path: str, params: dict | None = None) -> dict:
@@ -106,7 +149,7 @@ class _ProxyClient:
     def _real(self) -> JiraClient:
         c = _current.get()
         if c is None:
-            raise JiraError("Jira-клиент не инициализирован для этого запроса")
+            raise JiraError("not_initialized")
         return c
 
     @property

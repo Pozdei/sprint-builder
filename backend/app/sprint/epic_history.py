@@ -178,7 +178,12 @@ def build_past_phases(
     Каждая фаза:
       {key, url, summary, status_name, bucket, role, owner_id, owner_file_name,
        hours, hours_is_default, is_pseudo=False, is_historical=True,
-       phase_status, direction, _start_dt, _end_dt}
+       phase_status, direction, _start_dt, _end_dt, _is_current_open}
+
+    `_is_current_open=True` — это текущий, ещё не завершённый статус задачи
+    (последний сегмент, end_dt == now_dt). Часы по нему уже учтены в прогнозе
+    остатка как будущая работа (см. epic_forecast._build_with_history) — вызывающая
+    сторона должна занулить hours у такой фазы, иначе стоимость задвоится.
     """
     f = issue["fields"]
     key = issue["key"]
@@ -246,6 +251,7 @@ def build_past_phases(
             "direction": direction_name,
             "_start_dt": start_dt,
             "_end_dt": end_dt,
+            "_is_current_open": end_dt == now_dt,
         })
 
     return _merge_adjacent(phases)
@@ -268,6 +274,7 @@ def _merge_adjacent(phases: list[dict]) -> list[dict]:
                 and p["_start_dt"] <= prev["_end_dt"]):
             # Продлеваем фазу и обновляем исполнителя на последнего (фактического)
             prev["_end_dt"] = max(prev["_end_dt"], p["_end_dt"])
+            prev["_is_current_open"] = prev["_is_current_open"] or p["_is_current_open"]
             prev["owner_id"] = p["owner_id"]
             prev["owner_file_name"] = p["owner_file_name"]
             prev["role"] = p["role"]

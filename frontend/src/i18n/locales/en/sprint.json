@@ -1,0 +1,104 @@
+{
+  "toolbar": {
+    "loading": "Loading…",
+    "refreshCandidates": "Refresh candidates",
+    "loadCandidates": "Load candidates",
+    "downloading": "Downloading…",
+    "downloadCandidates": "Download candidates",
+    "building": "Building and saving…",
+    "buildSprint": "Build sprint",
+    "editCompositionTitle": "Edit composition manually",
+    "editComposition": "Edit composition",
+    "downloadSprint": "Download sprint",
+    "approving": "Approving…",
+    "approve": "Approve"
+  },
+  "empty": "Click \"Load candidates\" to pull tasks from Jira.",
+  "summary": {
+    "maxInJira": "Max in Jira",
+    "candidates": "Candidates",
+    "formal": "formal"
+  },
+  "filter": {
+    "label": "Filter:",
+    "allExecutors": "All assignees",
+    "allPhases": "All phases",
+    "reset": "Reset"
+  },
+  "sections": {
+    "inSprint": "In sprint",
+    "ofTotal": "of",
+    "tasksSuffix": "tasks",
+    "overflow": "Did not fit",
+    "candidates": "Candidates"
+  },
+  "toast": {
+    "candidatesLoaded": "Candidates loaded: {{count}}",
+    "sprintBuilt": "Sprint {{num}} built and saved",
+    "sprintApproved": "Sprint {{num}} approved",
+    "compositionUpdated": "Sprint composition updated"
+  },
+  "confirm": {
+    "approveTitle": "Approve Sprint {{num}}?",
+    "approveBody": "Sprint {{num}} must already exist in Jira."
+  },
+  "status": {
+    "approved": "approved",
+    "draft": "draft"
+  },
+  "table": {
+    "priority": "#",
+    "task": "Task",
+    "pseudo": "(pseudo)",
+    "title": "Title",
+    "executor": "Assignee",
+    "role": "Role",
+    "phase": "Stage",
+    "jiraStatus": "Jira status",
+    "expectedResult": "Expected result",
+    "hours": "Hours",
+    "hoursOf": "of {{total}} h",
+    "hoursTruncatedTitle": "Task truncated to the remaining budget",
+    "hoursDefaultTitle": "Estimate not set in Jira — default is used",
+    "hoursAnalystShort": "Analyst h.",
+    "hoursTesterShort": "Tester h.",
+    "hoursDeveloperShort": "Dev h.",
+    "hoursDesignerShort": "Designer h.",
+    "developer": "Developer",
+    "designer": "Designer",
+    "tester": "Tester",
+    "sprint": "Sprint",
+    "source": "Source",
+    "reason": "Reason",
+    "editInJiraTitle": "Edit in Jira"
+  },
+  "composer": {
+    "title": "Edit sprint composition",
+    "saving": "Saving…",
+    "saveComposition": "Save composition",
+    "candidates": "Candidates",
+    "allBoards": "All boards",
+    "allExecutors": "All assignees",
+    "addToSprintTitle": "Add to sprint",
+    "inSprint": "In sprint",
+    "removeFromSprintTitle": "Remove from sprint",
+    "empty": "empty",
+    "pseudo": "(pseudo)"
+  },
+  "jiraField": {
+    "modalTitle": "Edit fields in Jira",
+    "hoursAnalyst": "Analyst hours",
+    "hoursTester": "Tester hours",
+    "hoursDeveloper": "Developer hours",
+    "hoursDesigner": "Designer hours",
+    "hoursNotSet": "not set",
+    "developer": "Developer",
+    "developerNotSet": "not set",
+    "pick": "Pick",
+    "clearChoiceTitle": "Clear selection",
+    "saving": "Saving…",
+    "saveToJira": "Save to Jira",
+    "toastFieldsUpdated": "{{key}}: fields updated in Jira",
+    "errorSaving": "Error saving"
+  }
+}

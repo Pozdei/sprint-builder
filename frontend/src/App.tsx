@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { checkJira, getMe, getToken, setToken } from "./api/client";
 import { extractError } from "./lib/api-error";
 import { ConfigSwitcher } from "./components/ConfigSwitcher";
+import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { AdminPage } from "./pages/AdminPage";
 import { DocsPage } from "./pages/DocsPage";
 import { EpicForecastPage } from "./pages/EpicForecastPage";
@@ -56,6 +58,7 @@ function useHashPage(): [Page, (p: Page) => void] {
 }
 
 function App() {
+  const { t } = useTranslation("app");
   const [user, setUser] = useState<UserOut | null | undefined>(null);
   const [page, setPage] = useHashPage();
   const [jiraStatus, setJiraStatus] = useState<JiraStatus>({ kind: "checking" });
@@ -91,7 +94,7 @@ function App() {
   };
 
   if (user === null) {
-    return <div className="min-h-screen flex items-center justify-center text-gray-500">Загрузка…</div>;
+    return <div className="min-h-screen flex items-center justify-center text-gray-500">{t("loadingApp")}</div>;
   }
   if (user === undefined) {
     return <LoginPage onLogin={(u) => setUser(u)} />;
@@ -115,6 +118,8 @@ function App() {
             <span className="w-px h-4 bg-gray-200" />
             <ConfigSwitcher onChange={() => setConfigEpoch((e) => e + 1)} />
             <span className="w-px h-4 bg-gray-200" />
+            <LanguageSwitcher />
+            <span className="w-px h-4 bg-gray-200" />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
         </div>
@@ -123,23 +128,23 @@ function App() {
         <div className="max-w-7xl mx-auto px-6">
           <nav className="flex gap-5">
             <NavTab active={activePage === "sprint"} onClick={() => setPage("sprint")}>
-              Спринт
+              {t("nav.sprint")}
             </NavTab>
             <NavTab active={activePage === "history"} onClick={() => setPage("history")}>
-              История
+              {t("nav.history")}
             </NavTab>
             <NavTab active={activePage === "forecast"} onClick={() => setPage("forecast")}>
-              Прогноз реализации
+              {t("nav.forecast")}
             </NavTab>
             <NavTab active={activePage === "settings"} onClick={() => setPage("settings")}>
-              Настройки
+              {t("nav.settings")}
             </NavTab>
             <NavTab active={activePage === "docs"} onClick={() => setPage("docs")}>
-              Справка
+              {t("nav.docs")}
             </NavTab>
             {isAdmin && (
               <NavTab active={activePage === "admin"} onClick={() => setPage("admin")}>
-                Админка
+                {t("nav.admin")}
               </NavTab>
             )}
           </nav>
@@ -162,7 +167,7 @@ function App() {
 
 /**
  * Авторский бейдж в углу. В покое — почти невидимый «PS» (не отвлекает от
- * работы). На hover «PS» гаснет, а бейдж раскрывается в градиент с подписью —
+ * работы). На hover «PS» гаснет, а бейдж раскрывается в чёрно-белую подпись —
  * без нативного title, он не успевает появиться и не стилизуется.
  */
 function AuthorBadge() {
@@ -170,9 +175,9 @@ function AuthorBadge() {
     <div className="fixed bottom-5 right-5 z-50 group">
       <div
         className="relative h-8 w-8 group-hover:w-[208px] rounded-xl overflow-hidden cursor-default select-none
-                   bg-gray-100/70 group-hover:bg-gradient-to-br group-hover:from-indigo-600 group-hover:via-violet-600 group-hover:to-fuchsia-600
+                   bg-gray-100/70 group-hover:bg-gray-900
                    transition-all duration-300 ease-out
-                   group-hover:shadow-lg group-hover:shadow-fuchsia-900/30"
+                   group-hover:shadow-lg group-hover:shadow-gray-900/30"
       >
         {/* «PS» — видно в покое, гаснет на hover */}
         <span
@@ -217,11 +222,12 @@ function NavTab({
 }
 
 function JiraStatusLine({ status }: { status: JiraStatus }) {
+  const { t } = useTranslation("app");
   const dot = status.kind === "checking"
     ? "bg-gray-300"
     : status.kind === "error" ? "bg-red-500" : "bg-emerald-500";
   const label = status.kind === "checking"
-    ? "Проверка…"
+    ? t("checkingJira")
     : status.kind === "error" ? status.message : status.name;
   return (
     <span
@@ -235,6 +241,7 @@ function JiraStatusLine({ status }: { status: JiraStatus }) {
 }
 
 function UserMenu({ user, onLogout }: { user: UserOut; onLogout: () => void }) {
+  const { t } = useTranslation("app");
   const name = user.display_name || user.email;
   const initial = name.trim().charAt(0).toUpperCase();
   return (
@@ -245,7 +252,7 @@ function UserMenu({ user, onLogout }: { user: UserOut; onLogout: () => void }) {
       <span className="text-xs text-gray-600 max-w-[120px] truncate" title={name}>{name}</span>
       <button
         onClick={onLogout}
-        title="Выйти"
+        title={t("logout")}
         className="text-gray-400 hover:text-red-600 text-xs leading-none transition"
       >
         ⏻

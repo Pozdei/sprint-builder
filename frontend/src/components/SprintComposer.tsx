@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { OwnerStat, TaskOut } from "../types/api";
 
 interface Props {
@@ -25,6 +26,7 @@ function taskUid(t: TaskOut): string {
 export function SprintComposer({
   candidates, sprintTasks, ownerStats, onSave, onCancel,
 }: Props) {
+  const { t } = useTranslation(["sprint", "common"]);
   // Локальные состояния (редактирование без сохранения)
   const [inSprint, setInSprint] = useState<TaskOut[]>(sprintTasks);
   const [saving, setSaving] = useState(false);
@@ -84,7 +86,7 @@ export function SprintComposer({
     <div>
       <div className="flex justify-between items-center mb-3">
         <h3 className="font-semibold text-gray-700">
-          Редактирование состава спринта
+          {t("composer.title")}
         </h3>
         <div className="flex gap-2">
           <button
@@ -92,14 +94,14 @@ export function SprintComposer({
             disabled={saving}
             className="bg-gray-300 hover:bg-gray-400 disabled:bg-gray-200 text-gray-800 px-3 py-1.5 rounded text-sm font-semibold"
           >
-            Отмена
+            {t("common:cancel")}
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
             className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
           >
-            {saving ? "Сохраняю…" : "Сохранить состав"}
+            {saving ? t("composer.saving") : t("composer.saveComposition")}
           </button>
         </div>
       </div>
@@ -118,7 +120,7 @@ export function SprintComposer({
             >
               <div className="font-semibold text-gray-700">{s.file_name}</div>
               <div className={over ? "text-red-700 font-bold" : ""}>
-                {used.toFixed(1)} / {s.budget} ч
+                {used.toFixed(1)} / {s.budget} {t("common:hoursShort")}
               </div>
             </div>
           );
@@ -129,7 +131,7 @@ export function SprintComposer({
         {/* Левая колонка — кандидаты */}
         <div>
           <h4 className="font-semibold text-gray-600 text-sm mb-2">
-            Кандидаты ({sortedAvailable.length})
+            {t("composer.candidates")} ({sortedAvailable.length})
           </h4>
           <div className="flex gap-2 mb-2">
             <select
@@ -137,7 +139,7 @@ export function SprintComposer({
               onChange={(e) => setFilterBoard(e.target.value)}
               className="flex-1 border rounded text-xs px-2 py-1 bg-white"
             >
-              <option value="">Все доски</option>
+              <option value="">{t("composer.allBoards")}</option>
               {boards.map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}
@@ -147,7 +149,7 @@ export function SprintComposer({
               onChange={(e) => setFilterAssignee(e.target.value)}
               className="flex-1 border rounded text-xs px-2 py-1 bg-white"
             >
-              <option value="">Все исполнители</option>
+              <option value="">{t("composer.allExecutors")}</option>
               {assignees.map(([id, name]) => (
                 <option key={id} value={id}>{name}</option>
               ))}
@@ -156,7 +158,7 @@ export function SprintComposer({
           <TaskList
             tasks={sortedAvailable}
             actionLabel="→"
-            actionTitle="Добавить в спринт"
+            actionTitle={t("composer.addToSprintTitle")}
             onAction={handleAdd}
             showPseudoButton={false}
           />
@@ -165,12 +167,12 @@ export function SprintComposer({
         {/* Правая колонка — в спринте */}
         <div>
           <h4 className="font-semibold text-gray-600 text-sm mb-2">
-            В спринте ({sortedInSprint.length})
+            {t("composer.inSprint")} ({sortedInSprint.length})
           </h4>
           <TaskList
             tasks={sortedInSprint}
             actionLabel="←"
-            actionTitle="Убрать из спринта"
+            actionTitle={t("composer.removeFromSprintTitle")}
             onAction={handleRemove}
             showPseudoButton={false}
           />
@@ -189,8 +191,9 @@ function TaskList({
   onAction: (t: TaskOut) => void;
   showPseudoButton: boolean;
 }) {
+  const { t: tr } = useTranslation(["sprint", "common"]);
   if (tasks.length === 0) {
-    return <div className="text-xs text-gray-400 italic px-2 py-4">пусто</div>;
+    return <div className="text-xs text-gray-400 italic px-2 py-4">{tr("composer.empty")}</div>;
   }
   return (
     <div className="border rounded bg-white max-h-[600px] overflow-y-auto">
@@ -203,7 +206,7 @@ function TaskList({
         >
           <span className="text-gray-400 w-6">{t.priority ?? ""}</span>
           <span className="w-20 font-mono text-xs">
-            {t.is_pseudo ? "(псевдо)" : t.key}
+            {t.is_pseudo ? tr("composer.pseudo") : t.key}
           </span>
           <span className="flex-1 truncate" title={t.summary}>
             {t.summary}
@@ -212,7 +215,7 @@ function TaskList({
             {t.owner_file_name}
           </span>
           <span className="text-gray-700 text-xs font-semibold w-12 text-right">
-            {t.hours.toFixed(1)}ч
+            {t.hours.toFixed(1)}{tr("common:hoursShort")}
           </span>
           {(!t.is_pseudo || showPseudoButton) ? (
             <button

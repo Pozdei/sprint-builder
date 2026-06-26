@@ -1,0 +1,118 @@
+{
+  "title": "Admin",
+  "tabs": {
+    "manage": "Management",
+    "salaries": "Salaries"
+  },
+  "users": {
+    "sectionTitle": "Users ({{count}})",
+    "createButton": "+ Create",
+    "table": {
+      "id": "ID",
+      "email": "Email",
+      "name": "Name",
+      "role": "Role",
+      "active": "Active"
+    },
+    "roleOptions": {
+      "lead": "lead",
+      "admin": "admin"
+    },
+    "actions": {
+      "edit": "Edit",
+      "password": "Password",
+      "delete": "Delete"
+    },
+    "deleteConfirm": "Delete user {{email}}?\n\nTheir config and all their sprints will be deleted too (CASCADE).",
+    "toast": {
+      "updated": "User updated",
+      "deleted": "User {{email}} deleted",
+      "created": "User created",
+      "passwordChanged": "Password changed"
+    }
+  },
+  "configs": {
+    "sectionTitle": "Configs ({{count}})",
+    "empty": "No configs.",
+    "table": {
+      "id": "ID",
+      "name": "Name",
+      "owner": "Owner",
+      "sprintsCount": "Sprints"
+    },
+    "noOwner": "no owner",
+    "transferButton": "Transfer",
+    "toast": {
+      "transferred": "Config transferred"
+    }
+  },
+  "sprints": {
+    "sectionTitle": "Sprints ({{count}})",
+    "empty": "No sprints.",
+    "table": {
+      "id": "ID",
+      "num": "No.",
+      "status": "Status",
+      "config": "Config",
+      "owner": "Owner"
+    }
+  },
+  "createUserModal": {
+    "title": "Create user",
+    "emailLabel": "Email",
+    "nameLabel": "Name",
+    "roleLabel": "Role",
+    "roleOptions": {
+      "lead": "lead — regular user",
+      "admin": "admin — user management"
+    },
+    "passwordLabel": "Password",
+    "creating": "Creating…",
+    "create": "Create"
+  },
+  "resetPasswordModal": {
+    "title": "Reset password: {{email}}",
+    "description": "Enter a new password for the user. Hand it over in person.",
+    "placeholder": "New password",
+    "saving": "Saving…",
+    "change": "Change"
+  },
+  "transferConfigModal": {
+    "title": "Transfer config: {{name}}",
+    "currentOwner": "Current owner:",
+    "sprintsInConfig": "Sprints in config:",
+    "newOwnerLabel": "New owner (lead)",
+    "selectPlaceholder": "— select —",
+    "noLeads": "No lead users. Create one first.",
+    "confirmMessage": "Transfer config \"{{name}}\" to {{email}}?\n\nAll sprints of this config will move to them.\nThe previous owner will be left without a config — a new empty one will be created on their next login.",
+    "transferring": "Transferring…",
+    "transfer": "Transfer"
+  },
+  "salaries": {
+    "title": "Team salaries",
+    "description": "Salary in ₽/month. Used to calculate project cost in the implementation forecast.\nConfidential — team members do not see this data.",
+    "empty": "The team is empty. Add members in the config settings.",
+    "table": {
+      "jiraName": "Name in Jira",
+      "fileName": "Name for file",
+      "role": "Role",
+      "salary": "Salary, ₽/mo"
+    },
+    "saving": "Saving…",
+    "toast": {
+      "saved": "Salaries saved"
+    }
+  },
+  "diagnostics": {
+    "toggleLabel": "Source diagnostics",
+    "errorsCount": "{{count}} errors",
+    "table": {
+      "source": "Source",
+      "type": "Type",
+      "fetched": "Fetched",
+      "matched": "Matched",
+      "epics": "Epics",
+      "status": "Status"
+    }
+  }
+}

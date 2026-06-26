@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   approveSprint, reopenSprint,
   closeSprint,
@@ -30,6 +31,7 @@ import type {
 } from "../types/api";
 
 export function HistoryPage() {
+  const { t } = useTranslation(["history", "common"]);
   const [items, setItems] = useState<SprintSummary[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +59,7 @@ export function HistoryPage() {
   };
 
   if (loading) {
-    return <div className="text-center text-gray-500 mt-20">Загрузка истории…</div>;
+    return <div className="text-center text-gray-500 mt-20">{t("history:page.loading")}</div>;
   }
   if (error) {
     return (
@@ -71,25 +73,25 @@ export function HistoryPage() {
   if (!items || items.length === 0) {
     return (
       <div className="text-center text-gray-500 mt-20">
-        Нет сохранённых спринтов. Сформируй спринт на вкладке «Спринт».
+        {t("history:page.empty")}
       </div>
     );
   }
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
-      <h1 className="text-lg font-semibold text-gray-800 mb-4">История спринтов</h1>
+      <h1 className="text-lg font-semibold text-gray-800 mb-4">{t("history:page.title")}</h1>
 
       <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 border-b">
             <tr>
-              <th className="text-left px-4 py-2 font-semibold">№</th>
-              <th className="text-left px-4 py-2 font-semibold">Статус</th>
-              <th className="text-left px-4 py-2 font-semibold">Создан</th>
-              <th className="text-left px-4 py-2 font-semibold">Утверждён</th>
-              <th className="text-left px-4 py-2 font-semibold">Закрыт</th>
-              <th className="text-left px-4 py-2 font-semibold">Задач</th>
+              <th className="text-left px-4 py-2 font-semibold">{t("history:table.num")}</th>
+              <th className="text-left px-4 py-2 font-semibold">{t("history:table.status")}</th>
+              <th className="text-left px-4 py-2 font-semibold">{t("history:table.created")}</th>
+              <th className="text-left px-4 py-2 font-semibold">{t("history:table.approved")}</th>
+              <th className="text-left px-4 py-2 font-semibold">{t("history:table.closed")}</th>
+              <th className="text-left px-4 py-2 font-semibold">{t("history:table.tasksCount")}</th>
               <th className="w-10"></th>
             </tr>
           </thead>
@@ -111,10 +113,11 @@ export function HistoryPage() {
 }
 
 function StatusBadge({ status }: { status: SprintStatus }) {
+  const { t } = useTranslation(["history"]);
   const map: Record<SprintStatus, { bg: string; text: string; label: string }> = {
-    draft:    { bg: "bg-yellow-100", text: "text-yellow-800", label: "draft" },
-    approved: { bg: "bg-green-100",  text: "text-green-800",  label: "approved" },
-    closed:   { bg: "bg-gray-200",   text: "text-gray-800",   label: "closed" },
+    draft:    { bg: "bg-yellow-100", text: "text-yellow-800", label: t("history:status.draft") },
+    approved: { bg: "bg-green-100",  text: "text-green-800",  label: t("history:status.approved") },
+    closed:   { bg: "bg-gray-200",   text: "text-gray-800",   label: t("history:status.closed") },
   };
   const s = map[status];
   return (
@@ -132,6 +135,7 @@ interface RowProps {
 }
 
 function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
+  const { t } = useTranslation(["history", "common"]);
   const toast = useToast();
   const [detail, setDetail] = useState<SprintOut | null>(null);
   const [loading, setLoading] = useState(false);
@@ -177,14 +181,14 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
     try {
       const deps = await fetchSprintDependencies(detail.id);
       if (deps.length > 0) {
-        depWarning = `\n\n⚠ В спринте ${deps.length} FS-завис${deps.length === 1 ? "имость" : "имостей"} между задачами — убедитесь, что расписание корректно.`;
+        depWarning = t("history:confirm.approveDepsWarning", { count: deps.length });
       }
     } catch {
       // не критично
     }
     const ok = window.confirm(
-      `Утвердить Sprint ${detail.sprint_num}?\n\n` +
-      `В Jira уже должен существовать Sprint ${detail.sprint_num}.` +
+      t("history:confirm.approveTitle", { num: detail.sprint_num }) + "\n\n" +
+      t("history:confirm.approveBody", { num: detail.sprint_num }) +
       depWarning
     );
     if (!ok) return;
@@ -193,7 +197,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
       const updated = await approveSprint(detail.id);
       setDetail(updated);
       onChanged();
-      toast.success(`Sprint ${updated.sprint_num} утверждён`);
+      toast.success(t("history:toast.approved", { num: updated.sprint_num }));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -204,8 +208,8 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   const handleReopen = async () => {
     if (!detail) return;
     const ok = window.confirm(
-      `Вернуть Sprint ${detail.sprint_num} в драфт?\n\n` +
-      `Статус изменится на draft, дата утверждения будет сброшена.`
+      t("history:confirm.reopenTitle", { num: detail.sprint_num }) + "\n\n" +
+      t("history:confirm.reopenBody")
     );
     if (!ok) return;
     setBusy("reopen");
@@ -213,7 +217,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
       const updated = await reopenSprint(detail.id);
       setDetail(updated);
       onChanged();
-      toast.success(`Sprint ${updated.sprint_num} возвращён в драфт`);
+      toast.success(t("history:toast.reopened", { num: updated.sprint_num }));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -224,9 +228,8 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   const handleClose = async () => {
     if (!detail) return;
     const ok = window.confirm(
-      `Закрыть Sprint ${detail.sprint_num}?\n\n` +
-      `В Jira спринт уже должен быть закрыт (state=closed). ` +
-      `Будут получены статусы задач и список "врывов" — это может занять минуту.`
+      t("history:confirm.closeTitle", { num: detail.sprint_num }) + "\n\n" +
+      t("history:confirm.closeBody")
     );
     if (!ok) return;
     setBusy("close");
@@ -234,7 +237,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
       const updated = await closeSprint(detail.id);
       setDetail(updated);
       onChanged();
-      toast.success(`Sprint ${updated.sprint_num} закрыт`);
+      toast.success(t("history:toast.closed", { num: updated.sprint_num }));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -244,12 +247,12 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
 
   const handleDelete = async () => {
     if (!detail) return;
-    const ok = window.confirm(`Удалить Sprint ${detail.sprint_num}?`);
+    const ok = window.confirm(t("history:confirm.deleteTitle", { num: detail.sprint_num }));
     if (!ok) return;
     setBusy("delete");
     try {
       await deleteSprint(detail.id);
-      toast.success(`Sprint ${detail.sprint_num} удалён`);
+      toast.success(t("history:toast.deleted", { num: detail.sprint_num }));
       onChanged();
     } catch (e) {
       toast.error(extractError(e));
@@ -300,7 +303,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
     if (!ganttItems) return;
     try {
       const summary = await snap.save(ganttDate, hoursPerDay, ganttItems);
-      toast.success(`Снимок Ганта сохранён (${fmtDateTime(summary.captured_at)})`);
+      toast.success(t("history:toast.snapshotSaved", { time: fmtDateTime(summary.captured_at) }));
     } catch (e) {
       toast.error(extractError(e));
     }
@@ -315,11 +318,11 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   };
 
   const handleDeleteSnapshot = async (id: number) => {
-    const ok = window.confirm("Удалить этот снимок Ганта?");
+    const ok = window.confirm(t("history:confirm.deleteSnapshotTitle"));
     if (!ok) return;
     try {
       await snap.remove(id);
-      toast.success("Снимок удалён");
+      toast.success(t("history:toast.snapshotDeleted"));
     } catch (e) {
       toast.error(extractError(e));
     }
@@ -359,7 +362,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
         <tr>
           <td colSpan={7} className="p-0">
             <div className="bg-gray-50 p-4 border-t">
-              {loading && <div className="text-gray-500">Загрузка…</div>}
+              {loading && <div className="text-gray-500">{t("history:row.loading")}</div>}
               {loadError && (
                 <div className="bg-red-50 border border-red-300 text-red-800 rounded p-3 mb-3">
                   {loadError}
@@ -373,7 +376,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                       disabled={busy !== null}
                       className="bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
                     >
-                      {busy === "download" ? "Скачиваю…" : "Скачать xlsx"}
+                      {busy === "download" ? t("history:row.downloading") : t("history:row.downloadXlsx")}
                     </button>
                     {isDraft && (
                       <>
@@ -382,14 +385,14 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                           disabled={busy !== null}
                           className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
                         >
-                          {busy === "approve" ? "Утверждаю…" : "Утвердить"}
+                          {busy === "approve" ? t("history:row.approving") : t("history:row.approve")}
                         </button>
                         <button
                           onClick={handleDelete}
                           disabled={busy !== null}
                           className="bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
                         >
-                          {busy === "delete" ? "Удаляю…" : "Удалить"}
+                          {busy === "delete" ? t("history:row.deleting") : t("common:delete")}
                         </button>
                       </>
                     )}
@@ -400,21 +403,21 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                           disabled={busy !== null}
                           className="bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
                         >
-                          {busy === "reopen" ? "Возвращаю…" : "Вернуть в драфт"}
+                          {busy === "reopen" ? t("history:row.reopening") : t("history:row.reopenToDraft")}
                         </button>
                         <button
                           onClick={() => setShowStandup(true)}
                           disabled={busy !== null}
                           className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
                         >
-                          📋 Stand-up
+                          {t("history:row.standup")}
                         </button>
                         <button
                           onClick={handleClose}
                           disabled={busy !== null}
                           className="bg-gray-700 hover:bg-gray-800 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
                         >
-                          {busy === "close" ? "Закрываю…" : "Закрыть спринт"}
+                          {busy === "close" ? t("history:row.closing") : t("history:row.closeSprint")}
                         </button>
                       </>
                     )}
@@ -436,12 +439,12 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                         onClick={() => setShowGantt((v) => !v)}
                         className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
                       >
-                        {showGantt ? "▾" : "▸"} Диаграмма Ганта
+                        {showGantt ? "▾" : "▸"} {t("history:gantt.sectionTitle")}
                       </button>
                       {showGantt && (
                         <>
                           <label className="text-sm text-gray-600 flex items-center gap-1.5">
-                            Старт:
+                            {t("history:gantt.start")}
                             <input
                               type="date"
                               value={ganttDate}
@@ -450,7 +453,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                             />
                           </label>
                           <label className="text-sm text-gray-600 flex items-center gap-1.5">
-                            Ч/день:
+                            {t("history:gantt.hoursPerDay")}
                             <input
                               type="number"
                               min={1} max={24} step={1}
@@ -465,7 +468,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                             disabled={ganttLoading}
                             className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white px-3 py-1 rounded text-sm font-semibold"
                           >
-                            {ganttLoading ? "Считаю…" : "Построить"}
+                            {ganttLoading ? t("history:gantt.computing") : t("history:gantt.build")}
                           </button>
                           <GanttSnapshotControls
                             snapshots={snap.snapshots}
@@ -488,7 +491,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                     )}
 
                     {showGantt && snap.detailLoading && (
-                      <div className="mt-3 text-gray-500 text-sm">Загрузка снимка…</div>
+                      <div className="mt-3 text-gray-500 text-sm">{t("history:gantt.loadingSnapshot")}</div>
                     )}
 
                     {showGantt && !snap.detailLoading && displayedItems && displayedItems.length > 0 && (

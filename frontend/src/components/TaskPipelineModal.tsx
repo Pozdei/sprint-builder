@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { updateJiraIssueFields } from "../api/jira-client";
 import { useToast } from "./Toast";
 import { extractError } from "../lib/api-error";
 import { BUCKET_TO_FIELD } from "../lib/bucket-fields";
+import { bucketLabel } from "../lib/bucket-label";
 import type { GanttItem } from "../types/api";
 
 interface Props {
@@ -47,6 +49,7 @@ function bucketRank(bucket: string): number {
 }
 
 export function TaskPipelineModal({ taskKey, allItems, onClose, onSaved, onHoursSaved }: Props) {
+  const { t } = useTranslation(["forecast", "common"]);
   const toast = useToast();
   // editValues[stageId] — введённое значение (строка); savingId — какой стейдж
   // сейчас сохраняется; savedIds — успешно сохранённые (показываем галочку вместо кнопки).
@@ -60,7 +63,7 @@ export function TaskPipelineModal({ taskKey, allItems, onClose, onSaved, onHours
     if (!field || raw === undefined) return;
     const n = parseFloat(raw);
     if (isNaN(n) || n <= 0) {
-      toast.error("Часы должны быть положительным числом");
+      toast.error(t("pipelineModal.toast.hoursMustBePositive"));
       return;
     }
     setSavingId(stageId);
@@ -68,7 +71,7 @@ export function TaskPipelineModal({ taskKey, allItems, onClose, onSaved, onHours
       await updateJiraIssueFields(stage.key, { [field]: n });
       setSavedIds((prev) => new Set(prev).add(stageId));
       onHoursSaved?.(stage.key, stage.bucket, n);
-      toast.success(`${stage.key}: ${n} ч сохранено в Jira`);
+      toast.success(t("pipelineModal.toast.hoursSaved", { key: stage.key, hours: n }));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -185,7 +188,7 @@ export function TaskPipelineModal({ taskKey, allItems, onClose, onSaved, onHours
                     <div className={`flex-1 rounded-xl px-3 py-2.5 ${col.bg} ${isLast ? "ring-1 ring-inset ring-gray-200" : ""}`}>
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <span className={`text-sm font-semibold ${col.text}`}>
-                          {stage.bucket}
+                          {bucketLabel(stage.bucket, t)}
                         </span>
                         {field ? (
                           <div className="flex items-center gap-1">
@@ -198,24 +201,24 @@ export function TaskPipelineModal({ taskKey, allItems, onClose, onSaved, onHours
                               onWheel={(e) => e.currentTarget.blur()}
                               className="w-16 px-1.5 py-0.5 border rounded text-xs font-mono text-right bg-white/70 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                             />
-                            <span className="text-xs text-gray-500">ч</span>
+                            <span className="text-xs text-gray-500">{t("pipelineModal.hoursUnit")}</span>
                             {isDirty && (
                               <button
                                 onClick={() => handleSaveHours(stage, stageId)}
                                 disabled={savingId === stageId}
-                                title="Сохранить в Jira"
+                                title={t("pipelineModal.saveTitle")}
                                 className="text-indigo-600 hover:text-indigo-800 font-bold text-sm disabled:opacity-40"
                               >
                                 {savingId === stageId ? "…" : "✓"}
                               </button>
                             )}
                             {!isDirty && isSaved && (
-                              <span className="text-green-600 text-xs" title="Сохранено в Jira">✓</span>
+                              <span className="text-green-600 text-xs" title={t("pipelineModal.savedTitle")}>✓</span>
                             )}
                           </div>
                         ) : (
                           <span className="text-xs font-mono font-medium text-gray-600 bg-white/70 px-1.5 py-0.5 rounded">
-                            {stage.hours.toFixed(1)} ч
+                            {stage.hours.toFixed(1)} {t("pipelineModal.hoursUnit")}
                           </span>
                         )}
                       </div>
@@ -252,23 +255,23 @@ export function TaskPipelineModal({ taskKey, allItems, onClose, onSaved, onHours
           {savedIds.size > 0 && onSaved && (
             <div className="flex items-center justify-between gap-3 mb-2.5 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg">
               <span className="text-xs text-green-800">
-                Часы сохранены в Jira. Сроки на Ганте — по старой оценке, пересчитайте при необходимости.
+                {t("pipelineModal.footerNote")}
               </span>
               <button
                 onClick={onSaved}
                 className="text-xs font-semibold text-white bg-green-600 hover:bg-green-700 px-2.5 py-1 rounded-md flex-none"
               >
-                Пересчитать прогноз
+                {t("pipelineModal.recompute")}
               </button>
             </div>
           )}
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-500">
-              <span className="font-medium text-gray-700">{stages.length}</span> этапов ·{" "}
-              <span className="font-medium text-gray-700">{totalHours.toFixed(1)} ч</span> итого
+              <span className="font-medium text-gray-700">{t("pipelineModal.stagesCount", { count: stages.length })}</span> ·{" "}
+              <span className="font-medium text-gray-700">{t("pipelineModal.totalHours", { hours: totalHours.toFixed(1) })}</span>
             </div>
             <div className="text-sm">
-              <span className="text-gray-500">Завершение: </span>
+              <span className="text-gray-500">{t("pipelineModal.completion")} </span>
               <span className="font-semibold text-gray-800">{completionDate}</span>
             </div>
           </div>

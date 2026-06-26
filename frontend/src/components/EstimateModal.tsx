@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { type IssueFieldsUpdate, updateJiraIssueFields } from "../api/jira-client";
 import { useToast } from "./Toast";
 import { extractError } from "../lib/api-error";
 import { BUCKET_TO_FIELD, FIELD_LABEL } from "../lib/bucket-fields";
+import { bucketLabel } from "../lib/bucket-label";
 import type { GanttItem } from "../types/api";
 
 const BUCKET_COLOR: Record<string, string> = {
@@ -64,6 +66,7 @@ function buildTaskRows(items: GanttItem[]): TaskRow[] {
 }
 
 export function EstimateModal({ items, onClose, onSaved }: Props) {
+  const { t } = useTranslation(["forecast", "common"]);
   const toast = useToast();
   const tasks = buildTaskRows(items);
 
@@ -124,11 +127,11 @@ export function EstimateModal({ items, onClose, onSaved }: Props) {
     const okCount = res.filter((r) => r.ok).length;
     const failCount = res.length - okCount;
     if (res.length === 0) {
-      toast.info("Нет заполненных оценок для сохранения");
+      toast.info(t("estimateModal.toast.noFilledEstimates"));
     } else if (failCount === 0) {
-      toast.success(`Сохранено оценок: ${okCount}`);
+      toast.success(t("estimateModal.toast.savedCount", { count: okCount }));
     } else {
-      toast.error(`Сохранено ${okCount}, с ошибкой ${failCount}`);
+      toast.error(t("estimateModal.toast.savedWithErrors", { ok: okCount, failed: failCount }));
     }
 
     if (res.length > 0 && res.every((r) => r.ok) && onSaved) {
@@ -148,9 +151,9 @@ export function EstimateModal({ items, onClose, onSaved }: Props) {
         {/* Header */}
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <div>
-            <h2 className="font-bold text-gray-900 text-lg">Задачи без оценок</h2>
+            <h2 className="font-bold text-gray-900 text-lg">{t("estimateModal.title")}</h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              {tasks.length} задач · {totalFields} полей не заполнены
+              {t("estimateModal.summary", { tasks: tasks.length, fields: totalFields })}
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
@@ -160,36 +163,36 @@ export function EstimateModal({ items, onClose, onSaved }: Props) {
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {tasks.length === 0 && (
             <div className="text-center text-gray-400 py-10">
-              Все задачи имеют оценки в Jira 🎉
+              {t("estimateModal.allEstimated")}
             </div>
           )}
 
-          {tasks.map((t) => (
-            <div key={t.key} className="border rounded-xl overflow-hidden">
+          {tasks.map((task) => (
+            <div key={task.key} className="border rounded-xl overflow-hidden">
               {/* Task header */}
               <div className="px-4 py-2.5 bg-gray-50 border-b flex items-center gap-2">
                 <a
-                  href={t.url}
+                  href={task.url}
                   target="_blank"
                   rel="noreferrer"
                   className="font-mono text-sm font-bold text-blue-600 hover:underline flex-none"
                 >
-                  {t.key}
+                  {task.key}
                 </a>
-                <span className="text-sm text-gray-600 truncate">{t.summary}</span>
+                <span className="text-sm text-gray-600 truncate">{task.summary}</span>
               </div>
 
               {/* Fields */}
               <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {t.missingFields.map((f) => (
+                {task.missingFields.map((f) => (
                   <div key={f.field}>
                     <label className="flex items-center gap-2 text-xs font-medium text-gray-600 mb-1">
                       <span className={`px-2 py-0.5 rounded border text-xs ${BUCKET_COLOR[f.bucket] ?? "text-gray-600 bg-gray-50 border-gray-200"}`}>
-                        {f.bucket}
+                        {bucketLabel(f.bucket, t)}
                       </span>
                       {FIELD_LABEL[f.field]}
                       <span className="text-gray-400 font-normal">
-                        (сейчас ~{f.defaultHours}ч дефолт)
+                        {t("estimateModal.currentDefaultHours", { hours: f.defaultHours })}
                       </span>
                     </label>
                     <div className="flex items-center gap-1.5">
@@ -197,13 +200,13 @@ export function EstimateModal({ items, onClose, onSaved }: Props) {
                         type="number"
                         min={0.5}
                         step={0.5}
-                        value={values[t.key]?.[f.field] ?? ""}
-                        onChange={(e) => setValue(t.key, f.field, e.target.value)}
+                        value={values[task.key]?.[f.field] ?? ""}
+                        onChange={(e) => setValue(task.key, f.field, e.target.value)}
                         onWheel={(e) => e.currentTarget.blur()}
-                        placeholder="часы"
+                        placeholder={t("estimateModal.hoursPlaceholder")}
                         className="w-24 px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
                       />
-                      <span className="text-xs text-gray-400">ч</span>
+                      <span className="text-xs text-gray-400">{t("estimateModal.hoursUnit")}</span>
                     </div>
                   </div>
                 ))}
@@ -211,11 +214,11 @@ export function EstimateModal({ items, onClose, onSaved }: Props) {
 
               {/* Result badge */}
               {results && (() => {
-                const r = results.find((r) => r.key === t.key);
+                const r = results.find((r) => r.key === task.key);
                 if (!r) return null;
                 return (
                   <div className={`px-4 py-1.5 text-xs font-medium ${r.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-                    {r.ok ? "✓ Сохранено в Jira" : `✗ ${r.error}`}
+                    {r.ok ? t("estimateModal.savedToJira") : `✗ ${r.error}`}
                   </div>
                 );
               })()}
@@ -226,14 +229,14 @@ export function EstimateModal({ items, onClose, onSaved }: Props) {
         {/* Footer */}
         <div className="border-t px-6 py-3 bg-gray-50 rounded-b-2xl flex items-center justify-between">
           <div className="text-sm text-gray-500">
-            Заполнено: <span className="font-semibold text-gray-700">{filledCount}</span> из {totalFields}
+            {t("estimateModal.filledOf", { filled: filledCount, total: totalFields })}
           </div>
           <div className="flex gap-2">
             <button
               onClick={onClose}
               className="px-4 py-2 text-sm text-gray-600 border rounded-lg hover:bg-gray-100"
             >
-              {results ? "Закрыть" : "Отмена"}
+              {results ? t("estimateModal.close") : t("estimateModal.cancel")}
             </button>
             {!results && (
               <button
@@ -241,7 +244,7 @@ export function EstimateModal({ items, onClose, onSaved }: Props) {
                 disabled={saving || filledCount === 0}
                 className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white text-sm font-semibold rounded-lg"
               >
-                {saving ? "Сохраняю…" : `Сохранить в Jira (${filledCount})`}
+                {saving ? t("estimateModal.saving") : t("estimateModal.saveToJira", { count: filledCount })}
               </button>
             )}
             {results && onSaved && (
@@ -249,7 +252,7 @@ export function EstimateModal({ items, onClose, onSaved }: Props) {
                 onClick={() => { onSaved(); onClose(); }}
                 className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg"
               >
-                Пересчитать прогноз
+                {t("estimateModal.recompute")}
               </button>
             )}
           </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   adminCreateUser, adminDeleteUser, adminGetAllSalaries, adminListConfigs, adminListSprints,
   adminListUsers, adminResetPassword, adminTransferConfig, adminUpdateAllSalaries, adminUpdateUser,
@@ -17,6 +18,7 @@ type DataState = {
 };
 
 export function AdminPage() {
+  const { t } = useTranslation(["admin", "common"]);
   const toast = useToast();
   const [tab, setTab] = useState<"manage" | "salaries">("manage");
   const [data, setData] = useState<DataState | null>(null);
@@ -50,7 +52,7 @@ export function AdminPage() {
   }, []);
 
   if (loading) {
-    return <div className="text-center text-gray-500 mt-20">Загрузка…</div>;
+    return <div className="text-center text-gray-500 mt-20">{t("common:loading")}</div>;
   }
   if (loadError && !data) {
     return (
@@ -66,7 +68,7 @@ export function AdminPage() {
   return (
     <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
       <div className="flex items-center gap-4">
-        <h1 className="text-lg font-semibold text-gray-800">Админка</h1>
+        <h1 className="text-lg font-semibold text-gray-800">{t("admin:title")}</h1>
         <div className="flex gap-1">
           <button
             onClick={() => setTab("manage")}
@@ -74,7 +76,7 @@ export function AdminPage() {
               tab === "manage" ? "bg-blue-100 text-blue-800" : "text-gray-600 hover:bg-gray-100"
             }`}
           >
-            Управление
+            {t("admin:tabs.manage")}
           </button>
           <button
             onClick={() => setTab("salaries")}
@@ -82,7 +84,7 @@ export function AdminPage() {
               tab === "salaries" ? "bg-emerald-100 text-emerald-800" : "text-gray-600 hover:bg-gray-100"
             }`}
           >
-            Оклады
+            {t("admin:tabs.salaries")}
           </button>
         </div>
       </div>
@@ -93,13 +95,13 @@ export function AdminPage() {
           <section className="bg-white rounded-lg border p-4 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-800">
-                Пользователи ({data.users.length})
+                {t("admin:users.sectionTitle", { count: data.users.length })}
               </h2>
               <button
                 onClick={() => setCreateOpen(true)}
                 className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-3 py-1.5 rounded"
               >
-                + Создать
+                {t("admin:users.createButton")}
               </button>
             </div>
             <UsersTable
@@ -107,19 +109,18 @@ export function AdminPage() {
               onUpdate={async (id, body) => {
                 await adminUpdateUser(id, body);
                 await reload();
-                toast.success("Пользователь обновлён");
+                toast.success(t("admin:users.toast.updated"));
               }}
               onResetPassword={(id) => setResetPwForUserId(id)}
               onDelete={async (u) => {
                 const ok = window.confirm(
-                  `Удалить пользователя ${u.email}?\n\n` +
-                  `Вместе с ним удалится его конфиг и все его спринты (CASCADE).`
+                  t("admin:users.deleteConfirm", { email: u.email })
                 );
                 if (!ok) return;
                 try {
                   await adminDeleteUser(u.id);
                   await reload();
-                  toast.success(`Пользователь ${u.email} удалён`);
+                  toast.success(t("admin:users.toast.deleted", { email: u.email }));
                 } catch (e) {
                   toast.error(extractError(e));
                 }
@@ -130,7 +131,7 @@ export function AdminPage() {
           {/* Конфиги */}
           <section className="bg-white rounded-lg border p-4 shadow-sm">
             <h2 className="font-semibold text-gray-800 mb-3">
-              Конфиги ({data.configs.length})
+              {t("admin:configs.sectionTitle", { count: data.configs.length })}
             </h2>
             <ConfigsTable
               configs={data.configs}
@@ -141,7 +142,7 @@ export function AdminPage() {
           {/* Спринты (read-only) */}
           <section className="bg-white rounded-lg border p-4 shadow-sm">
             <h2 className="font-semibold text-gray-800 mb-3">
-              Спринты ({data.sprints.length})
+              {t("admin:sprints.sectionTitle", { count: data.sprints.length })}
             </h2>
             <SprintsTable sprints={data.sprints} />
           </section>
@@ -152,7 +153,7 @@ export function AdminPage() {
               onCreated={async () => {
                 setCreateOpen(false);
                 await reload();
-                toast.success("Пользователь создан");
+                toast.success(t("admin:users.toast.created"));
               }}
               onError={toast.error}
             />
@@ -164,7 +165,7 @@ export function AdminPage() {
               onClose={() => setResetPwForUserId(null)}
               onDone={() => {
                 setResetPwForUserId(null);
-                toast.success("Пароль изменён");
+                toast.success(t("admin:users.toast.passwordChanged"));
               }}
               onError={toast.error}
             />
@@ -178,7 +179,7 @@ export function AdminPage() {
               onDone={async () => {
                 setTransferForConfigId(null);
                 await reload();
-                toast.success("Конфиг передан");
+                toast.success(t("admin:configs.toast.transferred"));
               }}
               onError={toast.error}
             />
@@ -203,16 +204,17 @@ function UsersTable({
   onResetPassword: (id: number) => void;
   onDelete: (u: UserOut) => void;
 }) {
+  const { t } = useTranslation(["admin", "common"]);
   return (
     <table className="w-full text-sm">
       <thead className="bg-gray-100 border-b">
         <tr>
-          <th className="text-left px-3 py-1.5">ID</th>
-          <th className="text-left px-3 py-1.5">Email</th>
-          <th className="text-left px-3 py-1.5">Имя</th>
-          <th className="text-left px-3 py-1.5 w-32">Роль</th>
-          <th className="text-center px-3 py-1.5 w-24">Активен</th>
-          <th className="text-right px-3 py-1.5">Действия</th>
+          <th className="text-left px-3 py-1.5">{t("admin:users.table.id")}</th>
+          <th className="text-left px-3 py-1.5">{t("admin:users.table.email")}</th>
+          <th className="text-left px-3 py-1.5">{t("admin:users.table.name")}</th>
+          <th className="text-left px-3 py-1.5 w-32">{t("admin:users.table.role")}</th>
+          <th className="text-center px-3 py-1.5 w-24">{t("admin:users.table.active")}</th>
+          <th className="text-right px-3 py-1.5">{t("common:actions")}</th>
         </tr>
       </thead>
       <tbody>
@@ -238,6 +240,7 @@ function UserRow({
   onResetPassword: (id: number) => void;
   onDelete: (u: UserOut) => void;
 }) {
+  const { t } = useTranslation(["admin", "common"]);
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user.display_name);
@@ -291,8 +294,8 @@ function UserRow({
             onChange={(e) => setRole(e.target.value)}
             className="px-2 py-0.5 border rounded text-sm bg-white"
           >
-            <option value="lead">lead</option>
-            <option value="admin">admin</option>
+            <option value="lead">{t("admin:users.roleOptions.lead")}</option>
+            <option value="admin">{t("admin:users.roleOptions.admin")}</option>
           </select>
         ) : (
           <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
@@ -321,14 +324,14 @@ function UserRow({
               disabled={busy}
               className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded"
             >
-              Сохранить
+              {t("common:save")}
             </button>
             <button
               onClick={cancel}
               disabled={busy}
               className="text-xs bg-gray-300 hover:bg-gray-400 text-gray-700 px-2 py-1 rounded"
             >
-              Отмена
+              {t("common:cancel")}
             </button>
           </div>
         ) : (
@@ -337,19 +340,19 @@ function UserRow({
               onClick={() => setEditing(true)}
               className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded"
             >
-              Редактировать
+              {t("admin:users.actions.edit")}
             </button>
             <button
               onClick={() => onResetPassword(user.id)}
               className="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1 rounded"
             >
-              Пароль
+              {t("admin:users.actions.password")}
             </button>
             <button
               onClick={() => onDelete(user)}
               className="text-xs bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded"
             >
-              Удалить
+              {t("admin:users.actions.delete")}
             </button>
           </div>
         )}
@@ -366,18 +369,19 @@ function ConfigsTable({
   configs: AdminConfigSummary[];
   onTransfer: (configId: number) => void;
 }) {
+  const { t } = useTranslation(["admin", "common"]);
   if (configs.length === 0) {
-    return <div className="text-gray-400 text-sm">Конфигов нет.</div>;
+    return <div className="text-gray-400 text-sm">{t("admin:configs.empty")}</div>;
   }
   return (
     <table className="w-full text-sm">
       <thead className="bg-gray-100 border-b">
         <tr>
-          <th className="text-left px-3 py-1.5">ID</th>
-          <th className="text-left px-3 py-1.5">Имя</th>
-          <th className="text-left px-3 py-1.5">Владелец</th>
-          <th className="text-left px-3 py-1.5">Спринтов</th>
-          <th className="text-right px-3 py-1.5">Действия</th>
+          <th className="text-left px-3 py-1.5">{t("admin:configs.table.id")}</th>
+          <th className="text-left px-3 py-1.5">{t("admin:configs.table.name")}</th>
+          <th className="text-left px-3 py-1.5">{t("admin:configs.table.owner")}</th>
+          <th className="text-left px-3 py-1.5">{t("admin:configs.table.sprintsCount")}</th>
+          <th className="text-right px-3 py-1.5">{t("common:actions")}</th>
         </tr>
       </thead>
       <tbody>
@@ -396,7 +400,7 @@ function ConfigsTable({
                   )}
                 </span>
               ) : (
-                <span className="text-red-500 italic">нет владельца</span>
+                <span className="text-red-500 italic">{t("admin:configs.noOwner")}</span>
               )}
             </td>
             <td className="px-3 py-1.5">{c.sprints_count}</td>
@@ -405,7 +409,7 @@ function ConfigsTable({
                 onClick={() => onTransfer(c.id)}
                 className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
               >
-                Передать
+                {t("admin:configs.transferButton")}
               </button>
             </td>
           </tr>
@@ -418,18 +422,19 @@ function ConfigsTable({
 // -------------------- Таблица спринтов --------------------
 
 function SprintsTable({ sprints }: { sprints: AdminSprintSummary[] }) {
+  const { t } = useTranslation(["admin", "common"]);
   if (sprints.length === 0) {
-    return <div className="text-gray-400 text-sm">Спринтов нет.</div>;
+    return <div className="text-gray-400 text-sm">{t("admin:sprints.empty")}</div>;
   }
   return (
     <table className="w-full text-sm">
       <thead className="bg-gray-100 border-b">
         <tr>
-          <th className="text-left px-3 py-1.5">ID</th>
-          <th className="text-left px-3 py-1.5">№</th>
-          <th className="text-left px-3 py-1.5">Статус</th>
-          <th className="text-left px-3 py-1.5">Конфиг</th>
-          <th className="text-left px-3 py-1.5">Владелец</th>
+          <th className="text-left px-3 py-1.5">{t("admin:sprints.table.id")}</th>
+          <th className="text-left px-3 py-1.5">{t("admin:sprints.table.num")}</th>
+          <th className="text-left px-3 py-1.5">{t("admin:sprints.table.status")}</th>
+          <th className="text-left px-3 py-1.5">{t("admin:sprints.table.config")}</th>
+          <th className="text-left px-3 py-1.5">{t("admin:sprints.table.owner")}</th>
         </tr>
       </thead>
       <tbody>
@@ -477,6 +482,7 @@ function CreateUserModal({
   onCreated: () => Promise<void>;
   onError: (msg: string) => void;
 }) {
+  const { t } = useTranslation(["admin", "common"]);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState("lead");
@@ -497,10 +503,10 @@ function CreateUserModal({
   };
 
   return (
-    <ModalShell title="Создать пользователя" onClose={onClose}>
+    <ModalShell title={t("admin:createUserModal.title")} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <div>
-          <label className="text-sm text-gray-600 block mb-1">Email</label>
+          <label className="text-sm text-gray-600 block mb-1">{t("admin:createUserModal.emailLabel")}</label>
           <input
             type="email"
             required
@@ -511,7 +517,7 @@ function CreateUserModal({
           />
         </div>
         <div>
-          <label className="text-sm text-gray-600 block mb-1">Имя</label>
+          <label className="text-sm text-gray-600 block mb-1">{t("admin:createUserModal.nameLabel")}</label>
           <input
             type="text"
             value={displayName}
@@ -520,18 +526,18 @@ function CreateUserModal({
           />
         </div>
         <div>
-          <label className="text-sm text-gray-600 block mb-1">Роль</label>
+          <label className="text-sm text-gray-600 block mb-1">{t("admin:createUserModal.roleLabel")}</label>
           <select
             value={role}
             onChange={(e) => setRole(e.target.value)}
             className="w-full px-2 py-1.5 border rounded bg-white"
           >
-            <option value="lead">lead — обычный пользователь</option>
-            <option value="admin">admin — управление пользователями</option>
+            <option value="lead">{t("admin:createUserModal.roleOptions.lead")}</option>
+            <option value="admin">{t("admin:createUserModal.roleOptions.admin")}</option>
           </select>
         </div>
         <div>
-          <label className="text-sm text-gray-600 block mb-1">Пароль</label>
+          <label className="text-sm text-gray-600 block mb-1">{t("admin:createUserModal.passwordLabel")}</label>
           <input
             type="password"
             required
@@ -547,14 +553,14 @@ function CreateUserModal({
             disabled={busy}
             className="bg-gray-300 hover:bg-gray-400 text-gray-700 px-3 py-1.5 rounded text-sm"
           >
-            Отмена
+            {t("common:cancel")}
           </button>
           <button
             type="submit"
             disabled={busy}
             className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-semibold"
           >
-            {busy ? "Создаю…" : "Создать"}
+            {busy ? t("admin:createUserModal.creating") : t("admin:createUserModal.create")}
           </button>
         </div>
       </form>
@@ -570,6 +576,7 @@ function ResetPasswordModal({
   onDone: () => void;
   onError: (msg: string) => void;
 }) {
+  const { t } = useTranslation(["admin", "common"]);
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -587,10 +594,10 @@ function ResetPasswordModal({
   };
 
   return (
-    <ModalShell title={`Сброс пароля: ${user.email}`} onClose={onClose}>
+    <ModalShell title={t("admin:resetPasswordModal.title", { email: user.email })} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <p className="text-sm text-gray-600">
-          Введите новый пароль для пользователя. Передайте его лично.
+          {t("admin:resetPasswordModal.description")}
         </p>
         <input
           type="password"
@@ -599,7 +606,7 @@ function ResetPasswordModal({
           onChange={(e) => setPw(e.target.value)}
           className="w-full px-2 py-1.5 border rounded"
           autoFocus
-          placeholder="Новый пароль"
+          placeholder={t("admin:resetPasswordModal.placeholder")}
         />
         <div className="flex justify-end gap-2 pt-2">
           <button
@@ -608,14 +615,14 @@ function ResetPasswordModal({
             disabled={busy}
             className="bg-gray-300 hover:bg-gray-400 text-gray-700 px-3 py-1.5 rounded text-sm"
           >
-            Отмена
+            {t("common:cancel")}
           </button>
           <button
             type="submit"
             disabled={busy}
             className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded text-sm font-semibold"
           >
-            {busy ? "Сохраняю…" : "Сменить"}
+            {busy ? t("admin:resetPasswordModal.saving") : t("admin:resetPasswordModal.change")}
           </button>
         </div>
       </form>
@@ -632,6 +639,7 @@ function TransferConfigModal({
   onDone: () => Promise<void>;
   onError: (msg: string) => void;
 }) {
+  const { t } = useTranslation(["admin", "common"]);
   const [newOwnerId, setNewOwnerId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -642,9 +650,7 @@ function TransferConfigModal({
     if (!newOwner) return;
 
     const ok = window.confirm(
-      `Передать конфиг "${config.name}" пользователю ${newOwner.email}?\n\n` +
-      `Все спринты этого конфига перейдут к нему.\n` +
-      `Прошлый владелец останется без конфига — при следующем логине ему будет создан новый пустой.`
+      t("admin:transferConfigModal.confirmMessage", { name: config.name, email: newOwner.email })
     );
     if (!ok) return;
 
@@ -660,22 +666,22 @@ function TransferConfigModal({
   };
 
   return (
-    <ModalShell title={`Передать конфиг: ${config.name}`} onClose={onClose}>
+    <ModalShell title={t("admin:transferConfigModal.title", { name: config.name })} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <p className="text-sm text-gray-600">
-          Текущий владелец: <b>{config.owner_email || "—"}</b>
+          {t("admin:transferConfigModal.currentOwner")} <b>{config.owner_email || "—"}</b>
           <br/>
-          Спринтов в конфиге: <b>{config.sprints_count}</b>
+          {t("admin:transferConfigModal.sprintsInConfig")} <b>{config.sprints_count}</b>
         </p>
         <div>
-          <label className="text-sm text-gray-600 block mb-1">Новый владелец (lead)</label>
+          <label className="text-sm text-gray-600 block mb-1">{t("admin:transferConfigModal.newOwnerLabel")}</label>
           <select
             required
             value={newOwnerId ?? ""}
             onChange={(e) => setNewOwnerId(Number(e.target.value))}
             className="w-full px-2 py-1.5 border rounded bg-white"
           >
-            <option value="">— выберите —</option>
+            <option value="">{t("admin:transferConfigModal.selectPlaceholder")}</option>
             {leads.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.email} {u.display_name && `(${u.display_name})`}
@@ -684,7 +690,7 @@ function TransferConfigModal({
           </select>
           {leads.length === 0 && (
             <p className="text-xs text-orange-600 mt-1">
-              Нет lead-пользователей. Сначала создай нужного.
+              {t("admin:transferConfigModal.noLeads")}
             </p>
           )}
         </div>
@@ -695,14 +701,14 @@ function TransferConfigModal({
             disabled={busy}
             className="bg-gray-300 hover:bg-gray-400 text-gray-700 px-3 py-1.5 rounded text-sm"
           >
-            Отмена
+            {t("common:cancel")}
           </button>
           <button
             type="submit"
             disabled={busy || newOwnerId === null}
             className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
           >
-            {busy ? "Передаю…" : "Передать"}
+            {busy ? t("admin:transferConfigModal.transferring") : t("admin:transferConfigModal.transfer")}
           </button>
         </div>
       </form>
@@ -711,6 +717,7 @@ function TransferConfigModal({
 }
 
 function SalariesTab() {
+  const { t } = useTranslation(["admin", "common"]);
   const toast = useToast();
   const [members, setMembers] = useState<AdminTeamMember[] | null>(null);
   const [salaries, setSalaries] = useState<Record<string, number>>({});
@@ -739,7 +746,7 @@ function SalariesTab() {
     setSaving(true);
     try {
       await adminUpdateAllSalaries(salaries);
-      toast.success("Оклады сохранены");
+      toast.success(t("admin:salaries.toast.saved"));
     } catch (e) {
       toast.error(extractError(e));
     } finally {
@@ -749,27 +756,26 @@ function SalariesTab() {
 
   return (
     <section className="bg-white rounded-lg border p-4 shadow-sm">
-      <h2 className="font-semibold text-gray-800 mb-1">Оклады команды</h2>
+      <h2 className="font-semibold text-gray-800 mb-1">{t("admin:salaries.title")}</h2>
       <p className="text-xs text-gray-500 mb-4">
-        Оклад в ₽/месяц. Используется для расчёта стоимости проекта в прогнозе реализации.
-        Конфиденциально — участники команды не видят эти данные.
+        {t("admin:salaries.description")}
       </p>
 
       {loading ? (
-        <div className="text-gray-400 text-sm py-4">Загрузка…</div>
+        <div className="text-gray-400 text-sm py-4">{t("common:loading")}</div>
       ) : members === null ? null : members.length === 0 ? (
         <div className="text-gray-400 text-sm py-4">
-          Команда пуста. Добавьте участников в настройках конфига.
+          {t("admin:salaries.empty")}
         </div>
       ) : (
         <>
           <table className="w-full text-sm mb-4">
             <thead className="bg-gray-100 border-b">
               <tr>
-                <th className="text-left px-3 py-1.5">Имя в Jira</th>
-                <th className="text-left px-3 py-1.5">Имя для файла</th>
-                <th className="text-left px-3 py-1.5 w-32">Роль</th>
-                <th className="text-left px-3 py-1.5 w-44">Оклад, ₽/мес</th>
+                <th className="text-left px-3 py-1.5">{t("admin:salaries.table.jiraName")}</th>
+                <th className="text-left px-3 py-1.5">{t("admin:salaries.table.fileName")}</th>
+                <th className="text-left px-3 py-1.5 w-32">{t("admin:salaries.table.role")}</th>
+                <th className="text-left px-3 py-1.5 w-44">{t("admin:salaries.table.salary")}</th>
               </tr>
             </thead>
             <tbody>
@@ -799,7 +805,7 @@ function SalariesTab() {
               disabled={saving}
               className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white px-4 py-2 rounded text-sm font-semibold"
             >
-              {saving ? "Сохраняю…" : "Сохранить"}
+              {saving ? t("admin:salaries.saving") : t("common:save")}
             </button>
           </div>
         </>

@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 interface Props {
   value: string[];
   onChange: (next: string[]) => void;
@@ -6,6 +8,7 @@ interface Props {
 
 /** Редактор простого списка строк (extra_components, strict_assignee_buckets). */
 export function StringListEditor({ value, onChange, placeholder }: Props) {
+  const { t } = useTranslation(["settings", "common"]);
   const handleChange = (i: number, v: string) => {
     const next = [...value];
     next[i] = v;
@@ -30,7 +33,7 @@ export function StringListEditor({ value, onChange, placeholder }: Props) {
             <button
               onClick={() => handleRemove(i)}
               className="text-red-500 hover:text-red-700 px-2"
-              title="Удалить"
+              title={t("stringList.remove")}
             >
               ×
             </button>
@@ -41,7 +44,7 @@ export function StringListEditor({ value, onChange, placeholder }: Props) {
         onClick={handleAdd}
         className="mt-2 text-sm text-blue-600 hover:text-blue-800"
       >
-        + Добавить
+        {t("stringList.add")}
       </button>
     </div>
   );

@@ -88,6 +88,13 @@ class Config(Base):
     jira_email: Mapped[str] = mapped_column(String(200), default="")
     jira_api_token_enc: Mapped[str] = mapped_column(String(500), default="")
 
+    # Telegram-дайджест «задачи на сегодня» по последнему утверждённому спринту.
+    # Токен бота резолвится так: токен конфига (если задан) → глобальный settings.telegram_bot_token.
+    telegram_bot_token_enc: Mapped[str] = mapped_column(String(500), default="")
+    telegram_chat_id: Mapped[str] = mapped_column(String(100), default="")
+    telegram_daily_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    telegram_daily_time: Mapped[str] = mapped_column(String(5), default="")  # "HH:MM" локального времени сервера
+
     team_members: Mapped[list["TeamMember"]] = relationship(
         cascade="all, delete-orphan", back_populates="config"
     )

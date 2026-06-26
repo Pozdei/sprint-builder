@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import current_config, get_jira_client, require_lead
+from app.core.i18n import get_lang, make_translator
 from app.db import models
 from app.jira.client import JiraError, client
 from app.schemas.jira import (
@@ -12,21 +13,37 @@ from app.schemas.jira import (
 
 router = APIRouter(prefix="/jira", tags=["jira"])
 
+_MSG: dict[str, dict[str, str]] = {
+    "field_not_configured": {
+        "ru": "Поле '{label}' не настроено в конфиге",
+        "en": "Field '{label}' is not configured",
+    },
+    "hours_analyst": {"ru": "Часы аналитика", "en": "Analyst hours"},
+    "hours_tester": {"ru": "Часы тестера", "en": "Tester hours"},
+    "hours_developer": {"ru": "Часы разработчика", "en": "Developer hours"},
+    "hours_designer": {"ru": "Часы дизайнера", "en": "Designer hours"},
+    "field_developer": {"ru": "Разработчик", "en": "Developer"},
+    "field_designer": {"ru": "Дизайнер", "en": "Designer"},
+    "field_tester": {"ru": "Тестировщик", "en": "Tester"},
+    "field_analyst": {"ru": "Аналитик", "en": "Analyst"},
+}
+_t = make_translator(_MSG)
+
 
 @router.get("/check", dependencies=[Depends(get_jira_client)])
-def jira_check():
+def jira_check(lang: str = Depends(get_lang)):
     try:
         me = client.get("/rest/api/3/myself")
     except JiraError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=e.text(lang))
     return {"display_name": me.get("displayName"), "email": me.get("emailAddress")}
 
-# Поля часов: (атрибут тела запроса, ключ в role_hours_fields, человекочитаемое имя)
+# Поля часов: (атрибут тела запроса, ключ в role_hours_fields, ключ сообщения с человекочитаемым именем)
 _HOURS_ROLE_FIELDS = [
-    ("hours_analyst",   "analyst",  "Часы аналитика"),
-    ("hours_tester",    "tester",   "Часы тестера"),
-    ("hours_developer", "developer","Часы разработчика"),
-    ("hours_designer",  "designer", "Часы дизайнера"),
+    ("hours_analyst",   "analyst",  "hours_analyst"),
+    ("hours_tester",    "tester",   "hours_tester"),
+    ("hours_developer", "developer","hours_developer"),
+    ("hours_designer",  "designer", "hours_designer"),
 ]
 
 
@@ -35,6 +52,7 @@ def update_issue_fields(
     key: str,
     body: IssueFieldsUpdate,
     config: models.Config = Depends(current_config),
+    lang: str = Depends(get_lang),
 ):
     """Обновить поля задачи в Jira: часы ролей и/или разработчик."""
     from app.db import repository
@@ -43,33 +61,48 @@ def update_issue_fields(
 
     fields: dict = {}
 
-    for attr, role_key, label in _HOURS_ROLE_FIELDS:
+    for attr, role_key, label_key in _HOURS_ROLE_FIELDS:
         value = getattr(body, attr)
         if value is None:
             continue
         fid = cfg.role_hours_fields.get(role_key)
         if not fid:
-            raise HTTPException(status_code=400, detail=f"Поле '{label}' не настроено в конфиге")
+            raise HTTPException(
+                status_code=400,
+                detail=_t("field_not_configured", lang, label=_t(label_key, lang)),
+            )
         fields[fid] = value
 
     if body.developer_account_id is not None:
         if not cfg.developer_field:
-            raise HTTPException(status_code=400, detail="Поле 'Разработчик' не настроено в конфиге")
+            raise HTTPException(
+                status_code=400,
+                detail=_t("field_not_configured", lang, label=_t("field_developer", lang)),
+            )
         fields[cfg.developer_field] = {"accountId": body.developer_account_id}
 
     if body.designer_account_id is not None:
         if not cfg.designer_field:
-            raise HTTPException(status_code=400, detail="Поле 'Дизайнер' не настроено в конфиге")
+            raise HTTPException(
+                status_code=400,
+                detail=_t("field_not_configured", lang, label=_t("field_designer", lang)),
+            )
         fields[cfg.designer_field] = {"accountId": body.designer_account_id}
 
     if body.tester_account_id is not None:
         if not cfg.tester_field:
-            raise HTTPException(status_code=400, detail="Поле 'Тестировщик' не настроено в конфиге")
+            raise HTTPException(
+                status_code=400,
+                detail=_t("field_not_configured", lang, label=_t("field_tester", lang)),
+            )
         fields[cfg.tester_field] = {"accountId": body.tester_account_id}
 
     if body.responsible_account_id is not None:
         if not cfg.responsible_field:
-            raise HTTPException(status_code=400, detail="Поле 'Аналитик' не настроено в конфиге")
+            raise HTTPException(
+                status_code=400,
+                detail=_t("field_not_configured", lang, label=_t("field_analyst", lang)),
+            )
         fields[cfg.responsible_field] = {"accountId": body.responsible_account_id}
 
     if not fields:
@@ -78,7 +111,7 @@ def update_issue_fields(
     try:
         client.put(f"/rest/api/3/issue/{key}", json={"fields": fields})
     except JiraError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=e.text(lang))
 
 
 @router.post(
@@ -88,6 +121,7 @@ def update_issue_fields(
 def submit_standup(
     body: StandupSubmitRequest,
     _user: models.User = Depends(require_lead),
+    lang: str = Depends(get_lang),
 ):
     """Записать результаты стендапа: для задач с push_to_jira=True добавить комментарий в Jira."""
     results: list[StandupSubmitResult] = []
@@ -122,7 +156,7 @@ def submit_standup(
             results.append(StandupSubmitResult(key=upd.key, bucket=upd.bucket, pushed=True))
         except JiraError as e:
             results.append(StandupSubmitResult(
-                key=upd.key, bucket=upd.bucket, pushed=False, error=str(e),
+                key=upd.key, bucket=upd.bucket, pushed=False, error=e.text(lang),
             ))
 
     return results
@@ -135,12 +169,13 @@ def submit_standup(
 def search_users(
     q: str = Query(..., min_length=1, description="Запрос — имя или email"),
     _user: models.User = Depends(require_lead),
+    lang: str = Depends(get_lang),
 ):
     """До 20 пользователей в Jira по подстроке имени или email."""
     try:
         data = client.get("/rest/api/3/user/search", params={"query": q, "maxResults": 20})
     except JiraError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=e.text(lang))
 
     if not isinstance(data, list):
         return []

@@ -5,8 +5,65 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.i18n import make_translator
 from app.db import models, repository, sprints_repository
 from app.jira.client import JiraClient
+
+_MSG: dict[str, dict[str, str]] = {
+    "sprint_not_found": {"ru": "Sprint {sprint_id} не найден", "en": "Sprint {sprint_id} not found"},
+    "snapshot_not_found": {"ru": "Снимок {snapshot_id} не найден", "en": "Snapshot {snapshot_id} not found"},
+    "sprint_belongs_to_other_user": {
+        "ru": "Sprint {sprint_id} принадлежит другому пользователю.",
+        "en": "Sprint {sprint_id} belongs to another user.",
+    },
+    "cannot_determine_sprint_num": {
+        "ru": "Не могу определить номер спринта: в Jira нет ни одного спринта "
+              "и в БД нет approved-спринтов.",
+        "en": "Can't determine sprint number: Jira has no sprints "
+              "and there are no approved sprints in the DB.",
+    },
+    "sprint_already_approved": {
+        "ru": "Sprint {sprint_num} уже утверждён — нельзя создать draft с тем же номером.",
+        "en": "Sprint {sprint_num} is already approved — can't create a draft with the same number.",
+    },
+    "sprint_status_only_draft_can_approve": {
+        "ru": "Sprint {sprint_num} имеет статус {status}, утвердить можно только draft.",
+        "en": "Sprint {sprint_num} has status {status}, only a draft can be approved.",
+    },
+    "sprint_not_in_jira": {
+        "ru": "В Jira нет Sprint {sprint_num}. Сначала создайте его в Jira, потом возвращайтесь сюда.",
+        "en": "Sprint {sprint_num} doesn't exist in Jira. Create it in Jira first, then come back here.",
+    },
+    "sprint_status_only_approved_can_reopen": {
+        "ru": "Sprint {sprint_num} имеет статус {status}, вернуть в драфт можно только approved.",
+        "en": "Sprint {sprint_num} has status {status}, only an approved sprint can be reopened to draft.",
+    },
+    "sprint_status_only_draft_can_delete": {
+        "ru": "Sprint {sprint_num} имеет статус {status}, удалить можно только draft.",
+        "en": "Sprint {sprint_num} has status {status}, only a draft can be deleted.",
+    },
+    "sprint_status_only_draft_can_edit": {
+        "ru": "Sprint {sprint_num} имеет статус {status}, редактировать можно только draft.",
+        "en": "Sprint {sprint_num} has status {status}, only a draft can be edited.",
+    },
+    "sprint_status_only_approved_can_close": {
+        "ru": "Sprint {sprint_num} имеет статус {status}, закрыть можно только approved.",
+        "en": "Sprint {sprint_num} has status {status}, only an approved sprint can be closed.",
+    },
+    "jira_sprint_not_closed_with_states": {
+        "ru": "В Jira Sprint {sprint_num} ещё не закрыт. Состояние по задачам спринта: "
+              "{states_summary}. Сначала закройте Sprint {sprint_num} в Jira.",
+        "en": "Sprint {sprint_num} is not yet closed in Jira. Task states in the sprint: "
+              "{states_summary}. Close Sprint {sprint_num} in Jira first.",
+    },
+    "jira_sprint_not_found_for_any_task": {
+        "ru": "В Jira не нашёл Sprint {sprint_num} ни у одной задачи спринта. "
+              "Возможно, все задачи переназначены.",
+        "en": "Could not find Sprint {sprint_num} in Jira for any task in the sprint. "
+              "Tasks may have been reassigned.",
+    },
+}
+_t = make_translator(_MSG)
 
 
 class JiraSprintNotFoundError(Exception):
@@ -31,25 +88,24 @@ class SprintAccessDeniedError(Exception):
 
 # -------------------- Проверка доступа --------------------
 
-def _check_access(sprint: models.Sprint, config_id: int) -> None:
+def _check_access(sprint: models.Sprint, config_id: int, lang: str = "ru") -> None:
     if sprint.config_id != config_id:
         raise SprintAccessDeniedError(
-            f"Sprint {sprint.id} принадлежит другому пользователю."
+            _t("sprint_belongs_to_other_user", lang, sprint_id=sprint.id)
         )
 
 
 # -------------------- Формула номера --------------------
 
-def compute_next_sprint_num(db: Session, config_id: int, max_jira: int | None) -> int:
+def compute_next_sprint_num(
+    db: Session, config_id: int, max_jira: int | None, lang: str = "ru",
+) -> int:
     max_approved = sprints_repository.get_max_approved_num(db, config_id)
     candidate_from_approved = (max_approved + 1) if max_approved is not None else None
 
     candidates = [c for c in (max_jira, candidate_from_approved) if c is not None]
     if not candidates:
-        raise ValueError(
-            "Не могу определить номер спринта: в Jira нет ни одного спринта "
-            "и в БД нет approved-спринтов."
-        )
+        raise ValueError(_t("cannot_determine_sprint_num", lang))
     return max(candidates)
 
 
@@ -62,12 +118,11 @@ def save_draft(
     allocated: list[dict],
     owner_stats: list[dict],
     max_sprint_in_jira: int | None,
+    lang: str = "ru",
 ) -> models.Sprint:
     for existing in sprints_repository.list_sprints_for_config(db, config.id):
         if existing.sprint_num == sprint_num and existing.status == "approved":
-            raise ValueError(
-                f"Sprint {sprint_num} уже утверждён — нельзя создать draft с тем же номером."
-            )
+            raise ValueError(_t("sprint_already_approved", lang, sprint_num=sprint_num))
 
     config_snapshot = {
         "id": config.id,
@@ -111,15 +166,15 @@ def _sprint_exists_in_jira(jira: JiraClient, project_key: str,
 
 
 def approve_sprint(db: Session, jira: JiraClient,
-                    sprint_id: int, config_id: int) -> models.Sprint:
+                    sprint_id: int, config_id: int, lang: str = "ru") -> models.Sprint:
     sprint = sprints_repository.get_sprint(db, sprint_id)
     if not sprint:
-        raise LookupError(f"Sprint {sprint_id} не найден")
-    _check_access(sprint, config_id)
+        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
+    _check_access(sprint, config_id, lang)
     if sprint.status != "draft":
         raise SprintNotADraftError(
-            f"Sprint {sprint.sprint_num} имеет статус {sprint.status}, "
-            f"утвердить можно только draft."
+            _t("sprint_status_only_draft_can_approve", lang,
+               sprint_num=sprint.sprint_num, status=sprint.status)
         )
 
     project_key = sprint.config_snapshot.get("project_key", "")
@@ -127,8 +182,7 @@ def approve_sprint(db: Session, jira: JiraClient,
 
     if not _sprint_exists_in_jira(jira, project_key, sprint_field, sprint.sprint_num):
         raise JiraSprintNotFoundError(
-            f"В Jira нет Sprint {sprint.sprint_num}. "
-            f"Сначала создайте его в Jira, потом возвращайтесь сюда."
+            _t("sprint_not_in_jira", lang, sprint_num=sprint.sprint_num)
         )
 
     return sprints_repository.approve(db, sprint)
@@ -136,30 +190,30 @@ def approve_sprint(db: Session, jira: JiraClient,
 
 # -------------------- Возврат в драфт --------------------
 
-def reopen_sprint(db: Session, sprint_id: int, config_id: int) -> models.Sprint:
+def reopen_sprint(db: Session, sprint_id: int, config_id: int, lang: str = "ru") -> models.Sprint:
     sprint = sprints_repository.get_sprint(db, sprint_id)
     if not sprint:
-        raise LookupError(f"Sprint {sprint_id} не найден")
-    _check_access(sprint, config_id)
+        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
+    _check_access(sprint, config_id, lang)
     if sprint.status != "approved":
         raise SprintNotApprovedError(
-            f"Sprint {sprint.sprint_num} имеет статус {sprint.status}, "
-            f"вернуть в драфт можно только approved."
+            _t("sprint_status_only_approved_can_reopen", lang,
+               sprint_num=sprint.sprint_num, status=sprint.status)
         )
     return sprints_repository.reopen(db, sprint)
 
 
 # -------------------- Удаление --------------------
 
-def delete_draft(db: Session, sprint_id: int, config_id: int) -> None:
+def delete_draft(db: Session, sprint_id: int, config_id: int, lang: str = "ru") -> None:
     sprint = sprints_repository.get_sprint(db, sprint_id)
     if not sprint:
-        raise LookupError(f"Sprint {sprint_id} не найден")
-    _check_access(sprint, config_id)
+        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
+    _check_access(sprint, config_id, lang)
     if sprint.status != "draft":
         raise SprintNotADraftError(
-            f"Sprint {sprint.sprint_num} имеет статус {sprint.status}, "
-            f"удалить можно только draft."
+            _t("sprint_status_only_draft_can_delete", lang,
+               sprint_num=sprint.sprint_num, status=sprint.status)
         )
     sprints_repository.delete_sprint(db, sprint)
 
@@ -167,15 +221,15 @@ def delete_draft(db: Session, sprint_id: int, config_id: int) -> None:
 # -------------------- Ручное редактирование --------------------
 
 def set_sprint_tasks(db: Session, sprint_id: int, config_id: int,
-                      tasks: list[dict]) -> models.Sprint:
+                      tasks: list[dict], lang: str = "ru") -> models.Sprint:
     sprint = sprints_repository.get_sprint(db, sprint_id)
     if not sprint:
-        raise LookupError(f"Sprint {sprint_id} не найден")
-    _check_access(sprint, config_id)
+        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
+    _check_access(sprint, config_id, lang)
     if sprint.status != "draft":
         raise SprintNotADraftError(
-            f"Sprint {sprint.sprint_num} имеет статус {sprint.status}, "
-            f"редактировать можно только draft."
+            _t("sprint_status_only_draft_can_edit", lang,
+               sprint_num=sprint.sprint_num, status=sprint.status)
         )
 
     budget = sprint.config_snapshot.get("hours_per_person", 80.0)
@@ -410,7 +464,7 @@ def _build_intrusion_record(
 # ---------- Главная функция close ----------
 
 def close_sprint(db: Session, jira: JiraClient,
-                  sprint_id: int, config_id: int) -> models.Sprint:
+                  sprint_id: int, config_id: int, lang: str = "ru") -> models.Sprint:
     """Закрыть approved-спринт.
 
     1. Снять снапшот статусов всех своих задач (как раньше).
@@ -421,12 +475,12 @@ def close_sprint(db: Session, jira: JiraClient,
     """
     sprint = sprints_repository.get_sprint(db, sprint_id)
     if not sprint:
-        raise LookupError(f"Sprint {sprint_id} не найден")
-    _check_access(sprint, config_id)
+        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
+    _check_access(sprint, config_id, lang)
     if sprint.status != "approved":
         raise SprintNotApprovedError(
-            f"Sprint {sprint.sprint_num} имеет статус {sprint.status}, "
-            f"закрыть можно только approved."
+            _t("sprint_status_only_approved_can_close", lang,
+               sprint_num=sprint.sprint_num, status=sprint.status)
         )
 
     snapshot = sprint.config_snapshot or {}
@@ -477,16 +531,12 @@ def close_sprint(db: Session, jira: JiraClient,
             states_summary = ", ".join(
                 f"{state}={count}" for state, count in sorted(seen_states.items())
             )
-            msg = (
-                f"В Jira Sprint {target_num} ещё не закрыт. "
-                f"Состояние по задачам спринта: {states_summary}. "
-                f"Сначала закройте Sprint {target_num} в Jira."
+            msg = _t(
+                "jira_sprint_not_closed_with_states", lang,
+                sprint_num=target_num, states_summary=states_summary,
             )
         else:
-            msg = (
-                f"В Jira не нашёл Sprint {target_num} ни у одной задачи спринта. "
-                f"Возможно, все задачи переназначены."
-            )
+            msg = _t("jira_sprint_not_found_for_any_task", lang, sprint_num=target_num)
         raise JiraSprintNotClosedError(msg)
 
     # ---------- Часть 2: поиск врывов ----------

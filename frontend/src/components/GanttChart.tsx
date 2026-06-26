@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { triggerDownload } from "../lib/download";
 import { groupBy } from "../lib/group-by";
+import { bucketLabel } from "../lib/bucket-label";
 import type { GanttItem, TaskDependency } from "../types/api";
 
 const HOUR_PX_DEFAULT = 12;
@@ -66,10 +68,10 @@ function devBucketLabel(item: GanttItem): string {
 }
 
 /** Короткая подпись бакета для бара (чтобы не уезжать за пределы прямоугольника). */
-function shortBucketLabel(bucket: string): string {
-  if (bucket === "Разработка фронт") return "Фронт";
-  if (bucket === "Разработка бек") return "Бек";
-  return bucket;
+function shortBucketLabel(bucket: string, t: (key: string) => string): string {
+  if (bucket === "Разработка фронт") return t("gantt:shortFrontend");
+  if (bucket === "Разработка бек") return t("gantt:shortBackend");
+  return bucketLabel(bucket, t);
 }
 
 /** Обрезать подпись бара под его пиксельную ширину (~5.7px/символ при fontSize=10). */
@@ -79,20 +81,24 @@ function truncateForBar(full: string, w: number, padding: number): string {
 }
 
 /** Человекочитаемая роль по имени роли из конфига (analyst/Tester/developer_lead/…). */
-function roleLabel(role: string): string {
+function roleLabel(role: string, t: (key: string) => string): string {
   const r = (role || "").toLowerCase();
   if (!r) return "";
   if (r.includes("lead") || r.includes("лид")) {
-    if (r.includes("design") || r.includes("диз")) return "Лид дизайна";
-    if (r.includes("dev") || r.includes("разраб")) return "Лид разработки";
-    return "Лид";
+    if (r.includes("design") || r.includes("диз")) return t("gantt:roleLeadDesign");
+    if (r.includes("dev") || r.includes("разраб")) return t("gantt:roleLeadDev");
+    return t("gantt:roleLead");
   }
-  if (r.startsWith("test") || r.includes("qa") || r.includes("тест")) return "Тестировщик";
-  if (r.startsWith("analyst") || r.includes("анал")) return "Аналитик";
-  if (r.startsWith("design") || r.includes("диз")) return "Дизайнер";
-  if (r.startsWith("dev") || r.includes("разраб")) return "Разработчик";
+  if (r.startsWith("test") || r.includes("qa") || r.includes("тест")) return t("gantt:roleTester");
+  if (r.startsWith("analyst") || r.includes("анал")) return t("gantt:roleAnalyst");
+  if (r.startsWith("design") || r.includes("диз")) return t("gantt:roleDesigner");
+  if (r.startsWith("dev") || r.includes("разраб")) return t("gantt:roleDeveloper");
   return role;
 }
+
+/** Подпись бакета для легенды — единый перевод через bucketLabel
+ * (ключи BUCKET_COLORS остаются нетронутыми: это значения из бэкенда). */
+const legendLabel = bucketLabel;
 
 function fmtDate(d: Date): string {
   return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
@@ -160,6 +166,7 @@ function aggregateBars(
 }
 
 export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], onTaskClick, todayHours, groupByStory = false, groupByEpic = false, groupByParent = false, sprintInfo = null, rootTasks = {} }: Props) {
+  const { t } = useTranslation(["gantt", "common"]);
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [hourPx, setHourPx] = useState(HOUR_PX_DEFAULT);
@@ -272,7 +279,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
           e.stopPropagation();
           setBadgePopover({ title, items: pending });
         }}
-        title={`${pending.length} ${pending.length === 1 ? "задача" : "задачи"} готовы к релизу / на проде — но не выполнены`}
+        title={t("gantt:releaseReadyTitle", { count: pending.length })}
         className="inline-flex items-center gap-0.5 px-1 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-400 hover:bg-amber-200 leading-tight shrink-0"
       >
         🚀{pending.length}
@@ -290,10 +297,10 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     const m: Record<string, string> = {};
     for (const [name, c] of Object.entries(counts)) {
       const top = Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
-      m[name] = roleLabel(top);
+      m[name] = roleLabel(top, t);
     }
     return m;
-  }, [items]);
+  }, [items, t]);
 
   // Полосы сводов (Epic выше, Story ниже) + раскладка по Y
   const bands: Band[] = useMemo(() => {
@@ -308,11 +315,11 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
       top += storyItems.length * (ROW_H + ROW_GAP) + BAND_GAP;
     }
     if (groupByParent && parentItems.length) {
-      arr.push({ kind: "Консолид.", title: "Консолидировано", items: parentItems, y0: top });
+      arr.push({ kind: "Консолид.", title: t("gantt:consolidatedTitle"), items: parentItems, y0: top });
       top += parentItems.length * (ROW_H + ROW_GAP) + BAND_GAP;
     }
     return arr;
-  }, [groupByEpic, groupByStory, groupByParent, epicItems, storyItems, parentItems]);
+  }, [groupByEpic, groupByStory, groupByParent, epicItems, storyItems, parentItems, t]);
 
   const ownersTop = bands.length
     ? bands[bands.length - 1].y0 + bands[bands.length - 1].items.length * (ROW_H + ROW_GAP) + BAND_GAP
@@ -465,7 +472,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     headerText.setAttribute("fill", "#6b7280");
     headerText.setAttribute("font-weight", "600");
     headerText.setAttribute("font-family", "system-ui, sans-serif");
-    headerText.textContent = bands.length ? bands[0].title : "Исполнитель";
+    headerText.textContent = bands.length ? bands[0].title : t("gantt:assignee");
     wrapper.appendChild(headerText);
 
     // Подписи сводных полос
@@ -559,26 +566,26 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
     <div className="relative overflow-x-auto border rounded-lg bg-white shadow-sm">
       {/* Панель управления */}
       <div className="flex items-center gap-3 px-3 py-2 border-b bg-gray-50 text-xs text-gray-600">
-        <span className="font-medium">Масштаб:</span>
+        <span className="font-medium">{t("gantt:scaleLabel")}</span>
         <button
           onClick={() => setHourPx((v) => Math.max(HOUR_PX_MIN, v - 2))}
           className="w-6 h-6 flex items-center justify-center border rounded hover:bg-gray-200 font-bold"
-          title="Уменьшить"
+          title={t("gantt:zoomOut")}
         >−</button>
-        <span className="w-14 text-center">{hourPx} px/ч</span>
+        <span className="w-14 text-center">{t("gantt:pxPerHour", { value: hourPx })}</span>
         <button
           onClick={() => setHourPx((v) => Math.min(HOUR_PX_MAX, v + 2))}
           className="w-6 h-6 flex items-center justify-center border rounded hover:bg-gray-200 font-bold"
-          title="Увеличить"
+          title={t("gantt:zoomIn")}
         >+</button>
         <button
           onClick={() => setHourPx(HOUR_PX_DEFAULT)}
           className="text-gray-400 hover:text-gray-600 underline ml-1"
-        >сброс</button>
+        >{t("gantt:resetZoom")}</button>
         <button
           onClick={handleExportSvg}
           className="ml-auto border border-gray-300 rounded px-2 py-0.5 hover:bg-gray-100"
-          title="Скачать диаграмму как SVG"
+          title={t("gantt:exportSvgTitle")}
         >↓ SVG</button>
       </div>
       <div style={{ display: "flex", minWidth: LABEL_W + chartW + 24 }}>
@@ -593,13 +600,13 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
             className="border-b flex items-end pb-1 px-3"
           >
             <span className="text-xs font-semibold text-gray-500">
-              {bands.length ? bands[0].title : "Исполнитель"}
+              {bands.length ? bands[0].title : t("gantt:assignee")}
             </span>
           </div>
           {/* Сводные полосы */}
           {bands.map((band, bi) => {
             const col = bucketColor(band.kind);
-            const nextTitle = bi + 1 < bands.length ? bands[bi + 1].title : "Исполнители";
+            const nextTitle = bi + 1 < bands.length ? bands[bi + 1].title : t("gantt:assignees");
             return (
               <div key={`band-${band.kind}`}>
                 {band.items.map((s) => (
@@ -748,14 +755,14 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                 />
                 {ln.num != null && (
                   <text x={ln.x + 3} y={HEADER_H - 2} fontSize={10} fill="#7c3aed" fontWeight="700">
-                    {`Спринт ${ln.num}`}
+                    {t("gantt:sprintLabel", { num: ln.num })}
                   </text>
                 )}
               </g>
             ))}
             {sprintBoundaries.startNum != null && (
               <text x={6} y={HEADER_H - 2} fontSize={10} fill="#a78bfa" fontWeight="700">
-                {`Спринт ${sprintBoundaries.startNum}`}
+                {t("gantt:sprintLabel", { num: sprintBoundaries.startNum })}
               </text>
             )}
 
@@ -771,7 +778,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                   x={hoursToX(todayHours) + 4} y={12}
                   fontSize={10} fill="#ef4444" fontWeight="700"
                 >
-                  сегодня
+                  {t("gantt:todayLine")}
                 </text>
               </g>
             ) : (
@@ -832,7 +839,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                         x={x + 6} y={y + h / 2 + 4}
                         fontSize={10} fill={col.text} fontWeight="700"
                       >
-                        {truncateForBar(`${item.key} · ${item.summary} · ${item.hours.toFixed(0)}ч`, w, 12)}
+                        {truncateForBar(`${item.key} · ${item.summary} · ${t("gantt:hoursAbbrev", { value: item.hours.toFixed(0) })}`, w, 12)}
                       </text>
                     )}
                   </g>
@@ -903,15 +910,15 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                       >
                         {truncateForBar(
                           item.key.startsWith("__")
-                            ? item.bucket
-                            : w > 80 ? `${item.key} · ${shortBucketLabel(devBucketLabel(item))}` : item.key,
+                            ? bucketLabel(item.bucket, t)
+                            : w > 80 ? `${item.key} · ${shortBucketLabel(devBucketLabel(item), t)}` : item.key,
                           w, 10,
                         )}
                       </text>
                     )}
                     {isRootTask && (
                       <text x={x - 1} y={y + 9} fontSize={11}>
-                        <title>Стартовая задача</title>
+                        <title>{t("gantt:rootTaskTitle")}</title>
                         📌
                       </text>
                     )}
@@ -936,7 +943,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                   key={`release-marker-${name}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setBadgePopover({ title: `Релиз · ${name}`, items: releaseItems });
+                    setBadgePopover({ title: t("gantt:releasePopoverTitle", { name }), items: releaseItems });
                   }}
                   style={{ cursor: "pointer" }}
                 >
@@ -963,7 +970,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
               }}
             >
               <div className="font-bold mb-0.5">
-                {tooltip.item.key.startsWith("__") ? tooltip.item.bucket : tooltip.item.key}
+                {tooltip.item.key.startsWith("__") ? bucketLabel(tooltip.item.bucket, t) : tooltip.item.key}
               </div>
               {!tooltip.item.key.startsWith("__") && (
                 <div className="text-gray-300 mb-1 leading-tight">{tooltip.item.summary}</div>
@@ -976,12 +983,12 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
                     color: bucketColor(devBucketLabel(tooltip.item)).text,
                   }}
                 >
-                  {devBucketLabel(tooltip.item)}
+                  {bucketLabel(devBucketLabel(tooltip.item), t)}
                 </span>
-                <span className="text-gray-300">{tooltip.item.hours.toFixed(1)} ч</span>
+                <span className="text-gray-300">{t("gantt:hoursAbbrevSpaced", { value: tooltip.item.hours.toFixed(1) })}</span>
                 {tooltip.item.is_historical && (
                   <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-gray-700 text-gray-200">
-                    факт{tooltip.item.phase_status ? ` · ${tooltip.item.phase_status}` : ""}
+                    {t("gantt:actual")}{tooltip.item.phase_status ? ` · ${tooltip.item.phase_status}` : ""}
                   </span>
                 )}
               </div>
@@ -996,7 +1003,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
               </div>
               {!tooltip.item.is_pseudo && (
                 <div className="text-gray-500 mt-1.5 text-xs border-t border-gray-700 pt-1.5">
-                  клик — все этапы · двойной — Jira
+                  {t("gantt:clickHint")}
                 </div>
               )}
             </div>
@@ -1025,7 +1032,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
               >×</button>
             </div>
             {Object.entries(
-              groupBy(badgePopover.items, (i) => i.phase_status || (i.is_historical ? "факт" : "прогноз")),
+              groupBy(badgePopover.items, (i) => i.phase_status || (i.is_historical ? t("gantt:actual") : t("gantt:forecast"))),
             ).map(([status, list]) => (
               <div key={status} className="mb-3 last:mb-0">
                 <div className="text-amber-700 font-semibold text-[11px] mb-1">
@@ -1071,7 +1078,7 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
               className="flex items-center gap-1 px-2 py-0.5 rounded border"
               style={{ background: col.bg, color: col.text, borderColor: col.border }}
             >
-              {bucket}
+              {legendLabel(bucket, t)}
             </span>
           ))}
       </div>

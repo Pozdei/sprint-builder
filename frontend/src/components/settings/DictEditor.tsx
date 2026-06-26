@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 /**
  * Редактор словаря: показывает таблицу пар ключ-значение с inline-редактированием.
@@ -25,6 +26,7 @@ export function DictEditor<V extends string | number>({
   valueOptions,
   valueType = "string",
 }: Props<V>) {
+  const { t } = useTranslation(["settings", "common"]);
   // Сохраняем порядок ключей в локальном стейте — иначе при изменении ключа
   // объект перестраивается и порядок строк в таблице прыгает.
   const [keys, setKeys] = useState<string[]>(() => Object.keys(value));
@@ -48,7 +50,7 @@ export function DictEditor<V extends string | number>({
   };
 
   const handleAdd = () => {
-    const newKey = "новый_ключ";
+    const newKey = t("dictEditor.newKey");
     const defaultVal = (valueType === "number" ? 0 : "") as V;
     setKeys([...keys, newKey]);
     onChange({ ...value, [newKey]: defaultVal });
@@ -115,7 +117,7 @@ export function DictEditor<V extends string | number>({
                 <button
                   onClick={() => handleRemove(i)}
                   className="text-red-500 hover:text-red-700 text-lg"
-                  title="Удалить"
+                  title={t("dictEditor.remove")}
                 >
                   ×
                 </button>
@@ -128,7 +130,7 @@ export function DictEditor<V extends string | number>({
         onClick={handleAdd}
         className="mt-2 text-sm text-blue-600 hover:text-blue-800"
       >
-        + Добавить
+        {t("dictEditor.add")}
       </button>
     </div>
   );

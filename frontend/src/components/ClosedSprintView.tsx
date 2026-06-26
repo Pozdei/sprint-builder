@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { bucketLabel } from "../lib/bucket-label";
 import type { ClosedTaskData, SprintOut, TaskOut } from "../types/api";
 import type { IntrusionRecord } from "../types/intrusions";
 import { IntrusionsView } from "./IntrusionsView";
@@ -7,6 +9,7 @@ interface Props {
 }
 
 export function ClosedSprintView({ sprint }: Props) {
+  const { t } = useTranslation(["history", "common"]);
   const terminalSet = new Set<string>(
     (sprint.config_snapshot.terminal_statuses as string[] | undefined) ?? [],
   );
@@ -75,42 +78,42 @@ export function ClosedSprintView({ sprint }: Props) {
 
   return (
     <div className="mt-4">
-      <h3 className="font-semibold text-gray-700 mb-2">Итоги закрытия</h3>
+      <h3 className="font-semibold text-gray-700 mb-2">{t("history:closedView.summaryTitle")}</h3>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <MetricCard
-          title="Задач выполнено"
-          value={`${doneKeys} из ${totalKeys}`}
+          title={t("history:closedView.metrics.tasksDone")}
+          value={t("history:closedView.metrics.ofTotal", { done: doneKeys, total: totalKeys })}
           percent={totalKeys ? (doneKeys / totalKeys) * 100 : 0}
         />
         <MetricCard
-          title="По плану (ожид. → факт: ✓)"
-          value={`${metExpectation} из ${totalKeys}`}
+          title={t("history:closedView.metrics.onPlan")}
+          value={t("history:closedView.metrics.ofTotal", { done: metExpectation, total: totalKeys })}
           percent={totalKeys ? (metExpectation / totalKeys) * 100 : 0}
         />
         <MetricCard
-          title="Перевыполнено"
+          title={t("history:closedView.metrics.exceeded")}
           value={String(exceeded)}
           percent={totalKeys ? (exceeded / totalKeys) * 100 : 0}
         />
         <MetricCard
-          title="Часов выполнено"
-          value={`${doneHours.toFixed(1)} из ${totalHours.toFixed(1)} ч`}
+          title={t("history:closedView.metrics.hoursDone")}
+          value={t("history:closedView.metrics.hoursOfTotal", { done: doneHours.toFixed(1), total: totalHours.toFixed(1) })}
           percent={totalHours ? (doneHours / totalHours) * 100 : 0}
         />
       </div>
 
       {byOwner.size > 0 && (
         <div className="mb-4">
-          <h4 className="text-sm font-semibold text-gray-600 mb-2">По людям</h4>
+          <h4 className="text-sm font-semibold text-gray-600 mb-2">{t("history:closedView.byPerson.title")}</h4>
           <table className="w-full text-sm border bg-white">
             <thead className="bg-gray-100">
               <tr>
-                <th className="text-left px-3 py-1 border-b">Консультант</th>
-                <th className="text-center px-3 py-1 border-b">Задач</th>
-                <th className="text-center px-3 py-1 border-b">Часы</th>
-                <th className="text-center px-3 py-1 border-b">% задач</th>
-                <th className="text-center px-3 py-1 border-b">% часов</th>
+                <th className="text-left px-3 py-1 border-b">{t("history:closedView.byPerson.consultant")}</th>
+                <th className="text-center px-3 py-1 border-b">{t("history:closedView.byPerson.tasks")}</th>
+                <th className="text-center px-3 py-1 border-b">{t("history:closedView.byPerson.hours")}</th>
+                <th className="text-center px-3 py-1 border-b">{t("history:closedView.byPerson.tasksPercent")}</th>
+                <th className="text-center px-3 py-1 border-b">{t("history:closedView.byPerson.hoursPercent")}</th>
               </tr>
             </thead>
             <tbody>
@@ -136,19 +139,19 @@ export function ClosedSprintView({ sprint }: Props) {
         </div>
       )}
 
-      <h4 className="text-sm font-semibold text-gray-600 mb-2">Было → Стало</h4>
+      <h4 className="text-sm font-semibold text-gray-600 mb-2">{t("history:closedView.diffTable.title")}</h4>
       <div className="border rounded-lg overflow-hidden bg-white">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 border-b">
             <tr>
               <th className="text-left px-3 py-1.5 font-semibold w-10"></th>
-              <th className="text-left px-3 py-1.5 font-semibold w-20">Задача</th>
-              <th className="text-left px-3 py-1.5 font-semibold">Название</th>
-              <th className="text-left px-3 py-1.5 font-semibold">Консультант</th>
-              <th className="text-left px-3 py-1.5 font-semibold">Ожид. итог</th>
-              <th className="text-left px-3 py-1.5 font-semibold">Было</th>
-              <th className="text-left px-3 py-1.5 font-semibold">Стало</th>
-              <th className="text-right px-3 py-1.5 font-semibold">Часы</th>
+              <th className="text-left px-3 py-1.5 font-semibold w-20">{t("history:closedView.diffTable.task")}</th>
+              <th className="text-left px-3 py-1.5 font-semibold">{t("history:closedView.diffTable.name")}</th>
+              <th className="text-left px-3 py-1.5 font-semibold">{t("history:closedView.diffTable.consultant")}</th>
+              <th className="text-left px-3 py-1.5 font-semibold">{t("history:closedView.diffTable.expectedResult")}</th>
+              <th className="text-left px-3 py-1.5 font-semibold">{t("history:closedView.diffTable.before")}</th>
+              <th className="text-left px-3 py-1.5 font-semibold">{t("history:closedView.diffTable.after")}</th>
+              <th className="text-right px-3 py-1.5 font-semibold">{t("history:closedView.diffTable.hours")}</th>
             </tr>
           </thead>
           <tbody>
@@ -162,7 +165,7 @@ export function ClosedSprintView({ sprint }: Props) {
                 </td>
                 <td className="px-3 py-1.5 font-mono text-xs">
                   {task.is_pseudo ? (
-                    <span className="text-gray-400 italic">(псевдо)</span>
+                    <span className="text-gray-400 italic">{t("history:closedView.diffTable.pseudo")}</span>
                   ) : (
                     <a
                       href={task.url}
@@ -188,7 +191,7 @@ export function ClosedSprintView({ sprint }: Props) {
                     <span className="text-gray-400">—</span>
                   ) : task.sprint_expected_result ? (
                     <span className="text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-                      {task.sprint_expected_result}
+                      {bucketLabel(task.sprint_expected_result, t)}
                     </span>
                   ) : (
                     <span className="text-gray-400">—</span>
@@ -203,7 +206,7 @@ export function ClosedSprintView({ sprint }: Props) {
                   ) : closed ? (
                     <span>{closed.status_name}</span>
                   ) : (
-                    <span className="text-gray-400 italic">нет данных</span>
+                    <span className="text-gray-400 italic">{t("history:closedView.diffTable.noData")}</span>
                   )}
                 </td>
                 <td className="text-right px-3 py-1.5 font-semibold">

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { login, setToken } from "../api/client";
 import { useToast } from "../components/Toast";
 import { extractError } from "../lib/api-error";
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function LoginPage({ onLogin }: Props) {
+  const { t } = useTranslation(["auth", "common"]);
   const toast = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,7 +50,7 @@ export function LoginPage({ onLogin }: Props) {
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Пароль</label>
+            <label className="block text-sm text-gray-600 mb-1">{t("passwordLabel")}</label>
             <input
               type="password"
               value={password}
@@ -63,7 +65,7 @@ export function LoginPage({ onLogin }: Props) {
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-semibold py-2 rounded transition"
           >
-            {loading ? "Вход…" : "Войти"}
+            {loading ? t("submitting") : t("submit")}
           </button>
         </form>
       </div>

@@ -1,0 +1,427 @@
+{
+  "title": "Help — Sprint Builder",
+  "subtitle": "A product development management tool based on the SDLC methodology",
+  "tabs": {
+    "concept": "1. Concept and process logic",
+    "features": "2. Features and settings"
+  },
+  "concept": {
+    "purpose": {
+      "title": "What Sprint Builder is for",
+      "p1": "Sprint Builder is a management control tool for product development. It automatically distributes tasks from Jira among assignees, builds a stage schedule, forecasts the completion date, and calculates the cost of the work.",
+      "p2Before": "It is based on the",
+      "p2Sdlc": "SDLC",
+      "p2Middle": "methodology (Software Development Life Cycle) — a task is never \"just done\", it passes through a chain of phases: someone analyzes it, someone designs it, someone develops it, someone reviews it. The system knows who is responsible for each phase and builds a realistic schedule that accounts for team workload, vacations, and dependencies between tasks."
+    },
+    "pipeline": {
+      "title": "Task lifecycle (pipeline)",
+      "introBefore": "Every task passes through a sequence of stages — a",
+      "introBold": "pipeline",
+      "introAfter": ". The set of stages depends on the task's type (direction), but the overall logic is the same:",
+      "stages": [
+        { "label": "Analysis", "desc": "Analyst" },
+        { "label": "Design", "desc": "Designer" },
+        { "label": "Development", "desc": "Developer" },
+        { "label": "Code Review", "desc": "Development Lead" },
+        { "label": "Testing", "desc": "Tester" },
+        { "label": "Release", "desc": "Development Lead" }
+      ],
+      "statusMappingBefore": "Jira statuses are automatically mapped to these phases via the \"Status → Bucket\" table in settings. The system knows that a task in the \"In Development\" status is the",
+      "statusMappingDevelopment": "Development",
+      "statusMappingMiddle": "phase, while \"Ready for Testing\" is the",
+      "statusMappingTesting": "Testing",
+      "statusMappingEnd": "phase.",
+      "releaseBefore": "For Backend/Frontend tasks, the final pipeline stage is",
+      "releaseBold": "Release",
+      "releaseAfter": "(Jira statuses \"Ready for Release\" and \"Deployed to PROD\"). Release is not work that takes time, but readiness to ship: a batch of finished tasks can be released all at once in seconds, so it doesn't sit in the assignee's queue and isn't counted in hours on the chart. On the Gantt chart's detailed per-assignee grid, all Release tasks collapse into a single marker on today's date — hovering shows the list of tasks ready to ship. In the rollup bars by story/epic, the Release stage doesn't stretch the bar, so as not to overload the rollup with per-task detail.",
+      "badgeBefore": "If a task is already in the \"Ready for Release\" or \"Deployed to PROD\" status in Jira right now, but not yet marked done — a",
+      "badgeBold": "🚀 N",
+      "badgeAfter": "badge appears next to the assignee's name and the story/epic key (in the forecast's history mode). It shows that there are N such tasks that can be shipped right now. Clicking the badge opens a list of these tasks broken down by status, with links to Jira."
+    },
+    "directions": {
+      "title": "Development directions",
+      "introBefore": "Different types of tasks require different sets of stages. That's why the system lets you configure",
+      "introBold": "Directions",
+      "introAfter": "— each defines its own pipeline and owners. A task's direction is determined by",
+      "introLabelsBold": "labels in Jira",
+      "introEnd": ", matched case-insensitively.",
+      "labelsPrefix": "labels:",
+      "items": [
+        {
+          "name": "Backend",
+          "labels": "backend, Backend",
+          "pipeline": ["Analysis", "Development", "Code Review", "Testing", "Release"],
+          "who": "Analyst → Backend Developer → Development Lead → Tester → Release (Developer → Development Lead)"
+        },
+        {
+          "name": "Frontend",
+          "labels": "frontend-web, frontend-mobile, Frontend",
+          "pipeline": ["Analysis", "Development", "Code Review", "Testing", "Release"],
+          "who": "Analyst → Frontend Developer → Development Lead → Tester → Release (Developer → Development Lead)"
+        },
+        {
+          "name": "Design",
+          "labels": "design (no labels set — all tasks without labels)",
+          "pipeline": ["Analysis", "Design", "Design Review"],
+          "who": "Analyst → Designer → Design Lead"
+        }
+      ]
+    },
+    "roles": {
+      "title": "Team roles",
+      "introBefore": "Each team member has a",
+      "introBold": "role",
+      "introAfter": "that determines which pipeline stages they perform. The role is set in Settings → Team and is used when automatically assigning executors.",
+      "table": {
+        "role": "Role",
+        "phases": "Performs stages",
+        "priority": "Selection priority"
+      },
+      "rows": [
+        { "code": "analyst", "label": "Analyst", "phases": "Analysis, Testing (by default)", "priority": "Assignee → Responsible → Reporter" },
+        { "code": "tester", "label": "Tester", "phases": "Testing (if the direction has a separate role set)", "priority": "\"Tester\" field → historical tester (changelog) → direction's tester → default (analyst)" },
+        { "code": "developer_backend", "label": "Backend Developer", "phases": "Development", "priority": "\"Developer\" field → Assignee → auto-selection" },
+        { "code": "developer_frontend", "label": "Frontend Developer", "phases": "Development", "priority": "\"Developer\" field → Assignee → auto-selection" },
+        { "code": "developer_lead", "label": "Development Lead", "phases": "Development, Code Review, Release", "priority": "\"Developer\" field → Assignee (Release: \"Developer\" field → Development Lead)" },
+        { "code": "designer", "label": "Designer", "phases": "Design", "priority": "\"Designer\" field → Assignee → direction's designer_id → auto-selection" },
+        { "code": "designer_lead", "label": "Design Lead", "phases": "Design, Design Review", "priority": "First design lead on the team" }
+      ],
+      "noteBold": "Important:",
+      "noteText": "if a task explicitly has the \"Developer\" / \"Designer\" / \"Tester\" field filled in (configurable in Settings) — the system always takes exactly that person, regardless of their role on the team. This lets a lead delegate a task to a specific assignee directly in Jira, without role-based matching. See the \"Designer/Tester fields\" section below for details."
+    },
+    "historyMode": {
+      "title": "\"By status history\" mode — how it works",
+      "p1": "The standard forecast builds only the future: who will finish the remaining stages and when. But it's often important to see the full picture — what has already been done, who actually worked on each phase, and how much it cost.",
+      "p2Before": "\"By status history\" mode reads the",
+      "p2Bold": "full changelog",
+      "p2After": "of each task from Jira and reconstructs the real phases:",
+      "steps": [
+        "Finds all status transitions and assignee changes over time",
+        "For each segment, determines the phase from the status and the assignee's role: a developer_lead in \"In Development\" status → that's the Development phase, not Analysis",
+        "If the assignee changed within a single phase, the last one is taken (they're the one who actually finished the work)",
+        "Phases with an incompatible role are skipped: a developer can't be in Analysis",
+        "Past phases are shown on the Gantt chart dimmed, with a red line separating fact from forecast",
+        "Calculated separately: \"Spent\" (past) and \"Remaining\" (future), in hours and money"
+      ],
+      "noteBold": "Note:",
+      "noteText": "this mode makes extra calls to the Jira API (one per epic task), so it may run somewhat slower than usual."
+    }
+  },
+  "features": {
+    "sprint": {
+      "title": "Sprint formation",
+      "p1Before": "The",
+      "p1Bold": "Sprint",
+      "p1After": "page is the main working tool. The system fetches current tasks from Jira and automatically distributes them among assignees based on the hour budget.",
+      "list": [
+        "Tasks are pulled from the Jira boards configured for the current config",
+        "Each team member gets an hour budget (configured in \"Hours per person\")",
+        "Leads additionally get hours for management activities",
+        "Tasks that don't fit the budget go into \"Overflow\" with a stated reason",
+        "Pseudo-tasks (meetings, onboarding) are added automatically and counted against the budget",
+        "A sprint draft can be saved and approved — once approved, the record is locked in"
+      ],
+      "tip": "Once a sprint is approved, the \"Standup\" button becomes active — it shows the current day's task schedule based on the real status in Jira."
+    },
+    "todayExport": {
+      "title": "Today's export",
+      "p1Before": "The",
+      "p1Bold": "\"📤 Today's export\"",
+      "p1After": "button on the Forecast page generates a text summary of tasks active today according to the schedule — handy for pasting into a team chat.",
+      "list": [
+        "Uses the already-built Gantt chart of the current forecast — makes no separate calls to Jira",
+        "Selects tasks whose planned period covers today (excluding pseudo-tasks)",
+        "Groups them by direction (Backend, Frontend, etc.): task key with a link to Jira, assignee, phase",
+        "The result opens in a text field; the \"Copy\" button copies it to the clipboard"
+      ]
+    },
+    "telegram": {
+      "title": "Telegram \"tasks for today\" digest",
+      "p1Before": "The",
+      "p1Bold": "\"Telegram digest\"",
+      "p1After": "section in Settings sends today's active tasks to Telegram — manually via a button or automatically on a schedule.",
+      "list": [
+        "Source is the config's latest approved sprint; the Gantt is built from the approval date",
+        "Selects tasks active today on the schedule (excluding pseudo-tasks and vacations) and groups them by direction",
+        "\"Send now\" — one-off send; \"Test\" — checks the token and chat_id with a single message",
+        "If daily mode is on, it sends automatically at the set time (server time)"
+      ],
+      "botHeading": "How to create a bot",
+      "botSteps": [
+        "In Telegram open @BotFather → /newbot command",
+        "Set the bot name and username (must end with bot, e.g. sprint_builder_bot)",
+        "BotFather sends a token like 123456789:AAH… — that is the bot token",
+        "Add the bot to the target chat/group (or start a private chat with it)",
+        "Find the chat_id: send a message, open https://api.telegram.org/bot<TOKEN>/getUpdates and take chat.id (groups are negative, supergroups start with -100). Alternatively, add @getidsbot to the chat"
+      ],
+      "setupHeading": "Configuring in the app",
+      "setupList": [
+        "The bot token goes into the \"Bot token\" field (per-config, stored encrypted) — or set globally on the server via the TELEGRAM_BOT_TOKEN variable",
+        "Resolution on send: config token → if empty, the global .env one",
+        "chat_id, time and the daily-send flag are set on the config itself",
+        "The send buttons use the saved config — save your changes first"
+      ],
+      "tip": "For a group, make sure the bot has been added to it; otherwise Telegram returns a \"chat not found\" error."
+    },
+    "forecast": {
+      "title": "Delivery forecast (Gantt)",
+      "p1Before": "The",
+      "p1Bold": "Delivery Forecast",
+      "p1After": "page builds a complete schedule of all remaining stages for an epic or task and predicts the completion date.",
+      "list": [
+        "Enter an epic key (SHN-1947) or a regular task key — the system will find all children",
+        "You can specify several parents separated by commas (SHN-1947, SHN-2034) — but only of one type: either all epics or all stories; the system won't let you mix an epic with a story",
+        "Each task is scheduled according to its direction's pipeline with real assignees",
+        "Gantt chart: rows are assignees, the X axis is working days",
+        "Chart scale is adjusted with the \"−\" / \"+\" buttons",
+        "Clicking a bar opens the task's stage window; for Analysis/Development/Design/Testing you can change the hours there and send them straight to Jira; double-clicking a bar opens the task itself in Jira",
+        "Cost is calculated as: salary ÷ 160 h/month × planned hours",
+        "Recent epics are remembered — you can switch between them quickly"
+      ],
+      "rollupHeading": "Rollups: Epic / Story / Consolidated",
+      "rollupP1": "The toggles above the Gantt chart group bars into rollup bars — by epic, by User Story, or \"Consolidated\".",
+      "rollupList": [
+        "Epic / Story — grouping by the matching ancestor type in the task's parent tree",
+        "Consolidated — clustering by ANY relationship of the task: a shared parent (epic/story) and any Jira issue links (clones, blocks, relates, duplicate, etc.)",
+        "A task linked to another only through an already-closed clone, or through a shared story, will still end up in the same consolidated cluster — the connecting node doesn't have to have a bar of its own on the chart",
+        "If all tasks share only a common story and have no side issue links, Consolidated will match the Story rollup — that's expected"
+      ],
+      "depsHeading": "Dependencies (Finish-Start)",
+      "depsP1Before": "The",
+      "depsP1Bold": "\"Dependencies\"",
+      "depsP1After": "button lets you set the order tasks run in: task B won't start until task A finishes (Finish-Start).",
+      "depsList": [
+        "A dependency can be set on a whole task (default) or on a specific stage — e.g. B's development only after A's design, while B's analysis can run in parallel",
+        "Adding/removing dependencies doesn't recalculate the forecast automatically — you can batch up several changes; the \"Recalculate forecast\" button at the bottom of the panel triggers a recalculation on demand",
+        "A dependency saved for one parent (SHN-1947) is automatically taken into account in a multi-parent forecast too, as long as it includes that key (SHN-1947, SHN-2034) — no extra setup needed"
+      ],
+      "vacationsHeading": "Vacations",
+      "vacationsP1Before": "The",
+      "vacationsP1Bold": "\"Vacations\"",
+      "vacationsP1After": "button lets you specify periods when employees are away. The system doesn't schedule work on those days — tasks shift automatically.",
+      "missingEstimatesHeading": "Missing estimates",
+      "missingEstimatesP1": "If a task has no estimate in Jira, the system uses a default value (configurable). The orange indicator shows the number of such tasks — clicking it opens an estimate editor right in the interface, without going to Jira.",
+      "roiHeading": "ROI",
+      "roiP1Before": "The",
+      "roiP1Bold": "\"Calculate ROI\"",
+      "roiP1After": "button calculates payback: enter the expected revenue from the project and the system will show profit and ROI in %."
+    },
+    "rootTasks": {
+      "title": "Employee root task",
+      "p1Before": "Sometimes you need to explicitly record that an employee is",
+      "p1Em": "right now",
+      "p1Middle": "working on a specific task — regardless of priority. That's what the",
+      "p1Bold": "root task",
+      "p1After": "is for: it's placed first in the assignee's queue on the Gantt chart.",
+      "list": [
+        "Assigned in the \"Dependencies\" panel on the Forecast page — the \"📌 Root tasks\" block",
+        "Pick an employee and a task from their task list, then click \"Set as root task\"",
+        "On the Gantt chart, the root task is marked with a 📌 icon next to the bar",
+        "It can be removed with the × in the root tasks list — the task returns to normal priority order",
+        "Root tasks aren't shown when viewing a historical Gantt snapshot (see below) — the snapshot is frozen as-is"
+      ]
+    },
+    "missingAssignees": {
+      "title": "\"Missing assignees\" filter",
+      "p1Before": "The",
+      "p1Bold": "\"Missing assignees\"",
+      "p1After": "tab on the Forecast page (next to the Epic / Story / Consolidated rollup) shows tasks where one of the required participants isn't filled in — without it, the schedule for those tasks will be inaccurate.",
+      "list": [
+        "The counter on the tab shows the number of such tasks",
+        "The rule depends on the direction's pipeline: design requires an Analyst and a Designer, development requires an Analyst, a Developer, and a Tester",
+        "Table: task, title, direction, who's missing",
+        "Right in the table, \"+ Role\" buttons open a Jira user search and assign them without leaving the app",
+        "Once assigned, the task immediately disappears from the list — the field in Jira is updated right away"
+      ]
+    },
+    "historyMode": {
+      "title": "\"By status history\" mode",
+      "p1Before": "The",
+      "p1Bold": "\"By status history\"",
+      "p1After": "toggle on the Forecast page turns on an extended mode: a reconstruction of the past is added to the future forecast.",
+      "list": [
+        "The Gantt chart shows the whole history: from the earliest phase to today (dimmed bars) plus the forecast (bright bars)",
+        "A red dashed \"today\" line separates fact from forecast",
+        "The owner of a historical phase is whoever was assigned in Jira at the time of the status transition",
+        "If the assignee is incompatible with the type of work (a developer in analysis), the phase is skipped",
+        "If the assignee changed within a phase, the last one is taken (they're the one who finished it)",
+        "A \"Spent / Remaining\" line appears under the metrics, in hours and currency"
+      ],
+      "tip": "The cost of historical phases is calculated from the planned hours in Jira (not the actually spent time), which gives a correct plan/actual comparison."
+    },
+    "snapshots": {
+      "title": "Completion trend (snapshots)",
+      "p1Before": "Every time the forecast is built, the system automatically saves a",
+      "p1Bold1": "snapshot",
+      "p1Middle": "— recording the predicted completion date as of today. These points are used to build a",
+      "p1Bold2": "trend chart",
+      "p1After": "— showing whether the completion date is slipping or staying stable.",
+      "list": [
+        "The chart is shown under the Gantt chart automatically once enough data accumulates",
+        "Snapshots can be pinned (📌) — they don't disappear when old ones are cleaned up",
+        "Unpinned snapshots are kept one per day",
+        "An upward trend (the date keeps slipping) is a signal of progress issues"
+      ]
+    },
+    "historyPage": {
+      "title": "Sprint history",
+      "p1Before": "The",
+      "p1Bold": "History",
+      "p1After": "page shows all saved sprints, with the ability to view the task composition and status of each.",
+      "list": [
+        "Filter by status: Draft / Approved / Closed",
+        "View the full set of tasks for each sprint",
+        "For closed sprints — the final status of each task from Jira",
+        "Ability to close a sprint manually, locking in the actual statuses"
+      ],
+      "snapshotsHeading": "Gantt snapshots",
+      "snapshotsP1Before": "In a sprint's detailed view, you can build and save a",
+      "snapshotsP1Bold": "snapshot",
+      "snapshotsP1After": "of the Gantt chart — a \"photograph\" of the schedule at a point in time.",
+      "snapshotsList": [
+        "The \"💾 Save snapshot\" button captures the entire current Gantt calculation, not just the completion date",
+        "The \"View\" toggle lets you open any saved snapshot instead of the current calculation",
+        "While viewing a snapshot, a \"📷 Historical snapshot from …\" banner appears — this is a view-only mode",
+        "Return to the current calculation with the \"Back to current\" button, or delete a snapshot with \"Delete snapshot\""
+      ]
+    },
+    "settings": {
+      "title": "Config settings",
+      "p1": "The system can hold several configurations (switcher in the header). Each configuration is a separate set of settings for a team or project.",
+      "blocks": [
+        {
+          "title": "Main parameters",
+          "items": [
+            "Jira project key — filters tasks by project",
+            "Sprint field — a custom Jira field used to link a task to a sprint",
+            "Developer field — a custom field that specifies the responsible developer",
+            "Designer field / Tester field — custom Jira fields with an explicit person responsible for design or testing (takes priority over role-based auto-selection)",
+            "Hours per person — the working hour budget for one team member per sprint",
+            "Default task hours — used when an estimate isn't filled in",
+            "Lead hours — extra time for leads to spend on management"
+          ]
+        },
+        {
+          "title": "Jira connection",
+          "items": [
+            "Jira Base URL / Email / API Token — only needed if this config has its own Jira account or instance, separate from the server's",
+            "Empty — the server settings (.env) are used; that's what most configs need",
+            "The token is write-only: it isn't shown after saving, only a flag indicating it's set"
+          ]
+        },
+        {
+          "title": "Team",
+          "items": [
+            "List of members: Jira login, name in the system, role, salary",
+            "Salary is used to calculate cost: salary ÷ 160 h/month × hours",
+            "One person can be part of several configs with different salaries"
+          ]
+        },
+        {
+          "title": "Roles",
+          "items": [
+            "Enabling/disabling roles — disabled roles don't take part in planning",
+            "The \"Lead\" role gets extra hours for management",
+            "The order of roles determines priority during auto-selection of an assignee"
+          ]
+        },
+        {
+          "title": "Status → Bucket mapping",
+          "items": [
+            "Defines the mapping: Jira status + role → stage (bucket)",
+            "Example: \"In Development\" + analyst → Testing (the analyst is reviewing the development)",
+            "A single status can map to different buckets for different roles"
+          ]
+        },
+        {
+          "title": "Directions",
+          "items": [
+            "Name, Jira labels — tasks are matched to a direction by these, case-insensitively",
+            "The work-type pipeline and roles are gathered in a single table: each stage shows its bucket and role",
+            "For Analysis, Development, and Testing the role is a dropdown: you can assign the direction its own role instead of the system default. For Design, Code Review, and Design Review the role is fixed and can't be overridden",
+            "If the pipeline includes a \"Design\" stage and the team has more than one designer, a separate selector for that direction's specific designer appears"
+          ]
+        },
+        {
+          "title": "Pseudo-tasks",
+          "items": [
+            "Fixed tasks for an employee (meetings, on-call duty, training)",
+            "Automatically added to every sprint and counted against the hour budget",
+            "Can be tied to a specific sprint number or made recurring"
+          ]
+        }
+      ]
+    },
+    "designerTesterFields": {
+      "title": "Designer/Tester fields",
+      "p1": "If a task explicitly names a specific person — a designer or a tester — the system should take exactly that person instead of matching by role. That's what the \"Designer field\" and \"Tester field\" settings are for (custom Jira fields of the \"user\" type). The priority chains for designer and tester differ slightly — the tester has an extra step involving changelog history.",
+      "designerHeading": "Designer — selection order",
+      "designerSteps": [
+        "The value of the \"Designer\" field from Jira, if filled in — unconditional priority",
+        "The task's Assignee, if they're on the team with the designer role",
+        "The designer explicitly chosen for the direction (Settings → Directions, if the team has more than one)",
+        "Auto-selection — the only/first designer on the team"
+      ],
+      "testerHeading": "Tester — selection order",
+      "testerSteps": [
+        "The value of the \"Tester\" field from Jira, if filled in — unconditional priority",
+        "The historical tester — whoever actually tested the task in the past, per the changelog (if the task has already been through testing)",
+        "If the direction has a separate tester role set (Settings → Directions) — that role's tester",
+        "Default — if no tester role is set, the analyst tests: Assignee → Responsible → Reporter"
+      ],
+      "list": [
+        "The \"Designer time (h)\" field — a separate hour estimate for the design stage, if a task has both analysis and design",
+        "Both fields are optional: if not configured, the system works by team roles, as before"
+      ]
+    },
+    "standup": {
+      "title": "Standup",
+      "p1Before": "The",
+      "p1Bold": "Standup",
+      "p1After": "mode is available from the history of approved sprints. It shows each team member's tasks for the current day based on the real status in Jira.",
+      "list": [
+        "Highlights overdue tasks — ones that should have finished earlier",
+        "Shows the planned hours and work period for each task",
+        "A task's status can be pushed to Jira (toggled) with a single click",
+        "Filterable by a specific assignee"
+      ]
+    },
+    "configs": {
+      "title": "Multiple configurations",
+      "p1": "The config switcher in the top-right corner of the header lets you work with several projects or teams from a single interface.",
+      "list": [
+        "Each config is a separate team, budgets, directions, status mappings",
+        "Switching is instant — all pages refresh automatically",
+        "Member salaries are synced across configs: if config A has a higher salary, it's used everywhere",
+        "One person (by Jira accountId) can belong to several configs with different roles",
+        "Create a new config or delete an existing one in the Settings section"
+      ]
+    },
+    "jiraApi": {
+      "title": "Jira API methods used",
+      "p1": "All requests go out under the active config's Jira connection credentials (Settings → \"Jira connection\"), or, if that's not set, under the default server settings. Below is the full list of Jira REST API v3 and Agile API endpoints used.",
+      "table": {
+        "method": "Method",
+        "endpoint": "Endpoint",
+        "description": "What for and where"
+      },
+      "rows": [
+        { "method": "GET", "path": "/rest/api/3/myself", "desc": "Connection check — the \"Jira: …\" status in the app header" },
+        { "method": "GET", "path": "/rest/api/3/field", "desc": "Looks up the \"Story Points\" custom field — the default hour estimate when a task doesn't specify its own" },
+        { "method": "GET", "path": "/rest/agile/1.0/board/{boardId}/issue", "desc": "Tasks from the configured Jira boards — the source of candidates in the Sprint section" },
+        { "method": "GET", "path": "/rest/agile/1.0/board/{boardId}/sprint", "desc": "The board's active sprint (dates) — marks the sprint boundaries on the Forecast Gantt chart" },
+        { "method": "GET", "path": "/rest/api/3/search/jql", "desc": "JQL search: by project component (extra candidates in Sprint), an epic's/story's child tasks, and key batches (Forecast, mode based on an approved sprint)" },
+        { "method": "GET", "path": "/rest/api/3/issue/{key}", "desc": "The task itself + issuelinks — determining the type (epic/story/task) and finding children/parents in the Forecast" },
+        { "method": "GET", "path": "/rest/api/3/issue/{key}/changelog", "desc": "The full history of status transitions — \"By status history\" mode" },
+        { "method": "PUT", "path": "/rest/api/3/issue/{key}", "desc": "Writes task fields (role hours, developer/designer/tester/analyst) — the \"Missing assignees\" tab, the estimate editor" },
+        { "method": "POST", "path": "/rest/api/3/issue/{key}/comment", "desc": "A comment with the summary — \"Standup\" mode" },
+        { "method": "GET", "path": "/rest/api/3/user/search", "desc": "Jira user search — assignee picker modals without leaving the app" }
+      ],
+      "tipBefore": "Only two methods change anything in Jira:",
+      "tipPutCode": "PUT .../fields",
+      "tipMiddle": "(task fields) and",
+      "tipPostCode": "POST .../comment",
+      "tipAfter": "(standup comment). All the rest are read-only."
+    }
+  }
+}

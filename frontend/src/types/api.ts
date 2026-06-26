@@ -332,6 +332,14 @@ export interface ConfigOut {
   jira_base_url: string;
   jira_email: string;
   jira_api_token_set: boolean;
+  /** Telegram-дайджест. Токен бота per-конфиг (write-only), fallback на .env. */
+  telegram_chat_id: string;
+  telegram_daily_enabled: boolean;
+  telegram_daily_time: string;
+  /** Задан ли токен на самом конфиге. */
+  telegram_bot_token_set: boolean;
+  /** Доступна ли отправка вообще (токен конфига или .env). */
+  telegram_bot_configured: boolean;
   team: Record<string, TeamMemberOut>;
   boards: Record<string, number>;
   extra_components: string[];
@@ -362,6 +370,11 @@ export interface ConfigUpdate {
   jira_email?: string;
   /** Шлём только если пользователь ввёл новое значение; "" — явно очистить. */
   jira_api_token?: string;
+  telegram_chat_id?: string;
+  telegram_daily_enabled?: boolean;
+  telegram_daily_time?: string;
+  /** Шлём только если ввели новое значение; "" — явно очистить (вернётся к .env). */
+  telegram_bot_token?: string;
   team?: Record<string, { jira_name: string; file_name: string; role: string }>;
   boards?: Record<string, number>;
   extra_components?: string[];

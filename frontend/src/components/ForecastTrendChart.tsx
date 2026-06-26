@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { deleteEpicSnapshot, pinEpicSnapshot } from "../api/client";
 import { fmtDateLong, fmtDateShort } from "../lib/format";
 import type { EpicForecastSnapshot } from "../types/api";
@@ -14,6 +15,7 @@ function parseDate(iso: string): number {
 }
 
 export function ForecastTrendChart({ snapshots, onDeleted, onPinToggled }: Props) {
+  const { t } = useTranslation(["forecast", "common"]);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
 
@@ -78,15 +80,15 @@ export function ForecastTrendChart({ snapshots, onDeleted, onPinToggled }: Props
   return (
     <div className="mt-6 bg-white rounded-xl border shadow-sm p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-700">Тренд прогноза завершения</h3>
+        <h3 className="text-sm font-semibold text-gray-700">{t("trendChart.title")}</h3>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">📌 — закреплённый снапшот</span>
+          <span className="text-xs text-gray-400">{t("trendChart.pinnedLegend")}</span>
           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
             trending === "later"   ? "bg-red-50 text-red-600" :
             trending === "earlier" ? "bg-green-50 text-green-600" :
                                      "bg-gray-100 text-gray-500"
           }`}>
-            {trending === "later" ? "сдвигается вправо" : trending === "earlier" ? "сдвигается влево" : "стабильно"}
+            {trending === "later" ? t("trendChart.trendLater") : trending === "earlier" ? t("trendChart.trendEarlier") : t("trendChart.trendFlat")}
           </span>
         </div>
       </div>
@@ -150,14 +152,14 @@ export function ForecastTrendChart({ snapshots, onDeleted, onPinToggled }: Props
             onMouseLeave={() => setHoveredId(null)}
           >
             <div className="font-semibold text-gray-700 mb-1 flex items-center gap-1">
-              {hovered.s.is_pinned && <span title="Закреплён">📌</span>}
+              {hovered.s.is_pinned && <span title={t("trendChart.pinnedTitle")}>📌</span>}
               {fmtDateShort(hovered.s.captured_date)}
             </div>
             <div className="text-gray-600">
-              Прогноз: <span className="font-medium">{fmtDateLong(hovered.s.completion_date!)}</span>
+              {t("trendChart.forecastLabel")} <span className="font-medium">{fmtDateLong(hovered.s.completion_date!)}</span>
             </div>
             <div className="text-gray-400 mt-1">
-              {hovered.s.done_issues}/{hovered.s.total_issues} задач выполнено
+              {t("trendChart.tasksDone", { done: hovered.s.done_issues, total: hovered.s.total_issues })}
             </div>
             <div className="flex gap-2 mt-1.5 pt-1.5 border-t border-gray-100">
               <button
@@ -168,17 +170,17 @@ export function ForecastTrendChart({ snapshots, onDeleted, onPinToggled }: Props
                 }`}
                 disabled={busyId === hovered.s.id}
                 onClick={() => handlePin(hovered.s)}
-                title={hovered.s.is_pinned ? "Открепить (снапшот будет перезаписываться)" : "Закрепить (не будет перезаписываться)"}
+                title={hovered.s.is_pinned ? t("trendChart.unpinTitle") : t("trendChart.pinTitle")}
               >
-                {busyId === hovered.s.id ? "…" : hovered.s.is_pinned ? "📌 Открепить" : "📌 Закрепить"}
+                {busyId === hovered.s.id ? "…" : hovered.s.is_pinned ? t("trendChart.unpin") : t("trendChart.pin")}
               </button>
               <button
                 className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 ml-auto"
                 disabled={busyId === hovered.s.id || hovered.s.is_pinned}
-                title={hovered.s.is_pinned ? "Открепите снапшот перед удалением" : "Удалить"}
+                title={hovered.s.is_pinned ? t("trendChart.unpinFirstTitle") : t("trendChart.deleteTitle")}
                 onClick={() => handleDelete(hovered.s.id)}
               >
-                {busyId === hovered.s.id ? "…" : "Удалить"}
+                {busyId === hovered.s.id ? "…" : t("trendChart.delete")}
               </button>
             </div>
           </div>

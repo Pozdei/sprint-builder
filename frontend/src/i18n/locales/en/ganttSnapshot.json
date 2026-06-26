@@ -1,0 +1,10 @@
+{
+  "saveTitle": "Save the current calculation as a static snapshot",
+  "saving": "Saving…",
+  "save": "💾 Save snapshot",
+  "viewLabel": "View:",
+  "currentCalc": "Current calculation",
+  "historicalBanner": "📷 Historical snapshot from",
+  "deleteSnapshot": "Delete snapshot",
+  "returnToCurrent": "Return to current"
+}

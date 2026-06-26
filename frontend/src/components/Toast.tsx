@@ -12,6 +12,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 type ToastKind = "success" | "error" | "info";
 
@@ -101,6 +102,7 @@ const STYLES: Record<ToastKind, { bar: string; icon: ReactNode; ring: string }> 
 };
 
 function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
+  const { t } = useTranslation("common");
   const [shown, setShown] = useState(false);
   const s = STYLES[toast.kind];
 
@@ -133,7 +135,7 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
       <button
         onClick={dismiss}
         className="text-gray-300 hover:text-gray-500 transition shrink-0 -mr-1"
-        aria-label="Закрыть"
+        aria-label={t("close")}
       >
         <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
           <path d="M6.3 6.3a1 1 0 011.4 0L10 8.6l2.3-2.3a1 1 0 111.4 1.4L11.4 10l2.3 2.3a1 1 0 01-1.4 1.4L10 11.4l-2.3 2.3a1 1 0 01-1.4-1.4L8.6 10 6.3 7.7a1 1 0 010-1.4z" />

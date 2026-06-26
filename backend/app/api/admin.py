@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin
+from app.core.i18n import get_lang, make_translator
 from app.db import models, sprints_repository, users_repository
 from app.db.session import get_db
 from app.schemas.admin import AdminConfigSummary, AdminSprintSummary, AdminTeamMemberOut, SalaryUpdateRequest
@@ -16,11 +17,17 @@ from app.services.admin_service import AdminActionError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+_MSG: dict[str, dict[str, str]] = {
+    "user_not_found": {"ru": "Пользователь {id} не найден", "en": "User {id} not found"},
+    "config_not_found": {"ru": "Конфиг {id} не найден", "en": "Config {id} not found"},
+}
+_t = make_translator(_MSG)
 
-def _get_user_or_404(db: Session, user_id: int) -> models.User:
+
+def _get_user_or_404(db: Session, user_id: int, lang: str = "ru") -> models.User:
     user = users_repository.get_user_by_id(db, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail=f"Пользователь {user_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("user_not_found", lang, id=user_id))
     return user
 
 
@@ -100,11 +107,13 @@ def create_user_endpoint(
     body: UserCreateRequest,
     _admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     try:
         u = admin_service.create_user(
             db, email=body.email, password=body.password,
             role=body.role, display_name=body.display_name,
+            lang=lang,
         )
     except AdminActionError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -117,14 +126,16 @@ def update_user_endpoint(
     body: UserUpdateRequest,
     _admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    target = _get_user_or_404(db, user_id)
+    target = _get_user_or_404(db, user_id, lang)
     try:
         u = admin_service.update_user(
             db, target=target,
             display_name=body.display_name,
             role=body.role,
             is_active=body.is_active,
+            lang=lang,
         )
     except AdminActionError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -137,10 +148,11 @@ def reset_password_endpoint(
     body: PasswordResetRequest,
     _admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    target = _get_user_or_404(db, user_id)
+    target = _get_user_or_404(db, user_id, lang)
     try:
-        admin_service.reset_password(db, target, body.new_password)
+        admin_service.reset_password(db, target, body.new_password, lang=lang)
     except AdminActionError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -150,10 +162,11 @@ def delete_user_endpoint(
     user_id: int,
     admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    target = _get_user_or_404(db, user_id)
+    target = _get_user_or_404(db, user_id, lang)
     try:
-        admin_service.delete_user(db, target, current_admin_id=admin.id)
+        admin_service.delete_user(db, target, current_admin_id=admin.id, lang=lang)
     except AdminActionError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -204,15 +217,16 @@ def transfer_config_endpoint(
     body: ConfigTransferRequest,
     _admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     cfg = db.get(models.Config, config_id)
     if not cfg:
-        raise HTTPException(status_code=404, detail=f"Конфиг {config_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("config_not_found", lang, id=config_id))
 
-    new_owner = _get_user_or_404(db, body.new_owner_user_id)
+    new_owner = _get_user_or_404(db, body.new_owner_user_id, lang)
 
     try:
-        cfg = admin_service.transfer_config(db, cfg, new_owner)
+        cfg = admin_service.transfer_config(db, cfg, new_owner, lang=lang)
     except AdminActionError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

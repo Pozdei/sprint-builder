@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface SourceStat {
   source: string;
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function DiagnosticsPanel({ diagnostics }: Props) {
+  const { t } = useTranslation(["admin", "common"]);
   const [open, setOpen] = useState(false);
 
   const sources = (diagnostics.by_source ?? []) as SourceStat[];
@@ -31,10 +33,10 @@ export function DiagnosticsPanel({ diagnostics }: Props) {
         }`}
       >
         <span>{open ? "▾" : "▸"}</span>
-        <span>Диагностика источников</span>
+        <span>{t("admin:diagnostics.toggleLabel")}</span>
         {hasErrors && (
           <span className="ml-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-            {errors.length} ошибок
+            {t("admin:diagnostics.errorsCount", { count: errors.length })}
           </span>
         )}
       </button>
@@ -44,12 +46,12 @@ export function DiagnosticsPanel({ diagnostics }: Props) {
           <table className="w-full">
             <thead className="bg-gray-100 text-gray-600">
               <tr>
-                <th className="text-left px-3 py-1.5 font-semibold">Источник</th>
-                <th className="text-left px-3 py-1.5 font-semibold">Тип</th>
-                <th className="text-right px-3 py-1.5 font-semibold">Загружено</th>
-                <th className="text-right px-3 py-1.5 font-semibold">Совпало</th>
-                <th className="text-right px-3 py-1.5 font-semibold">Эпиков</th>
-                <th className="text-left px-3 py-1.5 font-semibold">Статус</th>
+                <th className="text-left px-3 py-1.5 font-semibold">{t("admin:diagnostics.table.source")}</th>
+                <th className="text-left px-3 py-1.5 font-semibold">{t("admin:diagnostics.table.type")}</th>
+                <th className="text-right px-3 py-1.5 font-semibold">{t("admin:diagnostics.table.fetched")}</th>
+                <th className="text-right px-3 py-1.5 font-semibold">{t("admin:diagnostics.table.matched")}</th>
+                <th className="text-right px-3 py-1.5 font-semibold">{t("admin:diagnostics.table.epics")}</th>
+                <th className="text-left px-3 py-1.5 font-semibold">{t("admin:diagnostics.table.status")}</th>
               </tr>
             </thead>
             <tbody>

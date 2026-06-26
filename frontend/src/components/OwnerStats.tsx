@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { OwnerStat } from "../types/api";
 
 interface Props {
@@ -5,6 +6,7 @@ interface Props {
 }
 
 export function OwnerStats({ stats }: Props) {
+  const { t } = useTranslation("common");
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
       {stats.map((s) => {
@@ -24,7 +26,7 @@ export function OwnerStats({ stats }: Props) {
             <div className="font-semibold text-gray-800">{s.file_name}</div>
             <div className="text-2xl font-bold mt-1">
               {s.used_hours.toFixed(1)}
-              <span className="text-base text-gray-400"> / {s.budget} ч</span>
+              <span className="text-base text-gray-400"> / {s.budget} {t("hoursShort")}</span>
             </div>
             <div className="w-full h-2 bg-gray-200 rounded mt-2 overflow-hidden">
               <div

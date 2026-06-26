@@ -1,0 +1,217 @@
+{
+  "page": {
+    "categories": {
+      "general": { "label": "Основное", "hint": "Проект, бюджет, подключение к Jira" },
+      "team": { "label": "Команда", "hint": "Роли, участники, псевдо-задачи" },
+      "pipeline": { "label": "Pipeline", "hint": "Направления, статусы, часы по умолчанию" },
+      "source": { "label": "Источник задач", "hint": "Доски, компоненты, приоритеты" }
+    },
+    "title": "Настройки",
+    "configLabel": "Конфигурация «{{name}}»",
+    "saving": "Сохраняю…",
+    "save": "Сохранить",
+    "loadingConfig": "Загрузка конфига…",
+    "loadFailed": "Не удалось загрузить конфиг: {{error}}",
+    "saveSuccess": "Настройки сохранены",
+    "reservedBuckets": {
+      "management": "Руководство",
+      "absence": "Отсутствие",
+      "training": "Обучение"
+    },
+    "sections": {
+      "baseParams": "Базовые параметры",
+      "jiraConnection": "Подключение к Jira",
+      "telegram": "Telegram-дайджест «задачи на сегодня»",
+      "roles": "Роли",
+      "team": "Команда",
+      "pseudoTasks": "Псевдо-задачи (отпуск, обучение, …)",
+      "directions": "Направления задач",
+      "statusBucketMapping": "Маппинг статусов на бакеты (по ролям)",
+      "defaultHours": "Дефолтные часы (роль, статус)",
+      "hoursFields": "Поля часов в Jira по «категориям»",
+      "boards": "Доски (Jira board id)",
+      "extraComponents": "Дополнительные компоненты",
+      "statusPriorities": "Приоритеты статусов",
+      "terminalStatuses": "Терминальные статусы"
+    },
+    "fields": {
+      "configName": "Имя конфига",
+      "projectKey": "Project Key (Jira)",
+      "hoursPerPerson": "Часов на человека",
+      "defaultTaskHours": "Дефолтная оценка задачи (ч)",
+      "leaderHours": "Часы лидов на руководство",
+      "leaderManagementEnabled": "Добавлять «Руководство» лидам автоматически",
+      "sprintField": "Поле Sprint (customfield_)",
+      "responsibleField": "Поле Ответственный (customfield_)",
+      "developerField": "Поле Разработчик (customfield_)",
+      "designerField": "Поле Дизайнер (customfield_)",
+      "testerField": "Поле Тестировщик (customfield_)",
+      "jiraBaseUrl": "Jira Base URL",
+      "jiraEmail": "Jira Email",
+      "jiraApiToken": "Jira API Token",
+      "jiraApiTokenPlaceholderSet": "Задан — оставь пустым, чтобы не менять",
+      "jiraApiTokenPlaceholderUnset": "Не задан",
+      "telegramBotToken": "Токен бота",
+      "telegramBotTokenPlaceholderSet": "Задан — оставь пустым, чтобы не менять",
+      "telegramBotTokenPlaceholderUnset": "Не задан — используется глобальный из .env",
+      "telegramChatId": "Chat ID",
+      "telegramDailyTime": "Время ежедневной отправки",
+      "telegramDailyEnabled": "Отправлять автоматически каждый день"
+    },
+    "telegram": {
+      "sendNow": "Отправить сейчас",
+      "test": "Тест",
+      "saveHint": "Сначала сохрани изменения — отправка берёт данные из сохранённого конфига.",
+      "sent": "Отправлено задач: {{count}}",
+      "testSent": "Тестовое сообщение отправлено"
+    },
+    "hints": {
+      "jiraConnection": "Пусто = используются настройки сервера (.env). Заполни, если для этого конфига нужен другой Jira-аккаунт или инстанс — например, для прод-эксплуатации с несколькими лидами.",
+      "telegram": "Дайджест строится по последнему утверждённому спринту: задачи, активные сегодня по Ганту, сгруппированные по направлениям. Токен бота можно задать здесь (per-конфиг) — иначе берётся глобальный из .env. Chat ID — id чата/группы (для групп начинается с -100). Бот должен быть добавлен в чат. Как создать бота — см. раздел «Справка».",
+      "telegramNoToken": "Токен бота не задан: ни на этом конфиге, ни глобально в .env. Укажи токен бота выше (получи у @BotFather) — без него отправка недоступна.",
+      "roles": "Чек-бокс «В спринт» включает роль для формирования. «Лид» — флаг для авто-добавления «Руководство».",
+      "team": "Один человек — одна роль. Если человек в двух ролях — заведи две записи с одним accountId.",
+      "directions": "Направление определяется по меткам Jira. Для каждого направления задан pipeline видов работ. Задачи разработчика, завершающиеся в спринте, автоматически порождают тестирование (аналитику) и код-ревью (лиду). Задачи дизайнера — дизайн-ревью лиду.",
+      "statusBucketMapping": "Один статус может относиться к разным бакетам у разных ролей. Например, «В разработке» = «Разработка» у разработчика и «Тестирование» у аналитика.",
+      "defaultHours": "Если у задачи нет оценки, применяется этот дефолт. Например, для пары (Лид разработки, Код-ревью) = 1 — лид тратит на ревью 1ч по умолчанию.",
+      "hoursFields": "analyst → Время аналитика, tester → Время тестировщика, developer → Время разработчика, designer → Время дизайнера. Используется для оценки часов по бакету.",
+      "extraComponents": "Задачи проекта с этими компонентами берутся в выборку независимо от досок.",
+      "statusPriorities": "Чем меньше число — тем раньше задача попадает в спринт. Глобально на статус.",
+      "terminalStatuses": "Статусы, в которых задача считается выполненной. Используется при закрытии спринта для подсчёта % выполнения."
+    },
+    "dictLabels": {
+      "category": "Категория",
+      "customfield": "Customfield",
+      "boardName": "Имя доски",
+      "boardId": "Jira board ID",
+      "jiraStatus": "Статус Jira",
+      "priority": "Приоритет"
+    },
+    "placeholders": {
+      "terminalStatus": "например: Выполнено"
+    }
+  },
+  "directions": {
+    "workTypes": {
+      "analytics": "Аналитика",
+      "development": "Разработка",
+      "design": "Дизайн",
+      "code_review": "Код-ревью",
+      "design_review": "Дизайн-ревью",
+      "testing": "Тестирование",
+      "release": "Релиз"
+    },
+    "buckets": {
+      "analytics": "Анализ",
+      "development": "Разработка",
+      "testing": "Тестирование",
+      "design": "Дизайн",
+      "code_review": "Код-ревью",
+      "design_review": "Дизайн-ревью",
+      "release": "Релиз"
+    },
+    "genericRole": {
+      "developer": "любой разработчик"
+    },
+    "empty": "Нет направлений. Добавьте первое.",
+    "nameLabel": "Название",
+    "namePlaceholder": "Например: Backend",
+    "removeDirection": "Удалить направление",
+    "designerLabel": "Дизайнер",
+    "designerAutoOption": "автовыбор (единственный в команде)",
+    "labelsLabel": "Метки Jira (через запятую)",
+    "labelsPlaceholder": "Например: Backend или frontend-web, frontend-mobile",
+    "pipelineLabel": "Pipeline видов работ и роли (порядок важен)",
+    "pipelineHint": "В колонке «Роль»: выпадашка — можно закрепить за этим направлением свою роль вместо системной по умолчанию; обычный текст — роль фиксированная, переопределить нельзя.",
+    "table": {
+      "workType": "Вид работ",
+      "bucket": "Бакет",
+      "role": "Роль"
+    },
+    "roleDefaultSuffix": "{{role}} (по умолчанию)",
+    "moveUp": "Вверх",
+    "moveDown": "Вниз",
+    "removeStep": "Удалить шаг",
+    "addStepOption": "+ Добавить шаг…",
+    "addDirection": "+ Добавить направление",
+    "noValue": "—"
+  },
+  "team": {
+    "table": {
+      "jiraName": "Имя в Jira",
+      "fileName": "Имя для файла",
+      "role": "Роль",
+      "accountId": "accountId"
+    },
+    "empty": "Команда пуста. Добавьте через «+ Добавить из Jira».",
+    "fileNamePlaceholder": "напр. Бадамова А.",
+    "remove": "Удалить",
+    "addFromJira": "+ Добавить из Jira",
+    "removeConfirm": "Удалить человека из команды?"
+  },
+  "roles": {
+    "table": {
+      "name": "name",
+      "displayName": "Отображаемое имя",
+      "inSprint": "В спринт",
+      "lead": "Лид"
+    },
+    "remove": "Удалить",
+    "addRole": "+ Добавить роль",
+    "newRoleName": "new_role",
+    "newRoleDisplayName": "Новая роль"
+  },
+  "statusBuckets": {
+    "table": {
+      "role": "Роль",
+      "jiraStatus": "Статус Jira",
+      "bucket": "Бакет"
+    },
+    "remove": "Удалить",
+    "add": "+ Добавить"
+  },
+  "statusHours": {
+    "table": {
+      "role": "Роль",
+      "jiraStatus": "Статус Jira",
+      "hours": "Часы"
+    },
+    "remove": "Удалить",
+    "add": "+ Добавить"
+  },
+  "pseudoTasks": {
+    "noSavedMembers": "Нет сохранённых людей в команде. Сначала добавьте их через «+ Добавить из Jira» и сохраните конфиг.",
+    "unsavedMembersWarning": "В команде есть новые люди, которые ещё не сохранены. После сохранения конфига они появятся в выпадающем списке псевдо-задач.",
+    "table": {
+      "person": "Человек",
+      "name": "Название",
+      "bucket": "Бакет",
+      "hours": "Часы",
+      "recurring": "Recurring",
+      "sprintNum": "Спринт №"
+    },
+    "memberNotFound": "(id={{id}}, не найден)",
+    "bucketPlaceholder": "Отсутствие / Руководство / Обучение",
+    "sprintNumPlaceholder": "—",
+    "sprintNumTitleRecurring": "Для recurring задач номер спринта не используется",
+    "sprintNumTitleOnce": "Номер целевого спринта (если пусто — задача не попадёт в спринт)",
+    "remove": "Удалить",
+    "add": "+ Добавить",
+    "footnoteRecurring": "попадает в каждый спринт автоматически (для регулярных задач типа стендапов).",
+    "footnoteSprintNum": "попадает только в спринт с указанным номером (разово, для отпуска). Если оба поля пусты — задача не попадёт ни в один спринт.",
+    "footnoteManagement": "«Руководство» для лидов добавляется автоматически — управляется в базовых настройках.",
+    "newTask": {
+      "name": "Отпуск",
+      "bucket": "Отсутствие"
+    }
+  },
+  "dictEditor": {
+    "remove": "Удалить",
+    "add": "+ Добавить",
+    "newKey": "новый_ключ"
+  },
+  "stringList": {
+    "remove": "Удалить",
+    "add": "+ Добавить"
+  }
+}

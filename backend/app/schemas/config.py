@@ -90,6 +90,13 @@ class ConfigOut(BaseModel):
     jira_email: str = ""
     jira_api_token_set: bool = False
 
+    # Telegram-дайджест. Токен бота — per-конфиг (write-only), fallback на глобальный .env.
+    telegram_chat_id: str = ""
+    telegram_daily_enabled: bool = False
+    telegram_daily_time: str = ""
+    telegram_bot_token_set: bool = False   # задан ли токен на самом конфиге
+    telegram_bot_configured: bool = False  # доступна ли отправка (токен конфига или .env)
+
     # team приходит как dict {accountId: TeamMemberOut}
     team: dict[str, TeamMemberOut]
     boards: dict[str, int]
@@ -131,6 +138,12 @@ class ConfigUpdate(BaseModel):
     jira_email: str | None = None
     # Поле опущено в теле (exclude_unset) = не менять; "" явно = очистить токен.
     jira_api_token: str | None = None
+
+    telegram_chat_id: str | None = None
+    telegram_daily_enabled: bool | None = None
+    telegram_daily_time: str | None = None
+    # Опущено = не менять; "" явно = очистить токен (вернётся к .env).
+    telegram_bot_token: str | None = None
 
     team: dict[str, TeamMemberIn] | None = None
     boards: dict[str, int] | None = None

@@ -4,6 +4,8 @@ import {
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
+import { useTranslation } from "react-i18next";
+import { bucketLabel } from "../lib/bucket-label";
 import type { TaskOut } from "../types/api";
 
 export interface AssignablePerson {
@@ -33,19 +35,20 @@ function bucketColor(bucket: string): string {
 }
 
 export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, testers, onPatchTask }: Props) {
+  const { t: tr } = useTranslation(["sprint", "common"]);
   const baseColumns: ColumnDef<TaskOut>[] = [
     {
       accessorKey: "priority",
-      header: "№",
+      header: tr("table.priority"),
       cell: (info) => info.getValue() ?? "",
     },
     {
       accessorKey: "key",
-      header: "Задача",
+      header: tr("table.task"),
       cell: (info) => {
         const t = info.row.original;
         if (t.is_pseudo) {
-          return <span className="text-gray-400 italic">(псевдо)</span>;
+          return <span className="text-gray-400 italic">{tr("table.pseudo")}</span>;
         }
         return (
           <a
@@ -61,17 +64,17 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
     },
     {
       accessorKey: "summary",
-      header: "Название",
+      header: tr("table.title"),
       cell: (info) => (
         <span className="block max-w-[500px] truncate" title={String(info.getValue())}>
           {String(info.getValue())}
         </span>
       ),
     },
-    { accessorKey: "owner_file_name", header: "Исполнитель" },
+    { accessorKey: "owner_file_name", header: tr("table.executor") },
     {
       accessorKey: "role",
-      header: "Роль",
+      header: tr("table.role"),
       cell: (info) => {
         const t = info.row.original;
         if (t.is_pseudo) return <span className="text-gray-400">—</span>;
@@ -80,16 +83,16 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
     },
     {
       accessorKey: "bucket",
-      header: "Фаза",
+      header: tr("table.phase"),
       cell: (info) => {
         const v = String(info.getValue());
-        return <span className={`px-2 py-1 rounded text-xs ${bucketColor(v)}`}>{v}</span>;
+        return <span className={`px-2 py-1 rounded text-xs ${bucketColor(v)}`}>{bucketLabel(v, tr)}</span>;
       },
     },
-    { accessorKey: "status_name", header: "Статус Jira" },
+    { accessorKey: "status_name", header: tr("table.jiraStatus") },
     {
       accessorKey: "sprint_expected_result",
-      header: "Ожид. итог",
+      header: tr("table.expectedResult"),
       cell: (info) => {
         const t = info.row.original;
         if (t.is_pseudo) return null;
@@ -104,14 +107,14 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
                 : bucketColor(v) || "bg-gray-100 text-gray-700"
             }`}
           >
-            {v}
+            {bucketLabel(v, tr)}
           </span>
         );
       },
     },
     {
       accessorKey: "hours",
-      header: "Часы",
+      header: tr("table.hours"),
       cell: (info) => {
         const t = info.row.original;
         const hours = Number(info.getValue());
@@ -119,9 +122,9 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
         // Частичная задача: показываем "2.0 из 16 ч"
         if (t.partial_from) {
           return (
-            <span className="text-orange-600 font-medium" title="Задача урезана до остатка бюджета">
+            <span className="text-orange-600 font-medium" title={tr("table.hoursTruncatedTitle")}>
               {hours.toFixed(1)}{" "}
-              <span className="text-orange-400 font-normal">из {t.partial_from} ч</span>
+              <span className="text-orange-400 font-normal">{tr("table.hoursOf", { total: t.partial_from })}</span>
             </span>
           );
         }
@@ -131,7 +134,7 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
           return (
             <span
               className="text-gray-400 italic"
-              title="Оценка не задана в Jira — используется дефолт"
+              title={tr("table.hoursDefaultTitle")}
             >
               {hours.toFixed(1)}
             </span>
@@ -143,7 +146,7 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
     },
     {
       id: "hours_analyst",
-      header: "Ч. аналит.",
+      header: tr("table.hoursAnalystShort"),
       cell: (info) => {
         const t = info.row.original;
         if (t.is_pseudo) return null;
@@ -155,7 +158,7 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
     },
     {
       id: "hours_tester",
-      header: "Ч. тестера",
+      header: tr("table.hoursTesterShort"),
       cell: (info) => {
         const t = info.row.original;
         if (t.is_pseudo) return null;
@@ -167,7 +170,7 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
     },
     {
       id: "hours_developer",
-      header: "Ч. разраб.",
+      header: tr("table.hoursDeveloperShort"),
       cell: (info) => {
         const t = info.row.original;
         if (t.is_pseudo) return null;
@@ -179,7 +182,7 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
     },
     {
       id: "hours_designer",
-      header: "Ч. дизайн.",
+      header: tr("table.hoursDesignerShort"),
       cell: (info) => {
         const t = info.row.original;
         if (t.is_pseudo) return null;
@@ -191,7 +194,7 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
     },
     {
       id: "developer_name",
-      header: "Разработчик",
+      header: tr("table.developer"),
       cell: (info) => {
         const t = info.row.original;
         if (t.is_pseudo) return null;
@@ -202,15 +205,15 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
     },
     {
       accessorKey: "sprint_name",
-      header: "Спринт",
+      header: tr("table.sprint"),
       cell: (info) => info.getValue() || "—",
     },
-    { accessorKey: "board", header: "Источник" },
+    { accessorKey: "board", header: tr("table.source") },
   ];
 
   const designerColumn: ColumnDef<TaskOut> = {
     id: "designer_id",
-    header: "Дизайнер",
+    header: tr("table.designer"),
     cell: (info) => {
       const t = info.row.original;
       if (t.is_pseudo) return null;
@@ -231,7 +234,7 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
 
   const testerColumn: ColumnDef<TaskOut> = {
     id: "tester_id",
-    header: "Тестировщик",
+    header: tr("table.tester"),
     cell: (info) => {
       const t = info.row.original;
       if (t.is_pseudo) return null;
@@ -260,7 +263,7 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
         <button
           onClick={() => onEditTask(t)}
           className="text-gray-400 hover:text-blue-600 text-base px-1"
-          title="Редактировать в Jira"
+          title={tr("table.editInJiraTitle")}
         >
           ✎
         </button>
@@ -270,7 +273,7 @@ export function SprintTable({ tasks, isOverflow = false, onEditTask, designers, 
 
   const overflowColumn: ColumnDef<TaskOut> = {
     accessorKey: "overflow_reason",
-    header: "Причина",
+    header: tr("table.reason"),
     cell: (info) => {
       const v = info.getValue() as string | null | undefined;
       if (!v) return <span className="text-gray-300">—</span>;

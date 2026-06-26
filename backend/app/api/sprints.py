@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_config, get_jira_client
+from app.core.i18n import get_lang, make_translator
 from app.db import models, repository, sprints_repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
@@ -27,11 +28,17 @@ from app.sprint.standup import build_standup
 
 router = APIRouter(prefix="/sprints", tags=["sprints"])
 
+_MSG: dict[str, dict[str, str]] = {
+    "sprint_not_found": {"ru": "Sprint {sprint_id} не найден", "en": "Sprint {sprint_id} not found"},
+    "snapshot_not_found": {"ru": "Снимок {snapshot_id} не найден", "en": "Snapshot {snapshot_id} not found"},
+}
+_t = make_translator(_MSG)
 
-def _get_sprint_or_404(db: Session, sprint_id: int, config_id: int) -> models.Sprint:
+
+def _get_sprint_or_404(db: Session, sprint_id: int, config_id: int, lang: str = "ru") -> models.Sprint:
     sprint = sprints_repository.get_sprint(db, sprint_id)
     if not sprint or sprint.config_id != config_id:
-        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("sprint_not_found", lang, sprint_id=sprint_id))
     return sprint
 
 
@@ -97,8 +104,9 @@ def get_one(
     sprint_id: int,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    return _to_out(_get_sprint_or_404(db, sprint_id, config.id))
+    return _to_out(_get_sprint_or_404(db, sprint_id, config.id, lang))
 
 
 @router.post("/draft", response_model=SprintOut)
@@ -106,10 +114,11 @@ def save_draft(
     body: SaveDraftRequest,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     try:
         sprint_num = sprints_service.compute_next_sprint_num(
-            db, config.id, body.max_sprint_in_jira,
+            db, config.id, body.max_sprint_in_jira, lang=lang,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -122,6 +131,7 @@ def save_draft(
             allocated=[t.model_dump() for t in body.allocated],
             owner_stats=[s.model_dump() for s in body.owner_stats],
             max_sprint_in_jira=body.max_sprint_in_jira,
+            lang=lang,
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -137,19 +147,20 @@ def approve(
     sprint_id: int,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     try:
-        sprint = sprints_service.approve_sprint(db, client, sprint_id, config.id)
+        sprint = sprints_service.approve_sprint(db, client, sprint_id, config.id, lang=lang)
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except SprintAccessDeniedError:
-        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("sprint_not_found", lang, sprint_id=sprint_id))
     except SprintNotADraftError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except JiraSprintNotFoundError as e:
         raise HTTPException(status_code=412, detail=str(e))
     except JiraError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=e.text(lang))
     return _to_out(sprint)
 
 
@@ -158,13 +169,14 @@ def reopen(
     sprint_id: int,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     try:
-        sprint = sprints_service.reopen_sprint(db, sprint_id, config.id)
+        sprint = sprints_service.reopen_sprint(db, sprint_id, config.id, lang=lang)
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except SprintAccessDeniedError:
-        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("sprint_not_found", lang, sprint_id=sprint_id))
     except SprintNotApprovedError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return _to_out(sprint)
@@ -178,19 +190,20 @@ def close(
     sprint_id: int,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     try:
-        sprint = sprints_service.close_sprint(db, client, sprint_id, config.id)
+        sprint = sprints_service.close_sprint(db, client, sprint_id, config.id, lang=lang)
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except SprintAccessDeniedError:
-        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("sprint_not_found", lang, sprint_id=sprint_id))
     except SprintNotApprovedError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except JiraSprintNotClosedError as e:
         raise HTTPException(status_code=412, detail=str(e))
     except JiraError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=e.text(lang))
     return _to_out(sprint)
 
 
@@ -203,8 +216,9 @@ def get_standup(
     roles: str = Query("", description="Роли через запятую; пусто = все"),
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
 
     role_filter: set[str] | None = None
     if roles.strip():
@@ -224,8 +238,9 @@ def get_gantt(
     hours_per_day: float = Query(8.0, ge=1, le=24),
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
     vac_dicts = repository.vacations_to_dicts(repository.list_vacations(db, config.id))
     root_tasks = {
         r.owner_id: r.task_key
@@ -248,8 +263,9 @@ def create_gantt_snapshot(
     body: GanttSnapshotCreate,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
     snap = sprints_repository.create_gantt_snapshot(
         db, sprint.id, body.gantt_start, body.hours_per_day,
         [item.model_dump() for item in body.gantt_items], body.label,
@@ -265,8 +281,9 @@ def list_gantt_snapshots(
     sprint_id: int,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
     return [
         GanttSnapshotSummary(
             id=s.id, captured_at=s.captured_at.isoformat(),
@@ -282,11 +299,12 @@ def get_gantt_snapshot(
     snapshot_id: int,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
     snap = sprints_repository.get_gantt_snapshot(db, sprint.id, snapshot_id)
     if not snap:
-        raise HTTPException(status_code=404, detail=f"Снимок {snapshot_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("snapshot_not_found", lang, snapshot_id=snapshot_id))
     return GanttSnapshotDetail(
         id=snap.id, captured_at=snap.captured_at.isoformat(),
         label=snap.label, gantt_start=snap.gantt_start, hours_per_day=snap.hours_per_day,
@@ -300,10 +318,11 @@ def delete_gantt_snapshot(
     snapshot_id: int,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
     if not sprints_repository.delete_gantt_snapshot(db, sprint.id, snapshot_id):
-        raise HTTPException(status_code=404, detail=f"Снимок {snapshot_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("snapshot_not_found", lang, snapshot_id=snapshot_id))
 
 
 # -------------------- Dependencies CRUD --------------------
@@ -319,8 +338,9 @@ def get_dependencies(
     sprint_id: int,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
     return [TaskDependency(**d) for d in (sprint.task_dependencies or [])]
 
 
@@ -330,8 +350,9 @@ def add_dependency(
     body: TaskDependency,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
     deps = list(sprint.task_dependencies or [])
     new_dep = body.model_dump()
     if _dep_identity(new_dep) not in {_dep_identity(d) for d in deps}:
@@ -347,8 +368,9 @@ def remove_dependency(
     body: TaskDependency,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
-    sprint = _get_sprint_or_404(db, sprint_id, config.id)
+    sprint = _get_sprint_or_404(db, sprint_id, config.id, lang)
     deps = list(sprint.task_dependencies or [])
     rm = _dep_identity(body.model_dump())
     sprint.task_dependencies = [d for d in deps if _dep_identity(d) != rm]
@@ -360,13 +382,14 @@ def delete_one(
     sprint_id: int,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     try:
-        sprints_service.delete_draft(db, sprint_id, config.id)
+        sprints_service.delete_draft(db, sprint_id, config.id, lang=lang)
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except SprintAccessDeniedError:
-        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("sprint_not_found", lang, sprint_id=sprint_id))
     except SprintNotADraftError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -377,16 +400,18 @@ def set_tasks(
     body: SetTasksRequest,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     try:
         sprint = sprints_service.set_sprint_tasks(
             db, sprint_id, config.id,
             [t.model_dump() for t in body.tasks],
+            lang=lang,
         )
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except SprintAccessDeniedError:
-        raise HTTPException(status_code=404, detail=f"Sprint {sprint_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("sprint_not_found", lang, sprint_id=sprint_id))
     except SprintNotADraftError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return _to_out(sprint)

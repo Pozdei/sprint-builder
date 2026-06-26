@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     jira_email: str
     jira_api_token: str
 
+    # Telegram — один глобальный бот на всю систему; chat_id задаётся per-конфиг.
+    telegram_bot_token: str = ""
+
     # Прокси
     http_proxy: str | None = None
     https_proxy: str | None = None

@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_config, get_jira_client
+from app.core.i18n import get_lang, make_translator
 from app.db import models, repository, sprints_repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
@@ -23,6 +24,46 @@ from app.sprint.excel import build_epic_forecast_xlsx
 from app.sprint.logic import compute_missing_assignees, find_story_points_field
 
 router = APIRouter(prefix="/epic", tags=["epic"])
+
+_MSG: dict[str, dict[str, str]] = {
+    "dependency_self": {
+        "ru": "Задача не может зависеть от самой себя",
+        "en": "A task cannot depend on itself",
+    },
+    "snapshot_not_found": {
+        "ru": "Снапшот не найден",
+        "en": "Snapshot not found",
+    },
+    "gantt_snapshot_not_found": {
+        "ru": "Снимок {snapshot_id} не найден",
+        "en": "Snapshot {snapshot_id} not found",
+    },
+    "mixed_parent_types": {
+        "ru": "Ключи должны быть одного типа (сейчас разные: {types}).",
+        "en": "Keys must be of the same type (currently mixed: {types}).",
+    },
+    "sprint_not_found": {
+        "ru": "Спринт {sprint_id} не найден",
+        "en": "Sprint {sprint_id} not found",
+    },
+    "forecast_requires_approved_sprint": {
+        "ru": "Прогноз можно строить только по утверждённому спринту (спринт {sprint_num} — {status}).",
+        "en": "A forecast can only be built from an approved sprint (sprint {sprint_num} — {status}).",
+    },
+    "specify_epic_or_sprint": {
+        "ru": "Укажите ключ эпика или выберите утверждённый спринт.",
+        "en": "Specify an epic key or select an approved sprint.",
+    },
+    "sprint_no_tasks": {
+        "ru": "В спринте {sprint_num} нет задач для прогноза.",
+        "en": "Sprint {sprint_num} has no tasks for the forecast.",
+    },
+    "no_tasks_found": {
+        "ru": "Задачи для {key} не найдены",
+        "en": "No tasks found for {key}",
+    },
+}
+_t = make_translator(_MSG)
 
 # Базовый набор полей Jira для задач прогноза.
 _BASE_FORECAST_FIELDS = (
@@ -117,9 +158,10 @@ def add_epic_dependency(
     epic_key: str = Query(...),
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     if body.from_key == body.to_key:
-        raise HTTPException(status_code=422, detail="Задача не может зависеть от самой себя")
+        raise HTTPException(status_code=422, detail=_t("dependency_self", lang))
     repository.add_epic_dependency(
         db, config.id, epic_key, body.from_key, body.to_key,
         from_bucket=body.from_bucket or "", to_bucket=body.to_bucket or "",
@@ -197,9 +239,10 @@ def delete_epic_snapshot(
     snapshot_id: int,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     if not repository.delete_epic_snapshot(db, snapshot_id, config.id):
-        raise HTTPException(status_code=404, detail="Снапшот не найден")
+        raise HTTPException(status_code=404, detail=_t("snapshot_not_found", lang))
     db.commit()
 
 
@@ -209,10 +252,11 @@ def pin_epic_snapshot(
     pinned: bool = True,
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     snap = repository.pin_epic_snapshot(db, snapshot_id, config.id, pinned)
     if not snap:
-        raise HTTPException(status_code=404, detail="Снапшот не найден")
+        raise HTTPException(status_code=404, detail=_t("snapshot_not_found", lang))
     db.commit()
     return _snapshot_to_out(snap)
 
@@ -258,10 +302,11 @@ def get_epic_gantt_snapshot(
     epic_key: str = Query(...),
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     snap = repository.get_epic_gantt_snapshot(db, config.id, epic_key, snapshot_id)
     if not snap:
-        raise HTTPException(status_code=404, detail=f"Снимок {snapshot_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("gantt_snapshot_not_found", lang, snapshot_id=snapshot_id))
     return GanttSnapshotDetail(
         id=snap.id, captured_at=snap.captured_at.isoformat(),
         label=snap.label, gantt_start=snap.gantt_start, hours_per_day=snap.hours_per_day,
@@ -275,9 +320,10 @@ def delete_epic_gantt_snapshot(
     epic_key: str = Query(...),
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     if not repository.delete_epic_gantt_snapshot(db, config.id, epic_key, snapshot_id):
-        raise HTTPException(status_code=404, detail=f"Снимок {snapshot_id} не найден")
+        raise HTTPException(status_code=404, detail=_t("gantt_snapshot_not_found", lang, snapshot_id=snapshot_id))
     db.commit()
 
 
@@ -489,7 +535,7 @@ def _parse_parent_keys(raw: str) -> list[str]:
 
 
 def _fetch_multi_parent(
-    keys: list[str], expand_changelog: bool,
+    keys: list[str], expand_changelog: bool, lang: str,
 ) -> tuple[str, list[dict]]:
     """Собрать задачи нескольких родителей одного типа в одну выборку.
 
@@ -503,7 +549,7 @@ def _fetch_multi_parent(
         if len(norm_types) > 1:
             raise HTTPException(
                 status_code=422,
-                detail=f"Ключи должны быть одного типа (сейчас разные: {', '.join(sorted(norm_types))}).",
+                detail=_t("mixed_parent_types", lang, types=", ".join(sorted(norm_types))),
             )
 
     if len(keys) == 1:
@@ -860,6 +906,7 @@ def epic_forecast(
     use_history: bool = Query(False, description="Учитывать историю статусов при определении этапов"),
     config: models.Config = Depends(current_config),
     db: Session = Depends(get_db),
+    lang: str = Depends(get_lang),
 ):
     """Прогноз реализации: Гант + предиктная дата завершения.
 
@@ -877,17 +924,19 @@ def epic_forecast(
     if sprint_id is not None:
         sprint = sprints_repository.get_sprint(db, sprint_id)
         if not sprint or sprint.config_id != cfg_model.id:
-            raise HTTPException(status_code=404, detail=f"Спринт {sprint_id} не найден")
+            raise HTTPException(status_code=404, detail=_t("sprint_not_found", lang, sprint_id=sprint_id))
         if sprint.status != "approved":
             raise HTTPException(
                 status_code=409,
-                detail=f"Прогноз можно строить только по утверждённому спринту "
-                       f"(спринт {sprint.sprint_num} — {sprint.status}).",
+                detail=_t(
+                    "forecast_requires_approved_sprint", lang,
+                    sprint_num=sprint.sprint_num, status=sprint.status,
+                ),
             )
     elif not key:
         raise HTTPException(
             status_code=422,
-            detail="Укажите ключ эпика или выберите утверждённый спринт.",
+            detail=_t("specify_epic_or_sprint", lang),
         )
 
     # Оклады глобальны — берём максимальный salary по всем конфигам для каждого account_id.
@@ -912,12 +961,12 @@ def epic_forecast(
         if not sprint_keys:
             raise HTTPException(
                 status_code=404,
-                detail=f"В спринте {sprint.sprint_num} нет задач для прогноза.",
+                detail=_t("sprint_no_tasks", lang, sprint_num=sprint.sprint_num),
             )
         try:
             issues = _fetch_issues_by_keys(sprint_keys, expand_changelog=use_history)
         except JiraError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise HTTPException(status_code=502, detail=e.text(lang))
         effective_key = f"sprint-{sprint.sprint_num}"
         issue_summary = f"Утверждённый спринт {sprint.sprint_num}"
     else:
@@ -928,18 +977,18 @@ def epic_forecast(
         if not parent_keys:
             raise HTTPException(
                 status_code=422,
-                detail="Укажите ключ эпика или выберите утверждённый спринт.",
+                detail=_t("specify_epic_or_sprint", lang),
             )
         try:
-            issue_summary, issues = _fetch_multi_parent(parent_keys, expand_changelog=use_history)
+            issue_summary, issues = _fetch_multi_parent(parent_keys, expand_changelog=use_history, lang=lang)
         except JiraError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise HTTPException(status_code=502, detail=e.text(lang))
         # Запятая, не "+" — "+" в query-параметре декодируется как пробел
         # некоторыми клиентами (см. _dependency_scope_keys).
         effective_key = ",".join(parent_keys)
 
     if not issues:
-        raise HTTPException(status_code=404, detail=f"Задачи для {effective_key} не найдены")
+        raise HTTPException(status_code=404, detail=_t("no_tasks_found", lang, key=effective_key))
 
     # Дозапрашиваем кастомные поля (часы, разработчик)
     issues = _enrich_with_config_fields(issues, cfg_snapshot)

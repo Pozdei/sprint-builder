@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { searchJiraUsers } from "../api/jira-client";
 import { extractError } from "../lib/api-error";
 import type { JiraUserSearchResult } from "../types/intrusions";
@@ -11,6 +12,7 @@ interface Props {
 /** Модальное окно с поиском пользователей по Jira.
  *  Debounce 350ms, минимум 2 символа. */
 export function JiraUserSearchModal({ onClose, onPick }: Props) {
+  const { t } = useTranslation(["jiraSearch", "common"]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<JiraUserSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,19 +50,19 @@ export function JiraUserSearchModal({ onClose, onPick }: Props) {
         className="bg-white rounded-lg shadow-xl border w-full max-w-lg p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="font-semibold text-gray-800 mb-3">Найти в Jira</h3>
+        <h3 className="font-semibold text-gray-800 mb-3">{t("title")}</h3>
 
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           autoFocus
-          placeholder="Имя или email…"
+          placeholder={t("placeholder")}
           className="w-full px-3 py-2 border rounded mb-3"
         />
 
         {loading && (
-          <div className="text-sm text-gray-500 italic">Ищу…</div>
+          <div className="text-sm text-gray-500 italic">{t("searching")}</div>
         )}
         {error && (
           <div className="bg-red-50 border border-red-300 text-red-800 rounded p-2 text-sm mb-2">
@@ -68,7 +70,7 @@ export function JiraUserSearchModal({ onClose, onPick }: Props) {
           </div>
         )}
         {!loading && !error && query.trim().length >= 2 && results.length === 0 && (
-          <div className="text-sm text-gray-500">Никого не нашёл.</div>
+          <div className="text-sm text-gray-500">{t("noResults")}</div>
         )}
 
         <div className="max-h-80 overflow-y-auto divide-y border rounded">
@@ -105,7 +107,7 @@ export function JiraUserSearchModal({ onClose, onPick }: Props) {
             onClick={onClose}
             className="bg-gray-300 hover:bg-gray-400 text-gray-700 px-3 py-1.5 rounded text-sm"
           >
-            Закрыть
+            {t("common:close")}
           </button>
         </div>
       </div>

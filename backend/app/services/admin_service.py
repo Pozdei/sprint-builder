@@ -10,6 +10,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.i18n import make_translator
 from app.core.security import hash_password
 from app.db import models, users_repository
 
@@ -19,6 +20,37 @@ class AdminActionError(Exception):
 
 
 _VALID_ROLES = {"admin", "lead"}
+
+_MSG: dict[str, dict[str, str]] = {
+    "unknown_role": {"ru": "Неизвестная роль: {role!r}", "en": "Unknown role: {role!r}"},
+    "user_already_exists": {
+        "ru": "Пользователь {email} уже существует",
+        "en": "User {email} already exists",
+    },
+    "last_active_admin": {
+        "ru": "Это последний активный администратор. Сначала создай другого.",
+        "en": "This is the last active administrator. Create another one first.",
+    },
+    "password_empty": {
+        "ru": "Пароль не может быть пустым",
+        "en": "Password cannot be empty",
+    },
+    "cannot_delete_self": {
+        "ru": "Нельзя удалить самого себя",
+        "en": "You cannot delete yourself",
+    },
+    "transfer_lead_only": {
+        "ru": "Конфиг можно передать только lead-пользователю. У админа не должно быть конфига.",
+        "en": "Config can only be transferred to a lead user. An admin should not have a config.",
+    },
+    "owner_already_has_config": {
+        "ru": "У пользователя {email} уже есть конфиг (id={config_id}). "
+              "Удалите его или передайте другому пользователю сначала.",
+        "en": "User {email} already has a config (id={config_id}). "
+              "Delete it or transfer it to another user first.",
+    },
+}
+_t = make_translator(_MSG)
 
 
 def _count_active_admins(db: Session, exclude_user_id: int | None = None) -> int:
@@ -32,11 +64,11 @@ def _count_active_admins(db: Session, exclude_user_id: int | None = None) -> int
 
 
 def create_user(db: Session, *, email: str, password: str, role: str,
-                 display_name: str = "") -> models.User:
+                 display_name: str = "", lang: str = "ru") -> models.User:
     if role not in _VALID_ROLES:
-        raise AdminActionError(f"Неизвестная роль: {role!r}")
+        raise AdminActionError(_t("unknown_role", lang, role=role))
     if users_repository.get_user_by_email(db, email):
-        raise AdminActionError(f"Пользователь {email} уже существует")
+        raise AdminActionError(_t("user_already_exists", lang, email=email))
     return users_repository.create_user(
         db,
         email=email,
@@ -49,10 +81,11 @@ def create_user(db: Session, *, email: str, password: str, role: str,
 def update_user(db: Session, *, target: models.User,
                  display_name: str | None = None,
                  role: str | None = None,
-                 is_active: bool | None = None) -> models.User:
+                 is_active: bool | None = None,
+                 lang: str = "ru") -> models.User:
     """Обновить поля пользователя с защитой последнего админа."""
     if role is not None and role not in _VALID_ROLES:
-        raise AdminActionError(f"Неизвестная роль: {role!r}")
+        raise AdminActionError(_t("unknown_role", lang, role=role))
 
     target_is_active_admin = target.role == "admin" and target.is_active
     new_role = role if role is not None else target.role
@@ -61,9 +94,7 @@ def update_user(db: Session, *, target: models.User,
 
     if target_is_active_admin and not will_be_active_admin:
         if _count_active_admins(db, exclude_user_id=target.id) == 0:
-            raise AdminActionError(
-                "Это последний активный администратор. Сначала создай другого."
-            )
+            raise AdminActionError(_t("last_active_admin", lang))
 
     fields: dict = {}
     if display_name is not None:
@@ -79,47 +110,43 @@ def update_user(db: Session, *, target: models.User,
     return users_repository.update_user(db, target, **fields)
 
 
-def reset_password(db: Session, target: models.User, new_password: str) -> None:
+def reset_password(db: Session, target: models.User, new_password: str,
+                    lang: str = "ru") -> None:
     if not new_password:
-        raise AdminActionError("Пароль не может быть пустым")
+        raise AdminActionError(_t("password_empty", lang))
     users_repository.update_user(db, target, password_hash=hash_password(new_password))
 
 
-def delete_user(db: Session, target: models.User, current_admin_id: int) -> None:
+def delete_user(db: Session, target: models.User, current_admin_id: int,
+                 lang: str = "ru") -> None:
     """Удалить пользователя с его конфигом и спринтами (через CASCADE).
 
     Запрещено: удалить себя, удалить последнего активного админа.
     """
     if target.id == current_admin_id:
-        raise AdminActionError("Нельзя удалить самого себя")
+        raise AdminActionError(_t("cannot_delete_self", lang))
     if target.role == "admin" and target.is_active:
         if _count_active_admins(db, exclude_user_id=target.id) == 0:
-            raise AdminActionError(
-                "Это последний активный администратор. Сначала создай другого."
-            )
+            raise AdminActionError(_t("last_active_admin", lang))
     users_repository.delete_user(db, target)
 
 
 def transfer_config(db: Session, config: models.Config,
-                     new_owner: models.User) -> models.Config:
+                     new_owner: models.User, lang: str = "ru") -> models.Config:
     """Передать конфиг другому lead-пользователю.
 
     У одного пользователя не больше одного конфига. Если у нового владельца
     уже есть свой конфиг — это ошибка: пусть админ сначала удалит/передаст его.
     """
     if new_owner.role != "lead":
-        raise AdminActionError(
-            "Конфиг можно передать только lead-пользователю. "
-            "У админа не должно быть конфига."
-        )
+        raise AdminActionError(_t("transfer_lead_only", lang))
 
     existing = db.scalar(
         select(models.Config).where(models.Config.owner_user_id == new_owner.id)
     )
     if existing and existing.id != config.id:
         raise AdminActionError(
-            f"У пользователя {new_owner.email} уже есть конфиг (id={existing.id}). "
-            f"Удалите его или передайте другому пользователю сначала."
+            _t("owner_already_has_config", lang, email=new_owner.email, config_id=existing.id)
         )
 
     config.owner_user_id = new_owner.id
