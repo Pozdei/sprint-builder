@@ -21,7 +21,20 @@ from app.schemas.gantt import (
 from app.sprint.config import from_dict
 from app.sprint.epic_forecast import build_epic_forecast
 from app.sprint.excel import build_epic_forecast_xlsx
-from app.sprint.logic import compute_missing_assignees, find_story_points_field
+from app.sprint.logic import (
+    compute_missing_assignees, find_story_points_field, sprint_num_from_name,
+)
+
+
+def _uniq(keys: list[str]) -> list[str]:
+    """Дедупликация с сохранением порядка первого вхождения."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for k in keys:
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
 
 router = APIRouter(prefix="/epic", tags=["epic"])
 
@@ -118,15 +131,15 @@ class EpicSnapshotOut(BaseModel):
     is_pinned: bool = False
 
 
+def _dep_to_dict(d: models.EpicTaskDependency) -> dict:
+    return {
+        "from_key": d.from_key, "to_key": d.to_key,
+        "from_bucket": d.from_bucket or None, "to_bucket": d.to_bucket or None,
+    }
+
+
 def _to_dep_list(deps) -> list[TaskDependency]:
-    return [
-        TaskDependency(
-            from_key=d.from_key, to_key=d.to_key,
-            from_bucket=d.from_bucket or None, to_bucket=d.to_bucket or None,
-            epic_key=d.epic_key,
-        )
-        for d in deps
-    ]
+    return [TaskDependency(**_dep_to_dict(d), epic_key=d.epic_key) for d in deps]
 
 
 def _snapshot_to_out(s: models.EpicForecastSnapshot) -> "EpicSnapshotOut":
@@ -514,14 +527,7 @@ def _normalize_parent_type(issue_type: str) -> str:
 
 def _parse_parent_keys(raw: str) -> list[str]:
     """Несколько ключей через запятую — uniq, с сохранением порядка ввода."""
-    seen: set[str] = set()
-    out: list[str] = []
-    for part in raw.split(","):
-        k = part.strip().upper()
-        if k and k not in seen:
-            seen.add(k)
-            out.append(k)
-    return out
+    return _uniq([part.strip().upper() for part in raw.split(",")])
 
 
 def _fetch_multi_parent(
@@ -581,13 +587,7 @@ def _parent_candidates(fields: dict) -> list[str]:
         inw = link.get("inwardIssue")
         if isinstance(inw, dict) and inw.get("key"):
             res.append(inw["key"])
-    out: list[str] = []
-    seen: set[str] = set()
-    for k in res:
-        if k not in seen:
-            seen.add(k)
-            out.append(k)
-    return out
+    return _uniq(res)
 
 
 def _consolidated_neighbors(fields: dict) -> list[str]:
@@ -608,13 +608,7 @@ def _consolidated_neighbors(fields: dict) -> list[str]:
             o = link.get(side)
             if isinstance(o, dict) and o.get("key"):
                 res.append(o["key"])
-    out: list[str] = []
-    seen: set[str] = set()
-    for k in res:
-        if k not in seen:
-            seen.add(k)
-            out.append(k)
-    return out
+    return _uniq(res)
 
 
 def _sprint_info_from_issues(issues: list[dict], cfg) -> dict | None:
@@ -623,7 +617,6 @@ def _sprint_info_from_issues(issues: list[dict], cfg) -> dict | None:
     Поле спринта Jira возвращает объекты со state/startDate/endDate. Берём активный
     спринт с наибольшим номером; если активных нет — любой с датами и макс. номером.
     """
-    import re as _re
     field = cfg.sprint_field
     if not field:
         return None
@@ -639,8 +632,7 @@ def _sprint_info_from_issues(issues: list[dict], cfg) -> dict | None:
             start, end = sp.get("startDate"), sp.get("endDate")
             if not (start and end):
                 continue
-            m = _re.search(r"(\d+)", sp.get("name") or "")
-            num = int(m.group(1)) if m else None
+            num = sprint_num_from_name(sp.get("name"))
             rec = (num if num is not None else -1, start[:10], end[:10], num)
             dated.append(rec)
             if (sp.get("state") or "").lower() == "active":
@@ -658,7 +650,6 @@ def _active_sprint_info(cfg) -> dict | None:
     Нужен для отрисовки границ спринтов на Ганте прогноза. Берём первую борду
     конфига с активным спринтом, у которого заданы даты начала и конца.
     """
-    import re as _re
     for board_id in cfg.boards.values():
         try:
             data = client.get(
@@ -672,9 +663,8 @@ def _active_sprint_info(cfg) -> dict | None:
             end = sp.get("endDate")
             if not (start and end):
                 continue
-            m = _re.search(r"(\d+)", sp.get("name") or "")
             return {
-                "sprint_num": int(m.group(1)) if m else None,
+                "sprint_num": sprint_num_from_name(sp.get("name")),
                 "start_date": start[:10],
                 "end_date": end[:10],
             }
@@ -1016,10 +1006,7 @@ def epic_forecast(
             if isinstance(d, dict) and d.get("from_key") and d.get("to_key")
         ]
         user_deps = [
-            {
-                "from_key": x.from_key, "to_key": x.to_key,
-                "from_bucket": x.from_bucket or None, "to_bucket": x.to_bucket or None,
-            }
+            _dep_to_dict(x)
             for x in repository.list_epic_dependencies(db, cfg_model.id, effective_key)
         ]
         for d in captured + user_deps:
@@ -1031,13 +1018,7 @@ def epic_forecast(
         epic_deps = repository.list_epic_dependencies_for_keys(
             db, cfg_model.id, _dependency_scope_keys(parent_keys),
         )
-        dependencies = [
-            {
-                "from_key": d.from_key, "to_key": d.to_key,
-                "from_bucket": d.from_bucket or None, "to_bucket": d.to_bucket or None,
-            }
-            for d in epic_deps
-        ]
+        dependencies = [_dep_to_dict(d) for d in epic_deps]
 
     # Стартовые задачи (п.1 ТЗ): автоснятие якорей на пропавшие/терминальные задачи,
     # затем подгружаем актуальный список owner_id → task_key для расписания.

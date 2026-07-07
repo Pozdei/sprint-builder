@@ -52,6 +52,9 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
 
+      # Telegram — глобальный бот-fallback (per-конфиг токен задаётся в UI)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+
   frontend:
     build:
       context: .

@@ -60,6 +60,18 @@ def get_user_config_by_name(db: Session, owner_user_id: int, name: str) -> model
 
 # -------------------- Перезапись коллекций --------------------
 
+def _replace_collection(db: Session, collection, items, build) -> None:
+    """Полная перезапись relationship-коллекции: clear → flush → append.
+
+    `build(i, item)` строит ORM-объект по элементу и его позиции. flush между
+    clear и append обязателен — иначе delete-orphan может сработать после
+    insert и снести только что добавленные строки с совпадающими uq-ключами.
+    """
+    collection.clear()
+    db.flush()
+    for i, item in enumerate(items):
+        collection.append(build(i, item))
+
 def upsert_team_members(db: Session, config: models.Config, items: list[dict]) -> None:
     """items: список dict с jira_account_id, jira_name, file_name, role, sort_order.
 
@@ -111,125 +123,85 @@ def upsert_team_members(db: Session, config: models.Config, items: list[dict]) -
 
 
 def upsert_boards(db: Session, config: models.Config, items: list[dict]) -> None:
-    config.boards.clear()
-    db.flush()
-    for item in items:
-        config.boards.append(
-            models.ConfigBoard(name=item["name"], jira_board_id=item["jira_board_id"])
-        )
+    _replace_collection(db, config.boards, items, lambda i, item: models.ConfigBoard(
+        name=item["name"], jira_board_id=item["jira_board_id"],
+    ))
 
 
 def upsert_components(db: Session, config: models.Config, items: list[str]) -> None:
-    config.components.clear()
-    db.flush()
-    for name in items:
-        config.components.append(models.ConfigComponent(name=name))
+    _replace_collection(db, config.components, items,
+                        lambda i, name: models.ConfigComponent(name=name))
 
 
 def upsert_status_priorities(db: Session, config: models.Config,
                               items: dict[str, int]) -> None:
-    config.status_priorities.clear()
-    db.flush()
-    for status, prio in items.items():
-        config.status_priorities.append(
-            models.StatusPriority(jira_status=status, priority=prio)
-        )
+    _replace_collection(db, config.status_priorities, items.items(),
+                        lambda i, kv: models.StatusPriority(jira_status=kv[0], priority=kv[1]))
 
 
 def upsert_role_hours_fields(db: Session, config: models.Config,
                               items: dict[str, str]) -> None:
-    config.role_hours_fields.clear()
-    db.flush()
-    for role, fid in items.items():
-        config.role_hours_fields.append(
-            models.RoleHoursField(role=role, customfield_id=fid)
-        )
+    _replace_collection(db, config.role_hours_fields, items.items(),
+                        lambda i, kv: models.RoleHoursField(role=kv[0], customfield_id=kv[1]))
 
 
 def upsert_roles(db: Session, config: models.Config, items: list[dict]) -> None:
-    config.roles.clear()
-    db.flush()
-    for i, item in enumerate(items):
-        config.roles.append(
-            models.Role(
-                name=item["name"],
-                display_name=item["display_name"],
-                enabled=item.get("enabled", True),
-                is_lead=item.get("is_lead", False),
-                sort_order=item.get("sort_order", i),
-            )
-        )
+    _replace_collection(db, config.roles, items, lambda i, item: models.Role(
+        name=item["name"],
+        display_name=item["display_name"],
+        enabled=item.get("enabled", True),
+        is_lead=item.get("is_lead", False),
+        sort_order=item.get("sort_order", i),
+    ))
 
 
 def upsert_role_status_buckets(db: Session, config: models.Config,
                                 items: list[dict]) -> None:
-    config.role_status_buckets.clear()
-    db.flush()
-    for item in items:
-        config.role_status_buckets.append(
-            models.RoleStatusBucket(
-                role=item["role"],
-                jira_status=item["jira_status"],
-                bucket=item["bucket"],
-            )
-        )
+    _replace_collection(db, config.role_status_buckets, items,
+                        lambda i, item: models.RoleStatusBucket(
+                            role=item["role"],
+                            jira_status=item["jira_status"],
+                            bucket=item["bucket"],
+                        ))
 
 
 def upsert_role_status_default_hours(db: Session, config: models.Config,
                                       items: list[dict]) -> None:
-    config.role_status_default_hours.clear()
-    db.flush()
-    for item in items:
-        config.role_status_default_hours.append(
-            models.RoleStatusDefaultHours(
-                role=item["role"],
-                jira_status=item["jira_status"],
-                hours=item["hours"],
-            )
-        )
+    _replace_collection(db, config.role_status_default_hours, items,
+                        lambda i, item: models.RoleStatusDefaultHours(
+                            role=item["role"],
+                            jira_status=item["jira_status"],
+                            hours=item["hours"],
+                        ))
 
 
 def upsert_pseudo_tasks(db: Session, config: models.Config,
                         items: list[dict]) -> None:
-    config.pseudo_tasks.clear()
-    db.flush()
-    for item in items:
-        config.pseudo_tasks.append(
-            models.PseudoTask(
-                member_id=item["member_id"],
-                name=item["name"],
-                bucket=item["bucket"],
-                hours=item["hours"],
-                recurring=item.get("recurring", False),
-                target_sprint_num=item.get("target_sprint_num"),
-            )
-        )
+    _replace_collection(db, config.pseudo_tasks, items, lambda i, item: models.PseudoTask(
+        member_id=item["member_id"],
+        name=item["name"],
+        bucket=item["bucket"],
+        hours=item["hours"],
+        recurring=item.get("recurring", False),
+        target_sprint_num=item.get("target_sprint_num"),
+    ))
 
 
 def upsert_directions(db: Session, config: models.Config,
                       items: list[dict]) -> None:
-    config.directions.clear()
-    db.flush()
-    for item in items:
-        config.directions.append(
-            models.ConfigDirection(
-                name=item["name"],
-                labels=item.get("labels", []),
-                work_types=item.get("work_types", []),
-                role_overrides=item.get("role_overrides") or {},
-                designer_id=item.get("designer_id") or None,
-            )
-        )
+    _replace_collection(db, config.directions, items, lambda i, item: models.ConfigDirection(
+        name=item["name"],
+        labels=item.get("labels", []),
+        work_types=item.get("work_types", []),
+        role_overrides=item.get("role_overrides") or {},
+        designer_id=item.get("designer_id") or None,
+    ))
 
 
 def upsert_terminal_statuses(db: Session, config: models.Config,
                               items: list[str]) -> None:
-    config.terminal_statuses.clear()
-    db.flush()
-    for i, status in enumerate(items):
-        config.terminal_statuses.append(
-            models.TerminalStatus(jira_status=status, sort_order=i)
-        )
+    _replace_collection(db, config.terminal_statuses, items,
+                        lambda i, status: models.TerminalStatus(jira_status=status, sort_order=i))
 
 
 # -------------------- Обновление конфига --------------------
@@ -247,21 +219,15 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
         if field in data:
             setattr(config, field, data[field])
 
-    if "jira_api_token" in data:
-        token = data["jira_api_token"]
-        if token:
-            from app.core.security import encrypt_secret
-            config.jira_api_token_enc = encrypt_secret(token)
-        else:
-            config.jira_api_token_enc = ""
-
-    if "telegram_bot_token" in data:
-        token = data["telegram_bot_token"]
-        if token:
-            from app.core.security import encrypt_secret
-            config.telegram_bot_token_enc = encrypt_secret(token)
-        else:
-            config.telegram_bot_token_enc = ""
+    for data_key, attr in (("jira_api_token", "jira_api_token_enc"),
+                           ("telegram_bot_token", "telegram_bot_token_enc")):
+        if data_key in data:
+            token = data[data_key]
+            if token:
+                from app.core.security import encrypt_secret
+                setattr(config, attr, encrypt_secret(token))
+            else:
+                setattr(config, attr, "")
 
     if "team" in data:
         items = [
@@ -390,15 +356,7 @@ def model_to_sprint_config_dict(config: models.Config) -> dict:
             }
             for d in config.directions
         ],
-        "vacations": [
-            {
-                "owner_id": v.jira_account_id,
-                "display_name": v.display_name,
-                "start_date": v.start_date,
-                "end_date": v.end_date,
-            }
-            for v in config.vacations
-        ],
+        "vacations": vacations_to_dicts(config.vacations),
     }
 
 
@@ -488,11 +446,11 @@ def list_epic_dependencies_for_keys(
     ).all())
 
 
-def add_epic_dependency(
+def _find_epic_dependency(
     db: Session, config_id: int, epic_key: str, from_key: str, to_key: str,
-    from_bucket: str = "", to_bucket: str = "",
-) -> list[models.EpicTaskDependency]:
-    existing = db.scalar(
+    from_bucket: str, to_bucket: str,
+) -> models.EpicTaskDependency | None:
+    return db.scalar(
         select(models.EpicTaskDependency)
         .where(
             models.EpicTaskDependency.config_id == config_id,
@@ -502,6 +460,15 @@ def add_epic_dependency(
             models.EpicTaskDependency.from_bucket == from_bucket,
             models.EpicTaskDependency.to_bucket == to_bucket,
         )
+    )
+
+
+def add_epic_dependency(
+    db: Session, config_id: int, epic_key: str, from_key: str, to_key: str,
+    from_bucket: str = "", to_bucket: str = "",
+) -> list[models.EpicTaskDependency]:
+    existing = _find_epic_dependency(
+        db, config_id, epic_key, from_key, to_key, from_bucket, to_bucket,
     )
     if not existing:
         dep = models.EpicTaskDependency(
@@ -517,16 +484,8 @@ def remove_epic_dependency(
     db: Session, config_id: int, epic_key: str, from_key: str, to_key: str,
     from_bucket: str = "", to_bucket: str = "",
 ) -> None:
-    dep = db.scalar(
-        select(models.EpicTaskDependency)
-        .where(
-            models.EpicTaskDependency.config_id == config_id,
-            models.EpicTaskDependency.epic_key == epic_key,
-            models.EpicTaskDependency.from_key == from_key,
-            models.EpicTaskDependency.to_key == to_key,
-            models.EpicTaskDependency.from_bucket == from_bucket,
-            models.EpicTaskDependency.to_bucket == to_bucket,
-        )
+    dep = _find_epic_dependency(
+        db, config_id, epic_key, from_key, to_key, from_bucket, to_bucket,
     )
     if dep:
         db.delete(dep)
@@ -547,10 +506,10 @@ def list_root_tasks(
     ).all())
 
 
-def set_root_task(
-    db: Session, config_id: int, epic_key: str, owner_id: str, task_key: str,
-) -> list[models.EmployeeRootTask]:
-    existing = db.scalar(
+def _find_root_task(
+    db: Session, config_id: int, epic_key: str, owner_id: str,
+) -> models.EmployeeRootTask | None:
+    return db.scalar(
         select(models.EmployeeRootTask)
         .where(
             models.EmployeeRootTask.config_id == config_id,
@@ -558,6 +517,12 @@ def set_root_task(
             models.EmployeeRootTask.owner_id == owner_id,
         )
     )
+
+
+def set_root_task(
+    db: Session, config_id: int, epic_key: str, owner_id: str, task_key: str,
+) -> list[models.EmployeeRootTask]:
+    existing = _find_root_task(db, config_id, epic_key, owner_id)
     if existing:
         existing.task_key = task_key
     else:
@@ -571,14 +536,7 @@ def set_root_task(
 def remove_root_task(
     db: Session, config_id: int, epic_key: str, owner_id: str,
 ) -> None:
-    existing = db.scalar(
-        select(models.EmployeeRootTask)
-        .where(
-            models.EmployeeRootTask.config_id == config_id,
-            models.EmployeeRootTask.epic_key == epic_key,
-            models.EmployeeRootTask.owner_id == owner_id,
-        )
-    )
+    existing = _find_root_task(db, config_id, epic_key, owner_id)
     if existing:
         db.delete(existing)
         db.flush()

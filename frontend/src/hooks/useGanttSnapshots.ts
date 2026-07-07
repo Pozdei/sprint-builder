@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GanttItem, GanttSnapshotDetail, GanttSnapshotSummary } from "../types/api";
 
 /** Набор CRUD-функций снимков Ганта — одинаковая форма для спринта и для эпика прогноза. */
@@ -9,6 +9,35 @@ export interface GanttSnapshotApi {
   ) => Promise<GanttSnapshotSummary>;
   get: (id: number) => Promise<GanttSnapshotDetail>;
   remove: (id: number) => Promise<void>;
+}
+
+/** CRUD-функции снимков, параметризованные scope-ключом (sprint_id или epic_key). */
+export interface ScopedGanttSnapshotFns<S> {
+  list: (scope: S) => Promise<GanttSnapshotSummary[]>;
+  create: (
+    scope: S, ganttStart: string, hoursPerDay: number, items: GanttItem[], label?: string,
+  ) => Promise<GanttSnapshotSummary>;
+  get: (scope: S, id: number) => Promise<GanttSnapshotDetail>;
+  remove: (scope: S, id: number) => Promise<void>;
+}
+
+/**
+ * Привязать scoped CRUD-функции к текущему scope → GanttSnapshotApi.
+ * Убирает копипасту адаптеров с Promise.reject-заглушками на страницах
+ * истории и прогноза: при пустом scope list возвращает [], остальные — reject.
+ */
+export function useGanttSnapshotApi<S>(
+  scope: S | null | undefined,
+  fns: ScopedGanttSnapshotFns<S>,
+): GanttSnapshotApi {
+  return useMemo<GanttSnapshotApi>(() => ({
+    list: () => (scope != null ? fns.list(scope) : Promise.resolve([])),
+    create: (s, h, items, label) =>
+      scope != null ? fns.create(scope, s, h, items, label) : Promise.reject(new Error("no scope")),
+    get: (id) => (scope != null ? fns.get(scope, id) : Promise.reject(new Error("no scope"))),
+    remove: (id) => (scope != null ? fns.remove(scope, id) : Promise.reject(new Error("no scope"))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [scope]);
 }
 
 /**

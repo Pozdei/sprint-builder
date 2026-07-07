@@ -1,6 +1,5 @@
 """Сервис истории спринтов: формула номера, утверждение/закрытие/врывы."""
 
-import re
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -8,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.i18n import make_translator
 from app.db import models, repository, sprints_repository
 from app.jira.client import JiraClient
+from app.sprint.logic import sprint_num_from_name
 
 _MSG: dict[str, dict[str, str]] = {
     "sprint_not_found": {"ru": "Sprint {sprint_id} не найден", "en": "Sprint {sprint_id} not found"},
@@ -93,6 +93,23 @@ def _check_access(sprint: models.Sprint, config_id: int, lang: str = "ru") -> No
         raise SprintAccessDeniedError(
             _t("sprint_belongs_to_other_user", lang, sprint_id=sprint.id)
         )
+
+
+def _get_sprint_checked(
+    db: Session, sprint_id: int, config_id: int, lang: str,
+    required_status: str, status_error: type[Exception], status_msg_key: str,
+) -> models.Sprint:
+    """Загрузка спринта с общими проверками: существует, принадлежит конфигу,
+    находится в требуемом статусе. Единая точка для approve/reopen/delete/edit/close."""
+    sprint = sprints_repository.get_sprint(db, sprint_id)
+    if not sprint:
+        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
+    _check_access(sprint, config_id, lang)
+    if sprint.status != required_status:
+        raise status_error(
+            _t(status_msg_key, lang, sprint_num=sprint.sprint_num, status=sprint.status)
+        )
+    return sprint
 
 
 # -------------------- Общие входы планировщика Ганта --------------------
@@ -182,23 +199,17 @@ def _sprint_exists_in_jira(jira: JiraClient, project_key: str,
         sprints = (it.get("fields") or {}).get(sprint_field) or []
         for s in sprints:
             name = s.get("name") if isinstance(s, dict) else ""
-            m = re.search(r"(\d+)", name or "")
-            if m and int(m.group(1)) == sprint_num:
+            if sprint_num_from_name(name) == sprint_num:
                 return True
     return False
 
 
 def approve_sprint(db: Session, jira: JiraClient,
                     sprint_id: int, config_id: int, lang: str = "ru") -> models.Sprint:
-    sprint = sprints_repository.get_sprint(db, sprint_id)
-    if not sprint:
-        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
-    _check_access(sprint, config_id, lang)
-    if sprint.status != "draft":
-        raise SprintNotADraftError(
-            _t("sprint_status_only_draft_can_approve", lang,
-               sprint_num=sprint.sprint_num, status=sprint.status)
-        )
+    sprint = _get_sprint_checked(
+        db, sprint_id, config_id, lang,
+        "draft", SprintNotADraftError, "sprint_status_only_draft_can_approve",
+    )
 
     project_key = sprint.config_snapshot.get("project_key", "")
     sprint_field = sprint.config_snapshot.get("sprint_field", "")
@@ -214,30 +225,20 @@ def approve_sprint(db: Session, jira: JiraClient,
 # -------------------- Возврат в драфт --------------------
 
 def reopen_sprint(db: Session, sprint_id: int, config_id: int, lang: str = "ru") -> models.Sprint:
-    sprint = sprints_repository.get_sprint(db, sprint_id)
-    if not sprint:
-        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
-    _check_access(sprint, config_id, lang)
-    if sprint.status != "approved":
-        raise SprintNotApprovedError(
-            _t("sprint_status_only_approved_can_reopen", lang,
-               sprint_num=sprint.sprint_num, status=sprint.status)
-        )
+    sprint = _get_sprint_checked(
+        db, sprint_id, config_id, lang,
+        "approved", SprintNotApprovedError, "sprint_status_only_approved_can_reopen",
+    )
     return sprints_repository.reopen(db, sprint)
 
 
 # -------------------- Удаление --------------------
 
 def delete_draft(db: Session, sprint_id: int, config_id: int, lang: str = "ru") -> None:
-    sprint = sprints_repository.get_sprint(db, sprint_id)
-    if not sprint:
-        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
-    _check_access(sprint, config_id, lang)
-    if sprint.status != "draft":
-        raise SprintNotADraftError(
-            _t("sprint_status_only_draft_can_delete", lang,
-               sprint_num=sprint.sprint_num, status=sprint.status)
-        )
+    sprint = _get_sprint_checked(
+        db, sprint_id, config_id, lang,
+        "draft", SprintNotADraftError, "sprint_status_only_draft_can_delete",
+    )
     sprints_repository.delete_sprint(db, sprint)
 
 
@@ -245,15 +246,10 @@ def delete_draft(db: Session, sprint_id: int, config_id: int, lang: str = "ru") 
 
 def set_sprint_tasks(db: Session, sprint_id: int, config_id: int,
                       tasks: list[dict], lang: str = "ru") -> models.Sprint:
-    sprint = sprints_repository.get_sprint(db, sprint_id)
-    if not sprint:
-        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
-    _check_access(sprint, config_id, lang)
-    if sprint.status != "draft":
-        raise SprintNotADraftError(
-            _t("sprint_status_only_draft_can_edit", lang,
-               sprint_num=sprint.sprint_num, status=sprint.status)
-        )
+    sprint = _get_sprint_checked(
+        db, sprint_id, config_id, lang,
+        "draft", SprintNotADraftError, "sprint_status_only_draft_can_edit",
+    )
 
     budget = sprint.config_snapshot.get("hours_per_person", 80.0)
     team = sprint.config_snapshot.get("team", {})
@@ -308,11 +304,7 @@ def _fetch_task_state_from_jira(
         for s in sprints:
             if not isinstance(s, dict):
                 continue
-            name = s.get("name") or ""
-            m = re.search(r"(\d+)", name)
-            if not m:
-                continue
-            if int(m.group(1)) == target_sprint_num:
+            if sprint_num_from_name(s.get("name")) == target_sprint_num:
                 target_sprint = s
                 break
 
@@ -343,8 +335,7 @@ def _find_jira_sprint_id(jira: JiraClient, snapshot: dict,
         for s in sprints:
             if not isinstance(s, dict):
                 continue
-            m = re.search(r"(\d+)", s.get("name") or "")
-            if m and int(m.group(1)) == target_num:
+            if sprint_num_from_name(s.get("name")) == target_num:
                 sid = s.get("id")
                 if isinstance(sid, int):
                     return sid
@@ -441,7 +432,7 @@ def _estimate_hours_intrusion(
 
 
 def _build_intrusion_record(
-    issue: dict, snapshot: dict, terminal_set: set[str],
+    issue: dict, snapshot: dict, terminal_set: set[str], base_url: str = "",
 ) -> dict | None:
     """Из jira-issue построить запись врыва. Если ни одна роль не подошла — None.
 
@@ -464,8 +455,7 @@ def _build_intrusion_record(
             continue
         hours = _estimate_hours_intrusion(issue, snapshot, role, bucket)
 
-        base_url = (snapshot.get("project_key") and
-                     f"https://itlime.atlassian.net/browse/{issue.get('key')}") or ""
+        url = f"{base_url}/browse/{issue.get('key')}" if base_url else ""
 
         return {
             "key": issue.get("key"),
@@ -478,7 +468,7 @@ def _build_intrusion_record(
             "role": role,
             "bucket": bucket,
             "hours": hours,
-            "url": base_url,
+            "url": url,
         }
 
     return None
@@ -496,15 +486,10 @@ def close_sprint(db: Session, jira: JiraClient,
     4. Для каждого врыва найти владельца из team_snapshot — если нашёлся, добавить.
     5. Сохранить intrusions в Sprint.
     """
-    sprint = sprints_repository.get_sprint(db, sprint_id)
-    if not sprint:
-        raise LookupError(_t("sprint_not_found", lang, sprint_id=sprint_id))
-    _check_access(sprint, config_id, lang)
-    if sprint.status != "approved":
-        raise SprintNotApprovedError(
-            _t("sprint_status_only_approved_can_close", lang,
-               sprint_num=sprint.sprint_num, status=sprint.status)
-        )
+    sprint = _get_sprint_checked(
+        db, sprint_id, config_id, lang,
+        "approved", SprintNotApprovedError, "sprint_status_only_approved_can_close",
+    )
 
     snapshot = sprint.config_snapshot or {}
     sprint_field = snapshot.get("sprint_field", "")
@@ -612,7 +597,7 @@ def close_sprint(db: Session, jira: JiraClient,
             key = issue.get("key")
             if not key or key in known_keys:
                 continue
-            rec = _build_intrusion_record(issue, snapshot, terminal_set)
+            rec = _build_intrusion_record(issue, snapshot, terminal_set, jira.base_url)
             if rec:
                 intrusions.append(rec)
 

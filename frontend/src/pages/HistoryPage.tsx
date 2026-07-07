@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   approveSprint, reopenSprint,
@@ -22,7 +22,7 @@ import { GanttSnapshotBanner, GanttSnapshotControls } from "../components/GanttS
 import { OwnerStats } from "../components/OwnerStats";
 import { SprintTable } from "../components/SprintTable";
 import { StandupModal } from "../components/StandupModal";
-import { useGanttSnapshots, type GanttSnapshotApi } from "../hooks/useGanttSnapshots";
+import { useGanttSnapshotApi, useGanttSnapshots } from "../hooks/useGanttSnapshots";
 import { useRootTasks } from "../hooks/useRootTasks";
 import { fmtDateTime } from "../lib/format";
 import type {
@@ -156,13 +156,12 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
 
   // Снимки Ганта — единый механизм с прогнозом по эпику (см. GanttSnapshotControls/useGanttSnapshots)
   const sprintId = detail?.id;
-  const snapshotApi = useMemo<GanttSnapshotApi>(() => ({
-    list: () => (sprintId != null ? listGanttSnapshots(sprintId) : Promise.resolve([])),
-    create: (s, h, items, label) =>
-      sprintId != null ? saveGanttSnapshot(sprintId, s, h, items, label) : Promise.reject(new Error("no sprint")),
-    get: (id) => (sprintId != null ? getGanttSnapshot(sprintId, id) : Promise.reject(new Error("no sprint"))),
-    remove: (id) => (sprintId != null ? deleteGanttSnapshot(sprintId, id) : Promise.reject(new Error("no sprint"))),
-  }), [sprintId]);
+  const snapshotApi = useGanttSnapshotApi(sprintId, {
+    list: listGanttSnapshots,
+    create: saveGanttSnapshot,
+    get: getGanttSnapshot,
+    remove: deleteGanttSnapshot,
+  });
   const snap = useGanttSnapshots(snapshotApi, sprintId ?? null);
 
   useEffect(() => {

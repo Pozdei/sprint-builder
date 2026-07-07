@@ -15,7 +15,7 @@ import { TaskPipelineModal } from "../components/TaskPipelineModal";
 import { TodayExportModal } from "../components/TodayExportModal";
 import { useToast } from "../components/Toast";
 import { VacationPanel } from "../components/VacationPanel";
-import { useGanttSnapshots, type GanttSnapshotApi } from "../hooks/useGanttSnapshots";
+import { useGanttSnapshotApi, useGanttSnapshots } from "../hooks/useGanttSnapshots";
 import { useRootTasks } from "../hooks/useRootTasks";
 import { extractError } from "../lib/api-error";
 import { daysUntil, fmtDateLong, fmtDateTime, fmtNum, fmtRub, todayISO } from "../lib/format";
@@ -104,13 +104,12 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
 
   // Снимки Ганта — единый механизм с историей спринтов (см. GanttSnapshotControls/useGanttSnapshots)
   const epicScopeKey = result?.epic_key ?? null;
-  const ganttSnapshotApi = useMemo<GanttSnapshotApi>(() => ({
-    list: () => (epicScopeKey != null ? listEpicGanttSnapshots(epicScopeKey) : Promise.resolve([])),
-    create: (s, h, items, label) =>
-      epicScopeKey != null ? saveEpicGanttSnapshot(epicScopeKey, s, h, items, label) : Promise.reject(new Error("no epic")),
-    get: (id) => (epicScopeKey != null ? getEpicGanttSnapshot(epicScopeKey, id) : Promise.reject(new Error("no epic"))),
-    remove: (id) => (epicScopeKey != null ? deleteEpicGanttSnapshot(epicScopeKey, id) : Promise.reject(new Error("no epic"))),
-  }), [epicScopeKey]);
+  const ganttSnapshotApi = useGanttSnapshotApi(epicScopeKey, {
+    list: listEpicGanttSnapshots,
+    create: saveEpicGanttSnapshot,
+    get: getEpicGanttSnapshot,
+    remove: deleteEpicGanttSnapshot,
+  });
   const ganttSnap = useGanttSnapshots(ganttSnapshotApi, epicScopeKey);
   const rootTasksHook = useRootTasks(epicScopeKey);
 

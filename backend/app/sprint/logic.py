@@ -75,6 +75,15 @@ def fetch_component_issues(client: JiraClient, project_key: str,
     return issues
 
 
+def sprint_num_from_name(name: str | None) -> int | None:
+    """Номер спринта из имени Jira-спринта («Спринт 42» → 42).
+
+    Единый парсер для всех мест, где номер достаётся из значения sprint_field.
+    """
+    m = re.search(r"(\d+)", name or "")
+    return int(m.group(1)) if m else None
+
+
 def extract_max_sprint_number(sprints_value: list | None) -> tuple[int | None, str | None]:
     if not sprints_value:
         return None, None
@@ -82,10 +91,9 @@ def extract_max_sprint_number(sprints_value: list | None) -> tuple[int | None, s
     best_name = None
     for s in sprints_value:
         name = s.get("name") if isinstance(s, dict) else str(s)
-        m = re.search(r"(\d+)", name or "")
-        if not m:
+        num = sprint_num_from_name(name)
+        if num is None:
             continue
-        num = int(m.group(1))
         if best_num is None or num > best_num:
             best_num = num
             best_name = name
