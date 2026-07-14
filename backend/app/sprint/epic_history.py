@@ -184,6 +184,10 @@ def build_past_phases(
     (последний сегмент, end_dt == now_dt). Часы по нему уже учтены в прогнозе
     остатка как будущая работа (см. epic_forecast._build_with_history) — вызывающая
     сторона должна занулить hours у такой фазы, иначе стоимость задвоится.
+
+    Плановая оценка этапа учитывается один раз на bucket: у повторных фаз того же
+    bucket (задача откатывалась по статусу) hours=0 — иначе «потрачено»/стоимость
+    задваиваются с первым проходом.
     """
     f = issue["fields"]
     key = issue["key"]
@@ -254,7 +258,17 @@ def build_past_phases(
             "_is_current_open": end_dt == now_dt,
         })
 
-    return _merge_adjacent(phases)
+    merged = _merge_adjacent(phases)
+
+    # Повторные проходы bucket'а (после _merge_adjacent порядок хронологический):
+    # плановая оценка приписывается первому бару, повторам — hours=0.
+    seen_buckets: set[str] = set()
+    for p in merged:
+        if p["bucket"] in seen_buckets:
+            p["hours"] = 0.0
+        else:
+            seen_buckets.add(p["bucket"])
+    return merged
 
 
 def _merge_adjacent(phases: list[dict]) -> list[dict]:

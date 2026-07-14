@@ -22,14 +22,18 @@ WORK_START_HOUR = 9
 
 # -------------------- Временны́е утилиты --------------------
 
+def work_day_start(d: date) -> datetime:
+    """Datetime начала рабочего дня (WORK_START_HOUR:00) для даты d."""
+    return datetime.combine(d, datetime.min.time()).replace(hour=WORK_START_HOUR)
+
+
 def _working_hours_to_dt(sprint_start: date, hours: float, hours_per_day: float) -> datetime:
     """Рабочие часы от старта спринта → datetime (с учётом выходных)."""
     remaining = float(hours)
-    current = datetime.combine(sprint_start, datetime.min.time()).replace(hour=WORK_START_HOUR)
+    current = work_day_start(sprint_start)
     while remaining > 1e-9:
         if current.weekday() >= 5:
-            current = (current + timedelta(days=1)).replace(
-                hour=WORK_START_HOUR, minute=0, second=0, microsecond=0)
+            current = work_day_start((current + timedelta(days=1)).date())
             continue
         elapsed_today = current.hour - WORK_START_HOUR + current.minute / 60.0
         available_today = hours_per_day - elapsed_today
@@ -38,8 +42,7 @@ def _working_hours_to_dt(sprint_start: date, hours: float, hours_per_day: float)
             remaining = 0
         else:
             remaining -= available_today
-            current = (current + timedelta(days=1)).replace(
-                hour=WORK_START_HOUR, minute=0, second=0, microsecond=0)
+            current = work_day_start((current + timedelta(days=1)).date())
     return current
 
 

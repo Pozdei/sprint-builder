@@ -66,13 +66,16 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
 
   // overrideKey — если передан (клик по чипсу), считаем сразу по нему в режиме эпика.
   const handleForecast = async (overrideKey?: string) => {
+    // Не-строковый аргумент (например, event при onX={handleForecast}) — не ключ:
+    // TS такое пропускает (меньше параметров структурно совместимо), гасим в рантайме.
+    const override = typeof overrideKey === "string" && overrideKey.trim() ? overrideKey : undefined;
     // Спринт-режим: только когда выбран спринт и не кликнут чипс эпика
-    const sprint = overrideKey == null
+    const sprint = override == null
       ? approvedSprints.find((s) => s.id === sprintId) ?? null
       : null;
-    const key = (overrideKey ?? epicKey).trim().toUpperCase();
+    const key = (override ?? epicKey).trim().toUpperCase();
     if (!sprint && !key) return;
-    if (overrideKey) { setEpicKey(key); setSprintId(null); }
+    if (override) { setEpicKey(key); setSprintId(null); }
     setLoading(true);
     setResult(null);
     try {
@@ -677,7 +680,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                 fetchEpicDependencies(result.epic_key).then(setEpicDeps);
                 rootTasksHook.reload();
               }}
-              onRecompute={handleForecast}
+              onRecompute={() => handleForecast()}
             />
           )}
 

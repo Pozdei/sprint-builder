@@ -11,9 +11,10 @@
 from collections import defaultdict
 from datetime import date, datetime
 
+from app.sprint.buckets import RELEASE
 from app.sprint.config import SprintConfig
 from app.sprint.epic_history import build_past_phases, dt_to_work_hours
-from app.sprint.gantt import WORK_START_HOUR, compute_gantt_schedule
+from app.sprint.gantt import compute_gantt_schedule, work_day_start
 from app.sprint.logic import (
     _WORK_TYPE_INFO,
     _extract_developer_name,
@@ -37,42 +38,6 @@ from app.sprint.logic import (
 )
 
 
-def _max_pipeline_pos_from_history(
-    issue: dict,
-    work_types: list[str],
-    cfg: SprintConfig,
-) -> int:
-    """Найти максимальную позицию в pipeline по истории статусов задачи.
-
-    Возвращает индекс в work_types или -1 если история пуста / не содержит известных статусов.
-    Используется в hybrid-режиме: позволяет не добавлять повторно этапы, которые задача
-    уже прошла (даже если сейчас откатилась по статусу).
-    """
-    from app.sprint.logic import _enabled_roles_by_status, _WORK_TYPE_INFO
-    histories = issue.get("changelog", {}).get("histories", [])
-    if not histories:
-        return -1
-
-    status_to_roles = _enabled_roles_by_status(cfg)
-    bucket_to_pos: dict[str, int] = {
-        _WORK_TYPE_INFO[wt]["bucket"]: pos
-        for pos, wt in enumerate(work_types)
-        if wt in _WORK_TYPE_INFO
-    }
-
-    max_pos = -1
-    for entry in histories:
-        for item in entry.get("items", []):
-            if item.get("field") != "status":
-                continue
-            to_status = item.get("toString", "")
-            for _role, bucket in status_to_roles.get(to_status, []):
-                pos = bucket_to_pos.get(bucket, -1)
-                if pos > max_pos:
-                    max_pos = pos
-    return max_pos
-
-
 def _generate_all_remaining_stages(
     issue: dict,
     status_name: str,
@@ -85,14 +50,16 @@ def _generate_all_remaining_stages(
     team_by_role: dict[str, dict[str, dict]],
     current_stage_included: bool,
     counters: dict,
-    min_start_from: int = -1,
+    past_bucket_hours: dict[str, float] | None = None,
 ) -> None:
     """Сгенерировать оставшиеся шаги pipeline для задачи эпика.
 
     current_stage_included=True → текущий шаг уже добавлен через role_status_buckets,
     генерируем начиная со следующего.
     current_stage_included=False → статус не распознан, генерируем всё с начала.
-    min_start_from — минимальная позиция start_from (из истории статусов в hybrid-режиме).
+    past_bucket_hours — фактическая длительность уже пройденных этапов задачи
+    (bucket → часы, из changelog в историчном режиме): повторный проход этапа
+    после отката статуса планируем по ней, а не по полной оценке.
     """
     f = issue["fields"]
     key = issue["key"]
@@ -100,9 +67,6 @@ def _generate_all_remaining_stages(
 
     current_pos = _find_pipeline_position(status_name, work_types, cfg)
     start_from = current_pos if (current_stage_included and current_pos >= 0) else -1
-    # Hybrid-режим: не откатываемся назад по этапам, которые история уже зафиксировала
-    if min_start_from > start_from:
-        start_from = min_start_from
 
     assignee_id, reporter_id, responsible_id = _extract_owners(f, cfg)
     sprint_num, sprint_name = extract_max_sprint_number(f.get(cfg.sprint_field))
@@ -180,6 +144,12 @@ def _generate_all_remaining_stages(
             continue
 
         hours = estimate_hours_for_role(f, role, bucket, status_name, cfg, sp_field)
+        hours_is_default = not _has_real_estimate(f, bucket, cfg, sp_field)
+        if past_bucket_hours and bucket in past_bucket_hours:
+            # Этап уже проходили (откат статуса) — повтор планируем по фактической
+            # длительности прошлого прохода, а не по полной оценке.
+            hours = past_bucket_hours[bucket]
+            hours_is_default = False
 
         by_key_role[cand_key] = {
             "key": key,
@@ -191,7 +161,7 @@ def _generate_all_remaining_stages(
             "owner_id": owner_id,
             "owner_file_name": role_team[owner_id]["file_name"],
             "hours": hours,
-            "hours_is_default": not _has_real_estimate(f, bucket, cfg, sp_field),
+            "hours_is_default": hours_is_default,
             "board": "[epic]",
             "sprint_num": sprint_num,
             "sprint_name": sprint_name,
@@ -218,10 +188,12 @@ def collect_epic_remaining_work(
     cfg: SprintConfig,
     sp_field: str | None,
     base_url: str,
-    use_history: bool = False,
+    history_hours: dict[str, dict[str, float]] | None = None,
 ) -> tuple[list[dict], dict]:
     """Собрать оставшиеся рабочие единицы для задач эпика.
 
+    history_hours — key → {bucket: часы} фактической длительности уже пройденных
+    этапов (историчный режим): повторные проходы планируются по ним.
     Возвращает (work_items, diagnostics).
     """
     from app.sprint.logic import (
@@ -229,6 +201,7 @@ def collect_epic_remaining_work(
         _process_issue_for_role,
     )
 
+    history_hours = history_hours or {}
     by_key_role: dict[tuple, dict] = {}
     counters: dict = {
         "matched": 0,
@@ -297,15 +270,11 @@ def collect_epic_remaining_work(
 
         # Будущие шаги pipeline (включая code_review, testing)
         if direction:
-            history_pos = (
-                _max_pipeline_pos_from_history(issue, direction.get("work_types", []), cfg)
-                if use_history else -1
-            )
             _generate_all_remaining_stages(
                 issue, status_name, direction, labels,
                 by_key_role, cfg, base_url, sp_field,
                 team_by_role, current_stage_included, counters,
-                min_start_from=history_pos,
+                past_bucket_hours=history_hours.get(issue["key"]),
             )
 
     return list(by_key_role.values()), counters
@@ -379,6 +348,7 @@ def _build_with_history(
     cfg: SprintConfig,
     sp_field: str | None,
     base_url: str,
+    start_date: date,
     hours_per_day: float,
     dependencies: list[dict] | None,
     vacations: list[dict] | None,
@@ -388,6 +358,9 @@ def _build_with_history(
     """Историчный режим: прошлые фазы из changelog + прогноз остатка на одной шкале."""
     now_dt = datetime.now()
     today = date.today()
+    # Остаток планируем от выбранной даты начала, но не раньше сегодня:
+    # прошлое на шкале уже занято фактическими фазами из changelog.
+    forecast_start = start_date if start_date > today else today
     terminal_set = set(cfg.terminal_statuses)
 
     # 1. Прошлые фазы для всех задач (включая закрытые — у них есть прошлое)
@@ -405,40 +378,56 @@ def _build_with_history(
             done_count += 1
         past_phases.extend(build_past_phases(issue, cfg, sp_field, base_url, now_dt))
 
-    # 2. Будущее (остаток) — только для незакрытых задач
-    work_items, counters = collect_epic_remaining_work(
-        issues, cfg, sp_field, base_url, use_history=False,
-    )
-
-    # 3. Начало шкалы = самая ранняя дата фазы (или сегодня)
+    # 2. Начало шкалы = самая ранняя дата фазы (или сегодня)
     origin = today
     for p in past_phases:
         d = p["_start_dt"].date()
         if d < origin:
             origin = d
-    today_dt = datetime.combine(today, datetime.min.time()).replace(hour=WORK_START_HOUR)
-    today_offset = dt_to_work_hours(today_dt, origin, hours_per_day)
+    today_offset = dt_to_work_hours(work_day_start(today), origin, hours_per_day)
+    forecast_offset = dt_to_work_hours(work_day_start(forecast_start), origin, hours_per_day)
 
-    # 4. Прогноз от сегодня + сдвиг в координаты шкалы
+    # 3. Координаты фаз на шкале (один раз — используются и здесь, и для баров)
+    #    и фактическая длительность завершённых прошлых фаз: key → {bucket: часы}.
+    #    По ней планируются повторные проходы этапов после отката статуса
+    #    (перетест/пере-ревью занимает столько, сколько занял в прошлый раз;
+    #    при нескольких прошлых проходах берём последний).
+    history_hours: dict[str, dict[str, float]] = {}
+    for p in past_phases:
+        p["_sh"] = dt_to_work_hours(p["_start_dt"], origin, hours_per_day)
+        p["_eh"] = dt_to_work_hours(p["_end_dt"], origin, hours_per_day, end=True)
+        if p["_is_current_open"] or p["bucket"] == RELEASE:
+            continue
+        history_hours.setdefault(p["key"], {})[p["bucket"]] = max(
+            round(p["_eh"] - p["_sh"], 1), 0.5,
+        )
+
+    # 4. Будущее (остаток) — только для незакрытых задач
+    work_items, counters = collect_epic_remaining_work(
+        issues, cfg, sp_field, base_url, history_hours=history_hours,
+    )
+
+    # 5. Прогноз от даты начала (≥ сегодня) + сдвиг в координаты шкалы
     forecast_items = compute_gantt_schedule(
-        work_items, config_snapshot, today, hours_per_day,
+        work_items, config_snapshot, forecast_start, hours_per_day,
         dependencies=dependencies or [], vacations=vacations or [],
         root_tasks=root_tasks,
     )
     for it in forecast_items:
-        it["start_hours"] = round(it["start_hours"] + today_offset, 3)
-        it["end_hours"] = round(it["end_hours"] + today_offset, 3)
+        it["start_hours"] = round(it["start_hours"] + forecast_offset, 3)
+        it["end_hours"] = round(it["end_hours"] + forecast_offset, 3)
         it["is_historical"] = False
 
-    # 5. Прошлые фазы → элементы Ганта (реальные даты + часы от origin)
+    # 6. Прошлые фазы → элементы Ганта (реальные даты + часы от origin).
+    #    Дедуп часов повторных проходов уже сделан в build_past_phases.
     min_width = hours_per_day * 0.2
     past_items: list[dict] = []
     for p in past_phases:
         sd = p.pop("_start_dt")
         ed = p.pop("_end_dt")
         is_current_open = p.pop("_is_current_open", False)
-        sh = dt_to_work_hours(sd, origin, hours_per_day)
-        eh = dt_to_work_hours(ed, origin, hours_per_day, end=True)
+        sh = p.pop("_sh")
+        eh = p.pop("_eh")
         if eh - sh < min_width:
             eh = sh + min_width
         p["start_hours"] = round(sh, 3)
@@ -457,14 +446,14 @@ def _build_with_history(
     gantt_items.sort(key=lambda x: (x["start_hours"], x.get("owner_file_name", "")))
     _annotate_phase_costs(gantt_items, cfg)
 
-    # 6. Дата завершения = максимальный end среди будущих (иначе — конец прошлого)
+    # 7. Дата завершения = максимальный end среди будущих (иначе — конец прошлого)
     completion_date: str | None = None
     if forecast_items:
         completion_date = max(forecast_items, key=lambda x: x["end_hours"])["end"][:10]
     elif past_items:
         completion_date = max(p["end"] for p in past_items)[:10]
 
-    # 7. Суммы: потрачено (прошлое) vs осталось (будущее)
+    # 8. Суммы: потрачено (прошлое) vs осталось (будущее)
     spent_hours = sum(p.get("hours", 0) for p in past_items)
     remaining_hours = sum(w.get("hours", 0) for w in work_items)
     spent_cost, _ = _compute_cost(past_items, cfg)
@@ -529,13 +518,13 @@ def build_epic_forecast(
 
     if use_history:
         return _build_with_history(
-            issues, cfg, sp_field, base_url, hours_per_day,
+            issues, cfg, sp_field, base_url, start_date, hours_per_day,
             dependencies, vacations, config_snapshot,
             root_tasks=root_tasks,
         )
 
     work_items, counters = collect_epic_remaining_work(
-        issues, cfg, sp_field, base_url, use_history=False,
+        issues, cfg, sp_field, base_url,
     )
 
     if not work_items:
