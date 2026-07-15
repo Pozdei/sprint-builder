@@ -304,7 +304,7 @@ export function SettingsPage() {
                       className="w-full px-2 py-1.5 border rounded-md text-sm"
                     />
                   </Field>
-                  <Field label={t("page.fields.jiraApiToken")}>
+                  <Field label={t("page.fields.jiraApiToken")} badge={<SavedBadge shown={config.jira_api_token_set} />}>
                     <input
                       type="password"
                       value={jiraApiToken}
@@ -325,7 +325,7 @@ export function SettingsPage() {
                     : t("page.hints.telegramNoToken")}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label={t("page.fields.telegramBotToken")}>
+                  <Field label={t("page.fields.telegramBotToken")} badge={<SavedBadge shown={config.telegram_bot_token_set} />}>
                     <input
                       type="password"
                       value={telegramBotToken}
@@ -401,7 +401,7 @@ export function SettingsPage() {
                     </select>
                   </Field>
                   <div />
-                  <Field label={t("page.fields.anthropicApiKey")}>
+                  <Field label={t("page.fields.anthropicApiKey")} badge={<SavedBadge shown={config.anthropic_api_key_set} />}>
                     <input
                       type="password"
                       value={anthropicApiKey}
@@ -412,7 +412,7 @@ export function SettingsPage() {
                       className="w-full px-2 py-1.5 border rounded-md text-sm"
                     />
                   </Field>
-                  <Field label={t("page.fields.deepseekApiKey")}>
+                  <Field label={t("page.fields.deepseekApiKey")} badge={<SavedBadge shown={config.deepseek_api_key_set} />}>
                     <input
                       type="password"
                       value={deepseekApiKey}
@@ -595,11 +595,26 @@ function Section({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, badge, children }: { label: string; badge?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm text-gray-600 mb-1">{label}</label>
+      <label className="block text-sm text-gray-600 mb-1 flex items-center gap-2">
+        {label}
+        {badge}
+      </label>
       {children}
     </div>
+  );
+}
+
+/** Явное подтверждение, что секрет (токен/ключ) реально сохранён на сервере — иначе легко принять
+    за баг то, что write-only поле после сохранения просто становится пустым. */
+function SavedBadge({ shown }: { shown: boolean }) {
+  const { t } = useTranslation(["settings"]);
+  if (!shown) return null;
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-1.5 py-0.5">
+      ✓ {t("page.fields.keySavedBadge")}
+    </span>
   );
 }

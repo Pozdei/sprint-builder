@@ -59,6 +59,7 @@
       "telegramChatId": "Chat ID",
       "telegramDailyTime": "Время ежедневной отправки",
       "telegramDailyEnabled": "Отправлять автоматически каждый день",
+      "keySavedBadge": "сохранён",
       "aiProvider": "Провайдер AI",
       "anthropicApiKey": "Anthropic API Key",
       "anthropicApiKeyPlaceholderSet": "Задан — оставь пустым, чтобы не менять",

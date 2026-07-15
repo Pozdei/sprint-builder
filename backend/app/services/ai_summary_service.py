@@ -17,6 +17,12 @@ from app.core.security import decrypt_secret
 from app.db import models
 
 NO_DIRECTION_LABEL = "Без направления"
+NO_BOARD_LABEL = "Без доски"
+
+_NO_NAME_RULE = (
+    "Пиши без обращения по имени — не выдумывай имя получателя и не начинай "
+    "текст с приветствия."
+)
 
 
 class AiSummaryError(Exception):
@@ -33,12 +39,26 @@ def resolve_provider_and_key(config: models.Config) -> tuple[str, str]:
     return provider, key
 
 
-def _group_by_direction(items: list[dict]) -> "OrderedDict[str, list[dict]]":
+def _group_by(items: list[dict], label_fn) -> "OrderedDict[str, list[dict]]":
     groups: "OrderedDict[str, list[dict]]" = OrderedDict()
     for it in items:
-        key = it.get("direction") or NO_DIRECTION_LABEL
-        groups.setdefault(key, []).append(it)
+        groups.setdefault(label_fn(it), []).append(it)
     return groups
+
+
+def _board_label(it: dict) -> str:
+    """«Проект» для Спринта/Истории — доска Jira, из которой набрана задача."""
+    return it.get("board") or NO_BOARD_LABEL
+
+
+def _epic_or_story_label(it: dict) -> str:
+    """«Проект» для Прогноза — история (наиболее конкретный уровень), затем эпик,
+    затем направление, если задача вне иерархии эпик/история."""
+    if it.get("story_key"):
+        return f"{it['story_key']} «{it.get('story_summary') or ''}»".strip()
+    if it.get("epic_key"):
+        return f"{it['epic_key']} «{it.get('epic_summary') or ''}»".strip()
+    return it.get("direction") or NO_DIRECTION_LABEL
 
 
 def _build_sprint_prompt(payload: dict) -> str:
@@ -51,13 +71,13 @@ def _build_sprint_prompt(payload: dict) -> str:
     lines.append(f"Задач в составе: {len(allocated)}, не влезло в бюджет (overflow): {len(overflow)}")
     lines.append("")
 
-    lines.append("Состав по направлениям и этапам:")
-    for direction, items in _group_by_direction(allocated).items():
-        lines.append(f"- {direction}:")
+    lines.append("Состав по проектам (доскам) и этапам:")
+    for board, items in _group_by(allocated, _board_label).items():
+        lines.append(f"- {board}:")
         for it in items:
             lines.append(
-                f"  - {it['key']} «{it['summary']}» — этап {it['bucket']}, "
-                f"исполнитель {it['owner_file_name']}, {it['hours']:.1f} ч"
+                f"  - {it['key']} «{it['summary']}» — направление {it.get('direction') or '—'}, "
+                f"этап {it['bucket']}, исполнитель {it['owner_file_name']}, {it['hours']:.1f} ч"
             )
     lines.append("")
 
@@ -75,10 +95,14 @@ def _build_sprint_prompt(payload: dict) -> str:
 
     lines.append(
         "На основе этих данных напиши короткий связный текст на русском языке "
-        "(без markdown-разметки, простыми абзацами) для лида команды: что сейчас "
-        "в работе по направлениям, какие есть риски (перегруз/недогруз людей, "
-        "задачи, не поместившиеся в спринт), и что реалистично ожидать к концу "
-        "спринта. Будь конкретен, опирайся только на приведённые данные."
+        f"(без markdown-разметки, простыми абзацами) для лида команды. {_NO_NAME_RULE} "
+        "Опирайся в первую очередь на проекты (доски) как основную структуру "
+        "рассказа; спускайся до конкретных задач по ключу только там, где это "
+        "действительно важно (риски, перегруз, крупные или не поместившиеся "
+        "задачи) — не обязательно перечислять каждую задачу. Расскажи, что "
+        "сейчас в работе по проектам, какие есть риски (перегруз/недогруз "
+        "людей, задачи, не поместившиеся в спринт), и что реалистично ожидать "
+        "к концу спринта. Будь конкретен, опирайся только на приведённые данные."
     )
     return "\n".join(lines)
 
@@ -105,14 +129,14 @@ def _build_forecast_prompt(payload: dict) -> str:
         lines.append(f"Прогнозная дата завершения: {completion_date}")
     lines.append("")
 
-    lines.append("Оставшиеся этапы по направлениям:")
-    for direction, items in _group_by_direction(gantt_items).items():
-        lines.append(f"- {direction}:")
+    lines.append("Оставшиеся этапы по проектам (эпикам/историям):")
+    for project, items in _group_by(gantt_items, _epic_or_story_label).items():
+        lines.append(f"- {project}:")
         for it in items:
             status = " (историческая фаза, уже пройдена)" if it.get("is_historical") else ""
             lines.append(
-                f"  - {it['key']} «{it['summary']}» — этап {it['bucket']}, "
-                f"исполнитель {it['owner_file_name']}, до {it['end'][:10]}{status}"
+                f"  - {it['key']} «{it['summary']}» — направление {it.get('direction') or '—'}, "
+                f"этап {it['bucket']}, исполнитель {it['owner_file_name']}, до {it['end'][:10]}{status}"
             )
     lines.append("")
 
@@ -130,10 +154,14 @@ def _build_forecast_prompt(payload: dict) -> str:
 
     lines.append(
         "На основе этих данных напиши короткий связный текст на русском языке "
-        "(без markdown-разметки, простыми абзацами) для лида команды: текущий "
-        "прогресс по направлениям, узкие места/риски (просроченные исполнители, "
-        "предупреждения), и что реалистично ожидать по срокам завершения. "
-        "Будь конкретен, опирайся только на приведённые данные."
+        f"(без markdown-разметки, простыми абзацами) для лида команды. {_NO_NAME_RULE} "
+        "Опирайся в первую очередь на проекты (эпики/истории) как основную "
+        "структуру рассказа; спускайся до конкретных задач по ключу только там, "
+        "где это действительно важно (риски, узкие места, просроченные "
+        "исполнители) — не обязательно перечислять каждую задачу. Расскажи "
+        "текущий прогресс по проектам, узкие места/риски (просроченные "
+        "исполнители, предупреждения), и что реалистично ожидать по срокам "
+        "завершения. Будь конкретен, опирайся только на приведённые данные."
     )
     return "\n".join(lines)
 
