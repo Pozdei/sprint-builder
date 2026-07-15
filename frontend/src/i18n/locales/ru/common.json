@@ -30,5 +30,16 @@
   "allExecutors": "Все исполнители",
   "employee": "Сотрудник",
   "password": "Пароль",
-  "appName": "Sprint Builder"
+  "appName": "Sprint Builder",
+  "aiSummary": {
+    "button": "AI-срез",
+    "title": "AI-срез",
+    "generating": "Генерируем срез…",
+    "copy": "Скопировать",
+    "retry": "Повторить",
+    "toast": {
+      "copied": "Скопировано",
+      "copyFailed": "Не удалось скопировать"
+    }
+  }
 }

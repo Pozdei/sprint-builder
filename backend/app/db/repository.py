@@ -215,12 +215,15 @@ def update_config(db: Session, config_id: int, data: dict) -> models.Config | No
                   "hours_per_person", "default_task_hours",
                   "leader_hours", "leader_management_enabled", "developer_field",
                   "designer_field", "tester_field", "jira_base_url", "jira_email",
-                  "telegram_chat_id", "telegram_daily_enabled", "telegram_daily_time"):
+                  "telegram_chat_id", "telegram_daily_enabled", "telegram_daily_time",
+                  "ai_provider"):
         if field in data:
             setattr(config, field, data[field])
 
     for data_key, attr in (("jira_api_token", "jira_api_token_enc"),
-                           ("telegram_bot_token", "telegram_bot_token_enc")):
+                           ("telegram_bot_token", "telegram_bot_token_enc"),
+                           ("anthropic_api_key", "anthropic_api_key_enc"),
+                           ("deepseek_api_key", "deepseek_api_key_enc")):
         if data_key in data:
             token = data[data_key]
             if token:

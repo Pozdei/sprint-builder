@@ -51,6 +51,11 @@ export interface SprintBuildResponse {
   max_sprint_num: number | null;
 }
 
+export interface AiSummaryResponse {
+  summary: string;
+  generated_at: string;
+}
+
 export type SprintStatus = "draft" | "approved" | "closed";
 
 export interface SprintSummary {
@@ -314,6 +319,8 @@ export interface DirectionOut {
   designer_id: string;
 }
 
+export type AiProvider = "anthropic" | "deepseek";
+
 export interface ConfigOut {
   id: number;
   name: string;
@@ -340,6 +347,14 @@ export interface ConfigOut {
   telegram_bot_token_set: boolean;
   /** Доступна ли отправка вообще (токен конфига или .env). */
   telegram_bot_configured: boolean;
+  /** AI-срез. Провайдер per-конфиг; ключи per-конфиг (write-only), fallback на .env. */
+  ai_provider: AiProvider;
+  anthropic_api_key_set: boolean;
+  /** Доступна ли генерация через Anthropic (ключ конфига или .env). */
+  anthropic_configured: boolean;
+  deepseek_api_key_set: boolean;
+  /** Доступна ли генерация через DeepSeek (ключ конфига или .env). */
+  deepseek_configured: boolean;
   team: Record<string, TeamMemberOut>;
   boards: Record<string, number>;
   extra_components: string[];
@@ -375,6 +390,11 @@ export interface ConfigUpdate {
   telegram_daily_time?: string;
   /** Шлём только если ввели новое значение; "" — явно очистить (вернётся к .env). */
   telegram_bot_token?: string;
+  ai_provider?: AiProvider;
+  /** Шлём только если ввели новое значение; "" — явно очистить (вернётся к .env). */
+  anthropic_api_key?: string;
+  /** Шлём только если ввели новое значение; "" — явно очистить (вернётся к .env). */
+  deepseek_api_key?: string;
   team?: Record<string, { jira_name: string; file_name: string; role: string }>;
   boards?: Record<string, number>;
   extra_components?: string[];

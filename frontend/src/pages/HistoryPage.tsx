@@ -8,6 +8,7 @@ import {
   downloadSprintXlsx,
   fetchGantt,
   fetchSprintDependencies,
+  generateSprintAiSummary,
   getGanttSnapshot,
   getSprint,
   listGanttSnapshots,
@@ -15,6 +16,7 @@ import {
   saveGanttSnapshot,
 } from "../api/client";
 import { extractError } from "../lib/api-error";
+import { AiSummaryModal } from "../components/AiSummaryModal";
 import { ClosedSprintView } from "../components/ClosedSprintView";
 import { useToast } from "../components/Toast";
 import { GanttChart } from "../components/GanttChart";
@@ -142,6 +144,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"approve" | "reopen" | "delete" | "download" | "close" | null>(null);
   const [showStandup, setShowStandup] = useState(false);
+  const [showAiSummary, setShowAiSummary] = useState(false);
 
   // Гант
   const [ganttDate, setGanttDate] = useState<string>(() => {
@@ -377,6 +380,13 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                     >
                       {busy === "download" ? t("history:row.downloading") : t("history:row.downloadXlsx")}
                     </button>
+                    <button
+                      onClick={() => setShowAiSummary(true)}
+                      disabled={busy !== null}
+                      className="bg-sky-600 hover:bg-sky-700 disabled:bg-gray-300 text-white px-3 py-1.5 rounded text-sm font-semibold"
+                    >
+                      ✨ {t("common:aiSummary.button")}
+                    </button>
                     {isDraft && (
                       <>
                         <button
@@ -426,6 +436,19 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
                     <StandupModal
                       sprint={detail}
                       onClose={() => setShowStandup(false)}
+                    />
+                  )}
+
+                  {showAiSummary && (
+                    <AiSummaryModal
+                      generate={() =>
+                        generateSprintAiSummary({
+                          allocated: detail.tasks,
+                          overflow: [],
+                          owner_stats: detail.owner_stats,
+                        }).then((r) => r.summary)
+                      }
+                      onClose={() => setShowAiSummary(false)}
                     />
                   )}
 

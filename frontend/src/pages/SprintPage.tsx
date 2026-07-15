@@ -6,9 +6,11 @@ import {
   downloadCandidatesXlsx,
   downloadSprintXlsx,
   fetchCandidates,
+  generateSprintAiSummary,
   getDefaultConfig,
   setSprintTasks,
 } from "../api/client";
+import { AiSummaryModal } from "../components/AiSummaryModal";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 import { JiraFieldEditor } from "../components/JiraFieldEditor";
 import { OwnerStats } from "../components/OwnerStats";
@@ -44,6 +46,13 @@ function IconBolt() {
   return (
     <svg viewBox="0 0 24 24" width={16} height={16} fill="currentColor">
       <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />
+    </svg>
+  );
+}
+function IconSparkle() {
+  return (
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="currentColor">
+      <path d="M12 2 14 9 21 11 14 13 12 20 10 13 3 11 10 9 12 2Z" />
     </svg>
   );
 }
@@ -111,6 +120,8 @@ export function SprintPage({ jiraReady }: Props) {
 
   // Режим редактирования состава
   const [editing, setEditing] = useState(false);
+
+  const [showAiSummary, setShowAiSummary] = useState(false);
 
   const handleLoadCandidates = async () => {
     setLoadingCandidates(true);
@@ -342,6 +353,15 @@ export function SprintPage({ jiraReady }: Props) {
             {downloadingS ? t("toolbar.downloading") : t("toolbar.downloadSprint")}
           </button>
 
+          <button
+            onClick={() => setShowAiSummary(true)}
+            disabled={!allocated}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition"
+          >
+            <IconSparkle />
+            {t("common:aiSummary.button")}
+          </button>
+
           {sprint && sprint.status === "draft" && (
             <button
               onClick={handleApprove}
@@ -473,6 +493,19 @@ export function SprintPage({ jiraReady }: Props) {
           task={editingTask}
           onClose={() => setEditingTask(null)}
           onSaved={handleJiraSaved}
+        />
+      )}
+
+      {showAiSummary && allocated && (
+        <AiSummaryModal
+          generate={() =>
+            generateSprintAiSummary({
+              allocated,
+              overflow,
+              owner_stats: ownerStats,
+            }).then((r) => r.summary)
+          }
+          onClose={() => setShowAiSummary(false)}
         />
       )}
 

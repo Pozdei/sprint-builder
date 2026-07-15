@@ -264,5 +264,11 @@ def to_out_dict(config: models.Config) -> dict:
         "telegram_bot_token_set": bool(config.telegram_bot_token_enc),
         # Доступна ли отправка вообще: токен конфига ИЛИ глобальный .env.
         "telegram_bot_configured": bool(config.telegram_bot_token_enc) or bool(settings.telegram_bot_token),
+        "ai_provider": config.ai_provider or "anthropic",
+        "anthropic_api_key_set": bool(config.anthropic_api_key_enc),
+        # Доступна ли генерация вообще: ключ конфига ИЛИ глобальный .env.
+        "anthropic_configured": bool(config.anthropic_api_key_enc) or bool(settings.anthropic_api_key),
+        "deepseek_api_key_set": bool(config.deepseek_api_key_enc),
+        "deepseek_configured": bool(config.deepseek_api_key_enc) or bool(settings.deepseek_api_key),
         **base,
     }

@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # Telegram — один глобальный бот на всю систему; chat_id задаётся per-конфиг.
     telegram_bot_token: str = ""
 
+    # AI-срез — глобальные фолбэк-ключи, если не заданы на конфиге.
+    anthropic_api_key: str = ""
+    deepseek_api_key: str = ""
+
     # Прокси
     http_proxy: str | None = None
     https_proxy: str | None = None

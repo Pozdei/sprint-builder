@@ -97,6 +97,13 @@ class ConfigOut(BaseModel):
     telegram_bot_token_set: bool = False   # задан ли токен на самом конфиге
     telegram_bot_configured: bool = False  # доступна ли отправка (токен конфига или .env)
 
+    # AI-срез. Провайдер выбирается per-конфиг; ключи — per-конфиг (write-only), fallback на глобальный .env.
+    ai_provider: str = "anthropic"         # "anthropic" | "deepseek"
+    anthropic_api_key_set: bool = False    # задан ли ключ на самом конфиге
+    anthropic_configured: bool = False     # доступна ли генерация (ключ конфига или .env)
+    deepseek_api_key_set: bool = False
+    deepseek_configured: bool = False
+
     # team приходит как dict {accountId: TeamMemberOut}
     team: dict[str, TeamMemberOut]
     boards: dict[str, int]
@@ -144,6 +151,11 @@ class ConfigUpdate(BaseModel):
     telegram_daily_time: str | None = None
     # Опущено = не менять; "" явно = очистить токен (вернётся к .env).
     telegram_bot_token: str | None = None
+
+    ai_provider: str | None = None
+    # Опущено = не менять; "" явно = очистить ключ (вернётся к .env).
+    anthropic_api_key: str | None = None
+    deepseek_api_key: str | None = None
 
     team: dict[str, TeamMemberIn] | None = None
     boards: dict[str, int] | None = None

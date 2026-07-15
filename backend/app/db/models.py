@@ -95,6 +95,13 @@ class Config(Base):
     telegram_daily_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     telegram_daily_time: Mapped[str] = mapped_column(String(5), default="")  # "HH:MM" локального времени сервера
 
+    # AI-срез (сводка по спринту/прогнозу). Провайдер выбирается per-конфиг;
+    # токен соответствующего провайдера резолвится так же, как Jira/Telegram:
+    # токен конфига (если задан) → глобальный settings.<provider>_api_key.
+    ai_provider: Mapped[str] = mapped_column(String(20), default="anthropic")
+    anthropic_api_key_enc: Mapped[str] = mapped_column(String(500), default="")
+    deepseek_api_key_enc: Mapped[str] = mapped_column(String(500), default="")
+
     team_members: Mapped[list["TeamMember"]] = relationship(
         cascade="all, delete-orphan", back_populates="config"
     )

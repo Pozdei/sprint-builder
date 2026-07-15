@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   addEpicDependency, deleteEpicGanttSnapshot, downloadEpicForecastXlsx, fetchEpicDependencies,
-  fetchEpicForecast, fetchEpicSnapshots, fetchRootTasks, getEpicGanttSnapshot, listEpicGanttSnapshots,
-  listSprints, removeEpicDependency, removeRootTask, saveEpicGanttSnapshot, setRootTask,
+  fetchEpicForecast, fetchEpicSnapshots, fetchRootTasks, generateForecastAiSummary,
+  getEpicGanttSnapshot, listEpicGanttSnapshots, listSprints, removeEpicDependency, removeRootTask,
+  saveEpicGanttSnapshot, setRootTask,
 } from "../api/client";
+import { AiSummaryModal } from "../components/AiSummaryModal";
 import { DependencyPanel } from "../components/DependencyPanel";
 import { EstimateModal } from "../components/EstimateModal";
 import { ForecastTrendChart } from "../components/ForecastTrendChart";
@@ -52,6 +54,7 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const [missingAssignees, setMissingAssignees] = useState<MissingAssigneeItem[]>([]);
   const [showMissingOnly,  setShowMissingOnly]  = useState(false);
   const [showTodayExport,  setShowTodayExport]  = useState(false);
+  const [showAiSummary,    setShowAiSummary]    = useState(false);
   const [recentEpics,   setRecentEpics]   = useState<string[]>(() => loadRecentEpics());
 
   // Утверждённые спринты текущего конфига — альтернативный источник задач
@@ -474,6 +477,12 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
                     📤 {t("page.gantt.todayExportButton")}
                   </button>
                   <button
+                    onClick={() => setShowAiSummary(true)}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+                  >
+                    ✨ {t("common:aiSummary.button")}
+                  </button>
+                  <button
                     onClick={() => {
                       setShowMissingOnly((v) => !v);
                       setShowDeps(false);
@@ -713,6 +722,23 @@ export function EpicForecastPage({ isAdmin = false }: { isAdmin?: boolean }) {
             <TodayExportModal
               items={result.gantt_items}
               onClose={() => setShowTodayExport(false)}
+            />
+          )}
+
+          {showAiSummary && result && (
+            <AiSummaryModal
+              generate={() =>
+                generateForecastAiSummary({
+                  epic_key: result.epic_key,
+                  epic_summary: result.epic_summary,
+                  gantt_items: result.gantt_items,
+                  completion_date: result.completion_date,
+                  stats: result.stats,
+                  warnings: result.warnings,
+                  missing_assignees: result.missing_assignees,
+                }).then((r) => r.summary)
+              }
+              onClose={() => setShowAiSummary(false)}
             />
           )}
         </>

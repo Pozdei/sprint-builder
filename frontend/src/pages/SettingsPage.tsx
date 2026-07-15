@@ -37,6 +37,8 @@ export function SettingsPage() {
   // Токен не приходит с сервера (write-only) — отдельное поле, шлём только если ввели новый.
   const [jiraApiToken, setJiraApiToken] = useState("");
   const [telegramBotToken, setTelegramBotToken] = useState("");
+  const [anthropicApiKey, setAnthropicApiKey] = useState("");
+  const [deepseekApiKey, setDeepseekApiKey] = useState("");
   const [tgSending, setTgSending] = useState(false);
 
   useEffect(() => {
@@ -75,19 +77,26 @@ export function SettingsPage() {
       const {
         id, is_default: _isDef, jira_api_token_set: _tokenSet,
         telegram_bot_token_set: _tgSet, telegram_bot_configured: _tgBot,
+        anthropic_api_key_set: _aiSet, anthropic_configured: _aiConfigured,
+        deepseek_api_key_set: _dsSet, deepseek_configured: _dsConfigured,
         team: _t, ...rest
       } = config;
       const body: typeof rest & {
         team: typeof teamForApi; jira_api_token?: string; telegram_bot_token?: string;
+        anthropic_api_key?: string; deepseek_api_key?: string;
       } = {
         ...rest, team: teamForApi,
       };
       if (jiraApiToken.trim()) body.jira_api_token = jiraApiToken.trim();
       if (telegramBotToken.trim()) body.telegram_bot_token = telegramBotToken.trim();
+      if (anthropicApiKey.trim()) body.anthropic_api_key = anthropicApiKey.trim();
+      if (deepseekApiKey.trim()) body.deepseek_api_key = deepseekApiKey.trim();
       const updated = await updateConfig(id, body);
       setConfig(updated);
       setJiraApiToken("");
       setTelegramBotToken("");
+      setAnthropicApiKey("");
+      setDeepseekApiKey("");
       toast.success(t("page.saveSuccess"));
     } catch (e) {
       toast.error(extractError(e));
@@ -371,6 +380,49 @@ export function SettingsPage() {
                     {t("page.telegram.test")}
                   </button>
                   <span className="text-xs text-gray-400">{t("page.telegram.saveHint")}</span>
+                </div>
+              </Section>
+
+              <Section title={t("page.sections.ai")} accent="indigo">
+                <p className="text-xs text-gray-500 mb-3">
+                  {(config.ai_provider === "deepseek" ? config.deepseek_configured : config.anthropic_configured)
+                    ? t("page.hints.ai")
+                    : t("page.hints.aiNoKey")}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label={t("page.fields.aiProvider")}>
+                    <select
+                      value={config.ai_provider}
+                      onChange={(e) => update("ai_provider", e.target.value as ConfigOut["ai_provider"])}
+                      className="w-full px-2 py-1.5 border rounded-md text-sm"
+                    >
+                      <option value="anthropic">Anthropic</option>
+                      <option value="deepseek">DeepSeek</option>
+                    </select>
+                  </Field>
+                  <div />
+                  <Field label={t("page.fields.anthropicApiKey")}>
+                    <input
+                      type="password"
+                      value={anthropicApiKey}
+                      onChange={(e) => setAnthropicApiKey(e.target.value)}
+                      placeholder={config.anthropic_api_key_set
+                        ? t("page.fields.anthropicApiKeyPlaceholderSet")
+                        : t("page.fields.anthropicApiKeyPlaceholderUnset")}
+                      className="w-full px-2 py-1.5 border rounded-md text-sm"
+                    />
+                  </Field>
+                  <Field label={t("page.fields.deepseekApiKey")}>
+                    <input
+                      type="password"
+                      value={deepseekApiKey}
+                      onChange={(e) => setDeepseekApiKey(e.target.value)}
+                      placeholder={config.deepseek_api_key_set
+                        ? t("page.fields.deepseekApiKeyPlaceholderSet")
+                        : t("page.fields.deepseekApiKeyPlaceholderUnset")}
+                      className="w-full px-2 py-1.5 border rounded-md text-sm"
+                    />
+                  </Field>
                 </div>
               </Section>
             </>

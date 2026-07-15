@@ -22,6 +22,7 @@
       "baseParams": "Basic parameters",
       "jiraConnection": "Jira connection",
       "telegram": "Telegram “tasks for today” digest",
+      "ai": "AI summary",
       "roles": "Roles",
       "team": "Team",
       "pseudoTasks": "Pseudo-tasks (vacation, training, …)",
@@ -57,7 +58,14 @@
       "telegramBotTokenPlaceholderUnset": "Not set — global .env token is used",
       "telegramChatId": "Chat ID",
       "telegramDailyTime": "Daily send time",
-      "telegramDailyEnabled": "Send automatically every day"
+      "telegramDailyEnabled": "Send automatically every day",
+      "aiProvider": "AI provider",
+      "anthropicApiKey": "Anthropic API Key",
+      "anthropicApiKeyPlaceholderSet": "Set — leave empty to keep unchanged",
+      "anthropicApiKeyPlaceholderUnset": "Not set — global .env key is used",
+      "deepseekApiKey": "DeepSeek API Key",
+      "deepseekApiKeyPlaceholderSet": "Set — leave empty to keep unchanged",
+      "deepseekApiKeyPlaceholderUnset": "Not set — global .env key is used"
     },
     "telegram": {
       "sendNow": "Send now",
@@ -70,6 +78,8 @@
       "jiraConnection": "Empty = server settings (.env) are used. Fill in if this config needs a different Jira account or instance — e.g. for production use with multiple leads.",
       "telegram": "The digest is built from the latest approved sprint: tasks active today on the Gantt, grouped by direction. You can set the bot token here (per-config) — otherwise the global .env token is used. Chat ID is the chat/group id (groups start with -100). The bot must be added to the chat. See the “Help” section for how to create a bot.",
       "telegramNoToken": "No bot token is set: neither on this config nor globally in .env. Enter a bot token above (get one from @BotFather) — sending is unavailable without it.",
+      "ai": "Pick a provider (Anthropic or DeepSeek) and set its key here (per-config) — otherwise the global .env key is used. Used by the “AI summary” button on the Sprint, History and Forecast pages.",
+      "aiNoKey": "No key is set for the selected provider: neither on this config nor globally in .env. Enter a key above — the “AI summary” button is unavailable without it.",
       "roles": "The “In sprint” checkbox enables the role for sprint forming. “Lead” is a flag for auto-adding “Management”.",
       "team": "One person — one role. If a person has two roles, create two records with the same accountId.",
       "vacations": "The same vacation table as in the Gantt panel. A vacation blocks the employee's hours in sprint and forecast scheduling. Changes apply immediately, no “Save” button.",

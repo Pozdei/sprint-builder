@@ -30,5 +30,16 @@
   "allExecutors": "All assignees",
   "employee": "Employee",
   "password": "Password",
-  "appName": "Sprint Builder"
+  "appName": "Sprint Builder",
+  "aiSummary": {
+    "button": "AI summary",
+    "title": "AI summary",
+    "generating": "Generating summary…",
+    "copy": "Copy",
+    "retry": "Retry",
+    "toast": {
+      "copied": "Copied",
+      "copyFailed": "Failed to copy"
+    }
+  }
 }

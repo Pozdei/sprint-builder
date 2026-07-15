@@ -6,7 +6,7 @@
 
 from fastapi import APIRouter, Depends
 
-from app.api import admin, auth, configs, epic, export, health, jira, sprint, sprints, telegram
+from app.api import admin, ai, auth, configs, epic, export, health, jira, sprint, sprints, telegram
 from app.api.deps import get_current_user
 
 router = APIRouter()
@@ -23,3 +23,4 @@ router.include_router(admin.router, dependencies=_protected)
 router.include_router(jira.router, dependencies=_protected)
 router.include_router(epic.router, dependencies=_protected)
 router.include_router(telegram.router, dependencies=_protected)
+router.include_router(ai.router, dependencies=_protected)

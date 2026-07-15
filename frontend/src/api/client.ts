@@ -2,9 +2,9 @@ import axios from "axios";
 import { getStoredLang } from "../i18n";
 import { triggerDownload } from "../lib/download";
 import type {
-  BuildAndSaveResponse, ClosedTaskData, ConfigOut, ConfigUpdate, EmployeeVacation,
-  GanttSnapshotDetail, GanttSnapshotSummary, LoginResponse, OwnerStat, RootTaskOut,
-  SprintBuildResponse, SprintOut, SprintSummary, TaskDependency, TaskOut, UserOut,
+  AiSummaryResponse, BuildAndSaveResponse, ClosedTaskData, ConfigOut, ConfigUpdate, EmployeeVacation,
+  EpicStats, GanttItem, GanttSnapshotDetail, GanttSnapshotSummary, LoginResponse, MissingAssigneeItem,
+  OwnerStat, RootTaskOut, SprintBuildResponse, SprintOut, SprintSummary, TaskDependency, TaskOut, UserOut,
 } from "../types/api";
 
 const envUrl = import.meta.env.VITE_API_URL;
@@ -80,6 +80,30 @@ export async function buildAndSaveSprint(candidates?: TaskOut[]): Promise<BuildA
 export async function buildSprint(candidates?: TaskOut[]): Promise<SprintBuildResponse> {
   const body = candidates ? { candidates } : {};
   const r = await api.post("/api/sprint/build", body);
+  return r.data;
+}
+
+// -------------------- AI-срез --------------------
+
+export async function generateSprintAiSummary(payload: {
+  allocated: TaskOut[];
+  overflow: TaskOut[];
+  owner_stats: OwnerStat[];
+}): Promise<AiSummaryResponse> {
+  const r = await api.post("/api/ai/sprint-summary", payload);
+  return r.data;
+}
+
+export async function generateForecastAiSummary(payload: {
+  epic_key: string;
+  epic_summary: string;
+  gantt_items: GanttItem[];
+  completion_date: string | null;
+  stats: EpicStats;
+  warnings: string[];
+  missing_assignees: MissingAssigneeItem[];
+}): Promise<AiSummaryResponse> {
+  const r = await api.post("/api/ai/forecast-summary", payload);
   return r.data;
 }
 
