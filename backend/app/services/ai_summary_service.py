@@ -30,8 +30,14 @@ class AiSummaryError(Exception):
 
 
 def resolve_provider_and_key(config: models.Config) -> tuple[str, str]:
-    """Провайдер конфига + эффективный ключ: ключ конфига (расшифрованный) → глобальный .env."""
+    """Провайдер конфига + эффективный ключ: ключ конфига (расшифрованный) → глобальный .env.
+
+    "local" — общий внутренний OpenAI-совместимый эндпоинт без per-конфиг настроек,
+    ключ (если вообще нужен) берётся только из .env.
+    """
     provider = config.ai_provider or "anthropic"
+    if provider == "local":
+        return provider, settings.ai_local_api_key
     if provider == "deepseek":
         key = decrypt_secret(config.deepseek_api_key_enc) if config.deepseek_api_key_enc else settings.deepseek_api_key
         return provider, key
@@ -169,7 +175,10 @@ def _build_forecast_prompt(payload: dict) -> str:
 def generate_summary(config: models.Config, mode: str, payload: dict) -> str:
     """mode: 'sprint' | 'forecast'. Бросает AiSummaryError, если ключ не настроен."""
     provider, api_key = resolve_provider_and_key(config)
-    if not api_key:
+    if provider == "local":
+        if not settings.ai_local_base_url:
+            raise AiSummaryError("AI не настроен: не задан AI_LOCAL_BASE_URL в .env")
+    elif not api_key:
         raise AiSummaryError(f"AI не настроен: нет ключа {provider} ни на конфиге, ни в .env")
 
     prompt = _build_sprint_prompt(payload) if mode == "sprint" else _build_forecast_prompt(payload)

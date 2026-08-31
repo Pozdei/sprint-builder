@@ -98,11 +98,13 @@ class ConfigOut(BaseModel):
     telegram_bot_configured: bool = False  # доступна ли отправка (токен конфига или .env)
 
     # AI-срез. Провайдер выбирается per-конфиг; ключи — per-конфиг (write-only), fallback на глобальный .env.
-    ai_provider: str = "anthropic"         # "anthropic" | "deepseek"
+    ai_provider: str = "anthropic"         # "anthropic" | "deepseek" | "local"
     anthropic_api_key_set: bool = False    # задан ли ключ на самом конфиге
     anthropic_configured: bool = False     # доступна ли генерация (ключ конфига или .env)
     deepseek_api_key_set: bool = False
     deepseek_configured: bool = False
+    # "local" — общий внутренний OpenAI-совместимый эндпоинт, без per-конфиг ключа.
+    local_configured: bool = False
 
     # team приходит как dict {accountId: TeamMemberOut}
     team: dict[str, TeamMemberOut]

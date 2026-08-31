@@ -55,6 +55,14 @@ services:
       # Telegram — глобальный бот-fallback (per-конфиг токен задаётся в UI)
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
 
+      # AI-срез — глобальные фолбэк-ключи (per-конфиг ключ задаётся в UI)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      # AI-срез — провайдер "local": общий внутренний OpenAI-совместимый эндпоинт
+      AI_LOCAL_BASE_URL: ${AI_LOCAL_BASE_URL:-}
+      AI_LOCAL_API_KEY: ${AI_LOCAL_API_KEY:-}
+      AI_LOCAL_MODEL: ${AI_LOCAL_MODEL:-Qwen3.8-27B-FP8}
+
   frontend:
     build:
       context: .

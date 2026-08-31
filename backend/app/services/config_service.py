@@ -270,5 +270,7 @@ def to_out_dict(config: models.Config) -> dict:
         "anthropic_configured": bool(config.anthropic_api_key_enc) or bool(settings.anthropic_api_key),
         "deepseek_api_key_set": bool(config.deepseek_api_key_enc),
         "deepseek_configured": bool(config.deepseek_api_key_enc) or bool(settings.deepseek_api_key),
+        # "local" — общий внутренний эндпоинт, настраивается только в .env, без ключа per-конфиг.
+        "local_configured": bool(settings.ai_local_base_url),
         **base,
     }

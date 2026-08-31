@@ -385,9 +385,11 @@ export function SettingsPage() {
 
               <Section title={t("page.sections.ai")} accent="indigo">
                 <p className="text-xs text-gray-500 mb-3">
-                  {(config.ai_provider === "deepseek" ? config.deepseek_configured : config.anthropic_configured)
-                    ? t("page.hints.ai")
-                    : t("page.hints.aiNoKey")}
+                  {config.ai_provider === "local"
+                    ? (config.local_configured ? t("page.hints.ai") : t("page.hints.aiLocalNotConfigured"))
+                    : (config.ai_provider === "deepseek" ? config.deepseek_configured : config.anthropic_configured)
+                      ? t("page.hints.ai")
+                      : t("page.hints.aiNoKey")}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Field label={t("page.fields.aiProvider")}>
@@ -398,31 +400,38 @@ export function SettingsPage() {
                     >
                       <option value="anthropic">Anthropic</option>
                       <option value="deepseek">DeepSeek</option>
+                      <option value="local">Local</option>
                     </select>
                   </Field>
                   <div />
-                  <Field label={t("page.fields.anthropicApiKey")} badge={<SavedBadge shown={config.anthropic_api_key_set} />}>
-                    <input
-                      type="password"
-                      value={anthropicApiKey}
-                      onChange={(e) => setAnthropicApiKey(e.target.value)}
-                      placeholder={config.anthropic_api_key_set
-                        ? t("page.fields.anthropicApiKeyPlaceholderSet")
-                        : t("page.fields.anthropicApiKeyPlaceholderUnset")}
-                      className="w-full px-2 py-1.5 border rounded-md text-sm"
-                    />
-                  </Field>
-                  <Field label={t("page.fields.deepseekApiKey")} badge={<SavedBadge shown={config.deepseek_api_key_set} />}>
-                    <input
-                      type="password"
-                      value={deepseekApiKey}
-                      onChange={(e) => setDeepseekApiKey(e.target.value)}
-                      placeholder={config.deepseek_api_key_set
-                        ? t("page.fields.deepseekApiKeyPlaceholderSet")
-                        : t("page.fields.deepseekApiKeyPlaceholderUnset")}
-                      className="w-full px-2 py-1.5 border rounded-md text-sm"
-                    />
-                  </Field>
+                  {config.ai_provider === "local" ? (
+                    <p className="text-xs text-gray-500 md:col-span-2">{t("page.fields.aiLocalStatus")}</p>
+                  ) : (
+                    <>
+                      <Field label={t("page.fields.anthropicApiKey")} badge={<SavedBadge shown={config.anthropic_api_key_set} />}>
+                        <input
+                          type="password"
+                          value={anthropicApiKey}
+                          onChange={(e) => setAnthropicApiKey(e.target.value)}
+                          placeholder={config.anthropic_api_key_set
+                            ? t("page.fields.anthropicApiKeyPlaceholderSet")
+                            : t("page.fields.anthropicApiKeyPlaceholderUnset")}
+                          className="w-full px-2 py-1.5 border rounded-md text-sm"
+                        />
+                      </Field>
+                      <Field label={t("page.fields.deepseekApiKey")} badge={<SavedBadge shown={config.deepseek_api_key_set} />}>
+                        <input
+                          type="password"
+                          value={deepseekApiKey}
+                          onChange={(e) => setDeepseekApiKey(e.target.value)}
+                          placeholder={config.deepseek_api_key_set
+                            ? t("page.fields.deepseekApiKeyPlaceholderSet")
+                            : t("page.fields.deepseekApiKeyPlaceholderUnset")}
+                          className="w-full px-2 py-1.5 border rounded-md text-sm"
+                        />
+                      </Field>
+                    </>
+                  )}
                 </div>
               </Section>
             </>

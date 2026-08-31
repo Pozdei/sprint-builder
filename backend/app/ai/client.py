@@ -1,5 +1,5 @@
-"""Минимальный клиент AI-провайдеров (Anthropic Messages API, DeepSeek chat completions)
-для генерации текста AI-среза.
+"""Минимальный клиент AI-провайдеров (Anthropic Messages API, DeepSeek и "local" —
+любой OpenAI-совместимый chat-completions эндпоинт) для генерации текста AI-среза.
 
 Ключ и провайдер передаются явно (резолвятся вызывающим: конфиг → .env). Прокси/SSL
 берём из тех же настроек, что и Jira/Telegram-клиенты, — окружение обычно за VPN/прокси.
@@ -18,6 +18,7 @@ DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
 DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-5",
     "deepseek": "deepseek-chat",
+    "local": settings.ai_local_model,
 }
 
 
@@ -66,18 +67,20 @@ def _generate_anthropic(prompt: str, *, api_key: str, model: str, max_tokens: in
     return text
 
 
-def _generate_deepseek(prompt: str, *, api_key: str, model: str, max_tokens: int) -> str:
+def _generate_openai_style(
+    prompt: str, *, url: str, headers: dict[str, str], model: str, max_tokens: int, error_prefix: str,
+    extra_body: dict | None = None,
+) -> str:
+    """Общий вызов для любого chat-completions эндпоинта в формате OpenAI (DeepSeek, local)."""
     try:
         r = requests.post(
-            DEEPSEEK_API_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "content-type": "application/json",
-            },
+            url,
+            headers={**headers, "content-type": "application/json"},
             json={
                 "model": model,
                 "max_tokens": max_tokens,
                 "messages": [{"role": "user", "content": prompt}],
+                **(extra_body or {}),
             },
             proxies=_proxies() or None,
             verify=settings.requests_ca_bundle or settings.verify_ssl,
@@ -87,24 +90,59 @@ def _generate_deepseek(prompt: str, *, api_key: str, model: str, max_tokens: int
         raise AiError(f"Сеть: {e}") from e
 
     if r.status_code != 200:
-        raise AiError(f"DeepSeek API {r.status_code}: {r.text[:300]}")
+        raise AiError(f"{error_prefix} {r.status_code}: {r.text[:300]}")
 
     body = r.json()
     choices = body.get("choices", [])
     text = (choices[0].get("message", {}).get("content", "") if choices else "").strip()
     if not text:
-        raise AiError("DeepSeek API вернул пустой ответ")
+        raise AiError(f"{error_prefix} вернул пустой ответ")
     return text
+
+
+def _generate_deepseek(prompt: str, *, api_key: str, model: str, max_tokens: int) -> str:
+    return _generate_openai_style(
+        prompt,
+        url=DEEPSEEK_API_URL,
+        headers={"Authorization": f"Bearer {api_key}"},
+        model=model,
+        max_tokens=max_tokens,
+        error_prefix="DeepSeek API",
+    )
+
+
+def _generate_local(prompt: str, *, base_url: str, api_key: str, model: str, max_tokens: int) -> str:
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    return _generate_openai_style(
+        prompt,
+        url=base_url.rstrip("/") + "/chat/completions",
+        headers=headers,
+        model=model,
+        max_tokens=max_tokens,
+        error_prefix="Local LLM API",
+        # Локальные reasoning-модели (Qwen3 и т.п.) по умолчанию думают вслух и тратят
+        # max_tokens на reasoning_content раньше content — на длинных промптах AI-среза
+        # это оставляет пустой content. vLLM/sglang понимают этот флаг для отключения thinking.
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+    )
 
 
 def generate_text(
     prompt: str, *, api_key: str, provider: str = "anthropic", model: str | None = None, max_tokens: int = 1500,
 ) -> str:
-    """Сгенерировать текст по промпту. provider: 'anthropic' | 'deepseek'. Бросает AiError на любую проблему."""
+    """Сгенерировать текст по промпту. provider: 'anthropic' | 'deepseek' | 'local'.
+    Бросает AiError на любую проблему."""
+    model = model or DEFAULT_MODELS.get(provider, DEFAULT_MODELS["anthropic"])
+
+    if provider == "local":
+        if not settings.ai_local_base_url:
+            raise AiError("AI не настроен: не задан AI_LOCAL_BASE_URL в .env")
+        return _generate_local(
+            prompt, base_url=settings.ai_local_base_url, api_key=api_key, model=model, max_tokens=max_tokens,
+        )
+
     if not api_key:
         raise AiError("AI не настроен: нет ключа ни на конфиге, ни в .env")
-
-    model = model or DEFAULT_MODELS.get(provider, DEFAULT_MODELS["anthropic"])
     if provider == "deepseek":
         return _generate_deepseek(prompt, api_key=api_key, model=model, max_tokens=max_tokens)
     return _generate_anthropic(prompt, api_key=api_key, model=model, max_tokens=max_tokens)

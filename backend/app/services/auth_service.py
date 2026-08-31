@@ -60,6 +60,12 @@ def ensure_admin_exists(db: Session, email: str, password: str) -> None:
     existing = db.scalar(select(models.User).where(models.User.role == "admin"))
     if existing:
         return
+    if password == "change-me":
+        raise RuntimeError(
+            "ADMIN_PASSWORD не задан или равен небезопасному значению по умолчанию "
+            "— первый администратор не будет создан с таким паролем. Задайте "
+            "ADMIN_PASSWORD в .env и перезапустите бэкенд."
+        )
     users_repository.create_user(
         db,
         email=email,

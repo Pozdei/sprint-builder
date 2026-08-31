@@ -319,7 +319,7 @@ export interface DirectionOut {
   designer_id: string;
 }
 
-export type AiProvider = "anthropic" | "deepseek";
+export type AiProvider = "anthropic" | "deepseek" | "local";
 
 export interface ConfigOut {
   id: number;
@@ -355,6 +355,8 @@ export interface ConfigOut {
   deepseek_api_key_set: boolean;
   /** Доступна ли генерация через DeepSeek (ключ конфига или .env). */
   deepseek_configured: boolean;
+  /** "local" — общий внутренний OpenAI-совместимый эндпоинт, настройка только в .env сервера. */
+  local_configured: boolean;
   team: Record<string, TeamMemberOut>;
   boards: Record<string, number>;
   extra_components: string[];
