@@ -556,6 +556,82 @@ def cleanup_stale_root_tasks(
     db.flush()
 
 
+# -------------------- Task details ("Детализация") --------------------
+
+def list_task_details(db: Session, config_id: int) -> list[models.TaskDetail]:
+    return list(db.scalars(
+        select(models.TaskDetail).where(models.TaskDetail.config_id == config_id)
+    ).all())
+
+
+def _find_task_detail(db: Session, config_id: int, task_key: str) -> models.TaskDetail | None:
+    return db.scalar(
+        select(models.TaskDetail).where(
+            models.TaskDetail.config_id == config_id,
+            models.TaskDetail.task_key == task_key,
+        )
+    )
+
+
+def set_task_detail(db: Session, config_id: int, task_key: str, detail: str) -> models.TaskDetail | None:
+    """Пустая строка удаляет запись (задача возвращается в "без темы")."""
+    existing = _find_task_detail(db, config_id, task_key)
+    detail = detail.strip()
+    if not detail:
+        if existing:
+            db.delete(existing)
+            db.flush()
+        return None
+    if existing:
+        existing.detail = detail
+    else:
+        existing = models.TaskDetail(config_id=config_id, task_key=task_key, detail=detail)
+        db.add(existing)
+    db.flush()
+    return existing
+
+
+# -------------------- Epic plans (ручной план старта/окончания) --------------------
+
+def list_epic_plans(db: Session, config_id: int) -> list[models.EpicPlan]:
+    return list(db.scalars(
+        select(models.EpicPlan).where(models.EpicPlan.config_id == config_id)
+    ).all())
+
+
+def _find_epic_plan(db: Session, config_id: int, epic_key: str) -> models.EpicPlan | None:
+    return db.scalar(
+        select(models.EpicPlan).where(
+            models.EpicPlan.config_id == config_id,
+            models.EpicPlan.epic_key == epic_key,
+        )
+    )
+
+
+def set_epic_plan(
+    db: Session, config_id: int, epic_key: str, planned_start: str, planned_end: str,
+) -> models.EpicPlan | None:
+    """Оба поля пустые — удаляет запись (эпик возвращается к чисто фактическим датам)."""
+    existing = _find_epic_plan(db, config_id, epic_key)
+    planned_start, planned_end = planned_start.strip(), planned_end.strip()
+    if not planned_start and not planned_end:
+        if existing:
+            db.delete(existing)
+            db.flush()
+        return None
+    if existing:
+        existing.planned_start = planned_start
+        existing.planned_end = planned_end
+    else:
+        existing = models.EpicPlan(
+            config_id=config_id, epic_key=epic_key,
+            planned_start=planned_start, planned_end=planned_end,
+        )
+        db.add(existing)
+    db.flush()
+    return existing
+
+
 # -------------------- Epic forecast snapshots --------------------
 
 def upsert_epic_snapshot(

@@ -409,3 +409,54 @@ export interface ConfigUpdate {
   terminal_statuses?: string[];
   directions?: DirectionOut[];
 }
+
+// -------------------- Roadmap --------------------
+
+export interface RoadmapTaskOut {
+  key: string;
+  summary: string;
+  issuetype: string;
+  boards: string[];
+  start: string;              // "YYYY-MM-DD" или "" — не начата
+  end: string;                // "YYYY-MM-DD" или "" — не завершена
+  epic_key: string | null;
+  epic_summary: string | null;
+  detail: string | null;
+  url: string;
+}
+
+export type RoadmapGroupStatus = "not_started" | "in_progress" | "done";
+
+export interface RoadmapGroupOut {
+  key: string;
+  label: string;
+  boards: string[];
+  total: number;
+  done: number;
+  in_progress: number;
+  not_started: number;
+  start: string;
+  end: string;                // "" — не все задачи завершены, заполнить вручную
+  status: RoadmapGroupStatus;
+  planned_start: string;      // ручной план (только group_by="epic"), не переопределяет факт
+  planned_end: string;
+}
+
+export type RoadmapGroupBy = "epic" | "detail";
+
+export interface RoadmapResponse {
+  group_by: RoadmapGroupBy;
+  groups: RoadmapGroupOut[];
+  tasks: RoadmapTaskOut[];
+}
+
+export interface TaskDetailOut {
+  task_key: string;
+  detail: string;
+}
+
+export interface EpicPlanOut {
+  epic_key: string;
+  planned_start: string;
+  planned_end: string;
+}

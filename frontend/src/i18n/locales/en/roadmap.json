@@ -1,0 +1,57 @@
+{
+  "title": "Roadmap",
+  "subtitle": "Horizontal timeline over tasks from the active config's boards. Dates are derived from Jira status history.",
+  "groupBy": {
+    "label": "Group by",
+    "epic": "Epic",
+    "detail": "Detail theme"
+  },
+  "build": "Build",
+  "buildHint": "Click \"Build\" to assemble the timeline from the config's boards. Dates are derived from Jira status history — this can take up to a minute.",
+  "loading": "Building the timeline — fetching status history for every task, this can take a minute…",
+  "loadingElapsed": "{{sec}}s",
+  "error": "Failed to build the roadmap",
+  "retry": "Retry",
+  "empty": {
+    "epic": "No tasks with an epic (parent field) on the config's boards.",
+    "detail": "No tasks with a theme assigned yet. Fill in the \"Detail\" column in the table below."
+  },
+  "legend": {
+    "done": "Done",
+    "inProgress": "In progress — end date not set",
+    "notStarted": "Not started",
+    "planned": "Planned (manual)"
+  },
+  "plan": {
+    "startTitle": "Planned epic start",
+    "endTitle": "Planned epic end"
+  },
+  "today": "today",
+  "groupsLabel": "Groups",
+  "table": {
+    "title": "Tasks",
+    "subtitle": "Assign a theme in the \"Detail\" column so the task is picked up by theme grouping.",
+    "key": "Task",
+    "summary": "Summary",
+    "boards": "Boards",
+    "epic": "Epic",
+    "start": "Start",
+    "end": "End",
+    "detail": "Detail",
+    "detailPlaceholder": "theme…",
+    "filterPlaceholder": "Search by key or summary…",
+    "empty": "No tasks match the current filters",
+    "noEpic": "—",
+    "epicFilterAll": "All epics",
+    "epicFilterNone": "No epic"
+  },
+  "tooltip": {
+    "boards": "Boards",
+    "status": "Status",
+    "period": "Period",
+    "tasks": "Tasks",
+    "fillManually": "fill in manually"
+  },
+  "saved": "Saved",
+  "saveError": "Failed to save"
+}

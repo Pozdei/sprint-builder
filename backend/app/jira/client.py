@@ -185,3 +185,13 @@ def bind_client_for_request(cfg: "Config") -> contextvars.Token:
 
 def reset_client(token: contextvars.Token) -> None:
     _current.reset(token)
+
+
+def current_client() -> JiraClient:
+    """Реальный JiraClient текущего запроса (не proxy) — для передачи в worker-треды.
+
+    contextvar `_current` не пробрасывается в потоки ThreadPoolExecutor, поэтому
+    там, где Jira-запросы распараллеливаются, нужно резолвить клиент здесь один раз
+    (в основном треде, где contextvar уже установлен) и передавать его явно.
+    """
+    return client._real

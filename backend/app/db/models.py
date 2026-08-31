@@ -147,6 +147,12 @@ class Config(Base):
     root_tasks: Mapped[list["EmployeeRootTask"]] = relationship(
         cascade="all, delete-orphan", back_populates="config"
     )
+    task_details: Mapped[list["TaskDetail"]] = relationship(
+        cascade="all, delete-orphan", back_populates="config"
+    )
+    epic_plans: Mapped[list["EpicPlan"]] = relationship(
+        cascade="all, delete-orphan", back_populates="config"
+    )
 
 
 # -------------------- Team --------------------
@@ -423,6 +429,50 @@ class EpicForecastSnapshot(Base):
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
 
     config: Mapped["Config"] = relationship(back_populates="epic_snapshots")
+
+
+class TaskDetail(Base):
+    """«Детализация» — тема/фича задачи, проставляется лидом вручную в UI.
+
+    Группировка для Roadmap как псевдо-эпик, когда реальной иерархии Jira
+    (parent) не хватает или она слишком дробная. Уровень конфига: одна и та
+    же задача может относиться к разным темам в разных конфигах лида.
+    """
+
+    __tablename__ = "task_details"
+    __table_args__ = (
+        UniqueConstraint("config_id", "task_key", name="uq_task_detail_config_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    config_id: Mapped[int] = mapped_column(ForeignKey("configs.id", ondelete="CASCADE"))
+    task_key: Mapped[str] = mapped_column(String(50))
+    detail: Mapped[str] = mapped_column(String(300))
+
+    config: Mapped["Config"] = relationship(back_populates="task_details")
+
+
+class EpicPlan(Base):
+    """Ручной план (старт/окончание) по эпику для Roadmap — задаётся лидом,
+    когда в Jira по эпику ещё нет реальных статусных переходов (работа не
+    началась) либо когда нужно зафиксировать целевую дату поверх факта.
+
+    На таймлайне показываются оба бара одновременно: фактический (из
+    changelog) и плановый (из этой таблицы) — план не переопределяет факт.
+    """
+
+    __tablename__ = "epic_plans"
+    __table_args__ = (
+        UniqueConstraint("config_id", "epic_key", name="uq_epic_plan_config_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    config_id: Mapped[int] = mapped_column(ForeignKey("configs.id", ondelete="CASCADE"))
+    epic_key: Mapped[str] = mapped_column(String(50))
+    planned_start: Mapped[str] = mapped_column(String(10))  # "YYYY-MM-DD" или ""
+    planned_end: Mapped[str] = mapped_column(String(10))    # "YYYY-MM-DD" или ""
+
+    config: Mapped["Config"] = relationship(back_populates="epic_plans")
 
 
 # -------------------- Sprints --------------------

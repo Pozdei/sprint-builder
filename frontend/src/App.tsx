@@ -9,6 +9,7 @@ import { DocsPage } from "./pages/DocsPage";
 import { EpicForecastPage } from "./pages/EpicForecastPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LoginPage } from "./pages/LoginPage";
+import { RoadmapPage } from "./pages/RoadmapPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SprintPage } from "./pages/SprintPage";
 import type { UserOut } from "./types/api";
@@ -18,11 +19,11 @@ type JiraStatus =
   | { kind: "ok"; name: string }
   | { kind: "error"; message: string };
 
-type LeadPage = "sprint" | "history" | "forecast" | "settings" | "docs";
+type LeadPage = "sprint" | "history" | "forecast" | "roadmap" | "settings" | "docs";
 type AdminPageKind = "admin";
 type Page = LeadPage | AdminPageKind;
 
-const PAGES: readonly Page[] = ["sprint", "history", "forecast", "settings", "docs", "admin"];
+const PAGES: readonly Page[] = ["sprint", "history", "forecast", "roadmap", "settings", "docs", "admin"];
 
 /** Распарсить текущий hash в страницу. Неизвестное → "sprint". */
 function hashToPage(hash: string): Page {
@@ -136,6 +137,9 @@ function App() {
             <NavTab active={activePage === "forecast"} onClick={() => setPage("forecast")}>
               {t("nav.forecast")}
             </NavTab>
+            <NavTab active={activePage === "roadmap"} onClick={() => setPage("roadmap")}>
+              {t("nav.roadmap")}
+            </NavTab>
             <NavTab active={activePage === "settings"} onClick={() => setPage("settings")}>
               {t("nav.settings")}
             </NavTab>
@@ -156,6 +160,7 @@ function App() {
       )}
       {activePage === "history" && <HistoryPage key={`history-${configEpoch}`} />}
       {activePage === "forecast" && <EpicForecastPage key={`forecast-${configEpoch}`} isAdmin={isAdmin} />}
+      {activePage === "roadmap" && <RoadmapPage key={`roadmap-${configEpoch}`} />}
       {activePage === "settings" && <SettingsPage key={`settings-${configEpoch}`} />}
       {activePage === "docs" && <DocsPage />}
       {isAdmin && activePage === "admin" && <AdminPage />}
