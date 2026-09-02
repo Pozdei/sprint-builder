@@ -161,7 +161,12 @@ export function TaskPipelineModal({ taskKey, allItems, onClose, onSaved, onHours
               {stages.map((stage, i) => {
                 const col = bucketColor(stage.bucket);
                 const isLast = i === stages.length - 1;
-                const stageId = `${stage.key}|${stage.bucket}`;
+                // start_hours различает два бара одного (key, bucket) — так
+                // бывает при переделке (откат статуса): исторический прошлый
+                // проход и заново запланированный повтор. Без start_hours
+                // оба делили editValues/savedIds и правка одного бара тут же
+                // отражалась на другом.
+                const stageId = `${stage.key}|${stage.bucket}|${stage.start_hours}`;
                 const field = BUCKET_TO_FIELD[stage.bucket];
                 const editValue = editValues[stageId];
                 const isDirty = editValue !== undefined && parseFloat(editValue) !== stage.hours;

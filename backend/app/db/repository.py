@@ -72,6 +72,29 @@ def _replace_collection(db: Session, collection, items, build) -> None:
     for i, item in enumerate(items):
         collection.append(build(i, item))
 
+def get_global_salaries(db: Session, jira_account_ids: list[str] | None = None) -> dict[str, int]:
+    """Оклады глобальны (не привязаны к конфигу) — один и тот же человек может иметь
+    несколько записей TeamMember в разных конфигах с разным сохранённым окладом.
+
+    Правило (единственное — раньше было продублировано с разной логикой в
+    api/admin.py и api/epic.py и давало разные цифры для одного человека):
+    берём МАКСИМАЛЬНЫЙ положительный salary среди всех записей на jira_account_id.
+
+    jira_account_ids=None → по всем TeamMember в системе (для админ-таблицы окладов).
+    """
+    query = select(models.TeamMember)
+    if jira_account_ids is not None:
+        if not jira_account_ids:
+            return {}
+        query = query.where(models.TeamMember.jira_account_id.in_(jira_account_ids))
+    result: dict[str, int] = {}
+    for tm in db.execute(query).scalars():
+        if tm.salary and tm.salary > 0:
+            if tm.jira_account_id not in result or tm.salary > result[tm.jira_account_id]:
+                result[tm.jira_account_id] = tm.salary
+    return result
+
+
 def upsert_team_members(db: Session, config: models.Config, items: list[dict]) -> None:
     """items: список dict с jira_account_id, jira_name, file_name, role, sort_order.
 
@@ -107,7 +130,14 @@ def upsert_team_members(db: Session, config: models.Config, items: list[dict]) -
             tm.file_name = item["file_name"]
             tm.role = item.get("role", "analyst")
             tm.sort_order = item.get("sort_order", i)
-            tm.salary = item.get("salary") or None
+            # salary — глобальное поле, управляется через /admin/salaries
+            # (см. get_global_salaries), а не через это (per-конфиг) сохранение
+            # команды. TeamMemberIn его не присылает вовсе — раньше `item.get
+            # ("salary") or None` из-за этого безусловно обнулял уже
+            # выставленный оклад при КАЖДОМ сохранении Settings → Team.
+            # Трогаем salary только если он явно присутствует во входном dict.
+            if "salary" in item:
+                tm.salary = item["salary"] or None
         else:
             config.team_members.append(
                 models.TeamMember(

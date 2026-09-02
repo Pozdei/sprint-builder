@@ -11,13 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_config, get_jira_client
 from app.core.i18n import get_lang, make_translator
-from app.db import models, repository, sprints_repository
+from app.db import models, repository
 from app.db.session import get_db
 from app.jira.client import JiraError, client
 from app.schemas.gantt import (
     GanttItem, GanttSnapshotCreate, GanttSnapshotDetail, GanttSnapshotSummary,
     RootTaskOut, TaskDependency,
 )
+from app.services import sprints_service
 from app.sprint.config import from_dict
 from app.sprint.epic_forecast import build_epic_forecast
 from app.sprint.excel import build_epic_forecast_xlsx
@@ -58,10 +59,6 @@ _MSG: dict[str, dict[str, str]] = {
     "sprint_not_found": {
         "ru": "Спринт {sprint_id} не найден",
         "en": "Sprint {sprint_id} not found",
-    },
-    "forecast_requires_approved_sprint": {
-        "ru": "Прогноз можно строить только по утверждённому спринту (спринт {sprint_num} — {status}).",
-        "en": "A forecast can only be built from an approved sprint (sprint {sprint_num} — {status}).",
     },
     "specify_epic_or_sprint": {
         "ru": "Укажите ключ эпика или выберите утверждённый спринт.",
@@ -899,41 +896,33 @@ def epic_forecast(
     cfg = from_dict(cfg_dict)
     cfg_snapshot = {"id": cfg_model.id, **cfg_dict}
 
-    # Источник задач: утверждённый спринт или эпик
+    # Источник задач: утверждённый спринт или эпик. Проверки (404 / доступ /
+    # статус) — через общую sprints_service.get_sprint_for_forecast(), а не
+    # руками (единая точка для всех переходов/проверок статуса спринта).
     sprint: models.Sprint | None = None
     if sprint_id is not None:
-        sprint = sprints_repository.get_sprint(db, sprint_id)
-        if not sprint or sprint.config_id != cfg_model.id:
+        try:
+            sprint = sprints_service.get_sprint_for_forecast(db, sprint_id, cfg_model.id, lang)
+        except LookupError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except sprints_service.SprintAccessDeniedError:
             raise HTTPException(status_code=404, detail=_t("sprint_not_found", lang, sprint_id=sprint_id))
-        if sprint.status != "approved":
-            raise HTTPException(
-                status_code=409,
-                detail=_t(
-                    "forecast_requires_approved_sprint", lang,
-                    sprint_num=sprint.sprint_num, status=sprint.status,
-                ),
-            )
+        except sprints_service.SprintNotApprovedError as e:
+            raise HTTPException(status_code=409, detail=str(e))
     elif not key:
         raise HTTPException(
             status_code=422,
             detail=_t("specify_epic_or_sprint", lang),
         )
 
-    # Оклады глобальны — берём максимальный salary по всем конфигам для каждого account_id.
-    # Это нужно, чтобы прогноз видел зарплаты вне зависимости от активного конфига.
-    team_ids = list(cfg.team.keys())
-    if team_ids:
-        all_members = db.query(models.TeamMember).filter(
-            models.TeamMember.jira_account_id.in_(team_ids)
-        ).all()
-        global_salary: dict[str, int] = {}
-        for tm in all_members:
-            if tm.salary and tm.salary > 0:
-                if tm.jira_account_id not in global_salary or tm.salary > global_salary[tm.jira_account_id]:
-                    global_salary[tm.jira_account_id] = tm.salary
-        for acc_id, info in cfg.team.items():
-            if acc_id in global_salary:
-                info["salary"] = global_salary[acc_id]
+    # Оклады глобальны — берём максимальный salary по всем конфигам для каждого
+    # account_id (см. repository.get_global_salaries — единая точка этого правила,
+    # используется и в /admin/salaries). Нужно, чтобы прогноз видел зарплаты вне
+    # зависимости от активного конфига.
+    global_salary = repository.get_global_salaries(db, list(cfg.team.keys()))
+    for acc_id, info in cfg.team.items():
+        if acc_id in global_salary:
+            info["salary"] = global_salary[acc_id]
 
     # Получаем задачи: из утверждённого спринта или из эпика Jira
     if sprint is not None:

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin
 from app.core.i18n import get_lang, make_translator
-from app.db import models, sprints_repository, users_repository
+from app.db import models, repository, sprints_repository, users_repository
 from app.db.session import get_db
 from app.schemas.admin import AdminConfigSummary, AdminSprintSummary, AdminTeamMemberOut, SalaryUpdateRequest
 from app.schemas.auth import (
@@ -38,7 +38,6 @@ def list_configs(
     _admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    from app.db import repository
     items = repository.list_configs(db)
     result = []
     for cfg in items:
@@ -180,16 +179,17 @@ def get_all_salaries(
 ):
     """Возвращает всех уникальных участников команды по jira_account_id с их окладом."""
     all_members = db.query(models.TeamMember).all()
+    global_salary = repository.get_global_salaries(db)
     seen: dict[str, AdminTeamMemberOut] = {}
     for tm in all_members:
         acc = tm.jira_account_id
-        if acc not in seen or (tm.salary and not seen[acc].salary):
+        if acc not in seen:
             seen[acc] = AdminTeamMemberOut(
                 account_id=acc,
                 jira_name=tm.jira_name,
                 file_name=tm.file_name,
                 role=tm.role,
-                salary=tm.salary or 0,
+                salary=global_salary.get(acc, 0),
             )
     return sorted(seen.values(), key=lambda m: m.jira_name)
 

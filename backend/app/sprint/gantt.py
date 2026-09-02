@@ -28,7 +28,14 @@ def work_day_start(d: date) -> datetime:
 
 
 def _working_hours_to_dt(sprint_start: date, hours: float, hours_per_day: float) -> datetime:
-    """Рабочие часы от старта спринта → datetime (с учётом выходных)."""
+    """Рабочие часы от старта спринта → datetime (с учётом выходных).
+
+    Час, ровно совпадающий с вместимостью оставшегося рабочего дня, переносится
+    на начало СЛЕДУЮЩЕГО рабочего дня, а не на закрывающий час текущего —
+    иначе результат расходится с обратным преобразованием `_date_to_work_hour`
+    (там граница дня всегда относится к следующему дню), и бар задачи,
+    начинающейся сразу после такой границы, рисуется в нерабочее время.
+    """
     remaining = float(hours)
     current = work_day_start(sprint_start)
     while remaining > 1e-9:
@@ -37,7 +44,7 @@ def _working_hours_to_dt(sprint_start: date, hours: float, hours_per_day: float)
             continue
         elapsed_today = current.hour - WORK_START_HOUR + current.minute / 60.0
         available_today = hours_per_day - elapsed_today
-        if remaining <= available_today + 1e-9:
+        if remaining < available_today - 1e-9:
             current += timedelta(hours=remaining)
             remaining = 0
         else:
@@ -49,9 +56,10 @@ def _working_hours_to_dt(sprint_start: date, hours: float, hours_per_day: float)
 def _date_to_work_hour(d: date, sprint_start: date, hours_per_day: float) -> float | None:
     """Календарная дата → рабочий час относительно старта спринта.
 
-    Возвращает None, если дата является выходным.
+    Возвращает None, если дата является выходным или раньше старта спринта
+    (иначе цикл ниже не проходит ни одной итерации и дата схлопывается в час 0).
     """
-    if d.weekday() >= 5:
+    if d.weekday() >= 5 or d < sprint_start:
         return None
     work_day = 0
     cur = sprint_start

@@ -50,6 +50,10 @@ _MSG: dict[str, dict[str, str]] = {
         "ru": "Sprint {sprint_num} имеет статус {status}, закрыть можно только approved.",
         "en": "Sprint {sprint_num} has status {status}, only an approved sprint can be closed.",
     },
+    "forecast_requires_approved_sprint": {
+        "ru": "Прогноз можно строить только по утверждённому спринту (спринт {sprint_num} — {status}).",
+        "en": "A forecast can only be built from an approved sprint (sprint {sprint_num} — {status}).",
+    },
     "jira_sprint_not_closed_with_states": {
         "ru": "В Jira Sprint {sprint_num} ещё не закрыт. Состояние по задачам спринта: "
               "{states_summary}. Сначала закройте Sprint {sprint_num} в Jira.",
@@ -110,6 +114,20 @@ def _get_sprint_checked(
             _t(status_msg_key, lang, sprint_num=sprint.sprint_num, status=sprint.status)
         )
     return sprint
+
+
+def get_sprint_for_forecast(
+    db: Session, sprint_id: int, config_id: int, lang: str = "ru",
+) -> models.Sprint:
+    """Загрузка approved-спринта как источника задач для прогноза (api/epic.py) —
+    тот же паттерн проверок (404 / доступ / статус), что и у остальных переходов
+    статуса, через единую точку `_get_sprint_checked`."""
+    return _get_sprint_checked(
+        db, sprint_id, config_id, lang,
+        required_status="approved",
+        status_error=SprintNotApprovedError,
+        status_msg_key="forecast_requires_approved_sprint",
+    )
 
 
 # -------------------- Общие входы планировщика Ганта --------------------
@@ -283,66 +301,75 @@ def _parse_jira_date(s: str | None) -> datetime | None:
         return None
 
 
-def _fetch_task_state_from_jira(
-    jira: JiraClient, task_key: str, sprint_field: str, target_sprint_num: int,
-) -> dict | None:
-    """Получить статус задачи и объект целевого спринта (с тем же номером)."""
-    try:
-        data = jira.get(
-            f"/rest/api/3/issue/{task_key}",
-            params={"fields": f"status,{sprint_field}"},
-        )
-    except Exception:
-        return None
+def _fetch_task_states_from_jira(
+    jira: JiraClient, keys: list[str], sprint_field: str, target_sprint_num: int,
+) -> dict[str, dict]:
+    """Батч-версия статуса + целевого Jira-спринта для СПИСКА задач одним (или
+    несколькими, для больших спринтов) JQL-запросом `key in (...)`, вместо
+    одного блокирующего HTTP-запроса на задачу — при 40+ задачах в спринте
+    старый вариант делал десятки последовательных Jira-round-trip'ов на close().
 
-    fields = data.get("fields") or {}
-    status_name = (fields.get("status") or {}).get("name", "")
-
-    sprints = fields.get(sprint_field) or []
-    target_sprint = None
-    if isinstance(sprints, list):
-        for s in sprints:
-            if not isinstance(s, dict):
-                continue
-            if sprint_num_from_name(s.get("name")) == target_sprint_num:
-                target_sprint = s
-                break
-
-    return {"status_name": status_name, "target_sprint": target_sprint}
-
-
-# ---------- Поиск jira_sprint_id из snapshot задач ----------
-
-def _find_jira_sprint_id(jira: JiraClient, snapshot: dict,
-                         tasks: list[models.SprintTask], target_num: int) -> int | None:
-    """Найти Jira-ID спринта target_num через любую из задач снапшота."""
-    sprint_field = snapshot.get("sprint_field", "")
-    for st in tasks:
-        td = st.task_data or {}
-        if td.get("is_pseudo"):
-            continue
-        key = td.get("key")
-        if not key:
-            continue
+    Возвращает key → {"status_name": str, "target_sprint": dict | None}.
+    Ключ, который не удалось получить (сетевая ошибка или отсутствует в ответе),
+    просто отсутствует в результате — вызывающий код трактует это как «не найдено».
+    """
+    result: dict[str, dict] = {}
+    chunk_size = 100
+    uniq_keys = [k for k in dict.fromkeys(keys) if k]
+    for i in range(0, len(uniq_keys), chunk_size):
+        chunk = uniq_keys[i:i + chunk_size]
         try:
-            data = jira.get(f"/rest/api/3/issue/{key}",
-                            params={"fields": sprint_field})
+            data = jira.get(
+                "/rest/api/3/search/jql",
+                params={
+                    "jql": f"key in ({','.join(chunk)})",
+                    "fields": f"status,{sprint_field}",
+                    "maxResults": len(chunk),
+                },
+            )
+            issues = data.get("issues", []) if isinstance(data, dict) else []
         except Exception:
             continue
-        sprints = (data.get("fields") or {}).get(sprint_field) or []
-        if not isinstance(sprints, list):
-            continue
-        for s in sprints:
-            if not isinstance(s, dict):
+
+        for issue in issues:
+            key = issue.get("key")
+            if not key:
                 continue
-            if sprint_num_from_name(s.get("name")) == target_num:
-                sid = s.get("id")
-                if isinstance(sid, int):
-                    return sid
-                try:
-                    return int(sid)
-                except (TypeError, ValueError):
-                    return None
+            fields = issue.get("fields") or {}
+            status_name = (fields.get("status") or {}).get("name", "")
+
+            sprints = fields.get(sprint_field) or []
+            target_sprint = None
+            if isinstance(sprints, list):
+                for s in sprints:
+                    if not isinstance(s, dict):
+                        continue
+                    if sprint_num_from_name(s.get("name")) == target_sprint_num:
+                        target_sprint = s
+                        break
+
+            result[key] = {"status_name": status_name, "target_sprint": target_sprint}
+    return result
+
+
+# ---------- Поиск jira_sprint_id из снапшота задач ----------
+
+def _extract_jira_sprint_id(task_states: dict[str, dict]) -> int | None:
+    """Достать Jira-ID целевого спринта из уже собранных статусов задач (часть 1
+    close_sprint, см. _fetch_task_states_from_jira) — без дополнительных
+    HTTP-запросов, в отличие от старой версии, которая ради этого же id делала
+    ещё один последовательный проход по Jira, по задаче за раз."""
+    for fetched in task_states.values():
+        ts = fetched.get("target_sprint")
+        if ts is None:
+            continue
+        sid = ts.get("id")
+        if isinstance(sid, int):
+            return sid
+        try:
+            return int(sid)
+        except (TypeError, ValueError):
+            continue
     return None
 
 
@@ -504,16 +531,26 @@ def close_sprint(db: Session, jira: JiraClient,
     found_closed = False
     seen_states: dict[str, int] = {}
 
+    real_task_positions: list[tuple[int, str]] = []
     for st in sprint.tasks:
         task = st.task_data or {}
         if task.get("is_pseudo"):
             continue
         key = task.get("key")
-        if not key:
-            continue
-        fetched = _fetch_task_state_from_jira(jira, key, sprint_field, target_num)
+        if key:
+            real_task_positions.append((st.position, key))
+
+    # Один батч-JQL на все задачи снапшота вместо запроса на каждую (ниже —
+    # jira_sprint_id для части 2 тоже достаётся из этого же результата, без
+    # ещё одного прохода по Jira).
+    task_states = _fetch_task_states_from_jira(
+        jira, [key for _, key in real_task_positions], sprint_field, target_num,
+    )
+
+    for position, key in real_task_positions:
+        fetched = task_states.get(key)
         if fetched is None:
-            closed_data_by_position[st.position] = {
+            closed_data_by_position[position] = {
                 "status_name": "(не найдено)",
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
             }
@@ -529,7 +566,7 @@ def close_sprint(db: Session, jira: JiraClient,
                 if cd and jira_complete_date is None:
                     jira_complete_date = cd
 
-        closed_data_by_position[st.position] = {
+        closed_data_by_position[position] = {
             "status_name": fetched["status_name"],
             "fetched_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -550,7 +587,7 @@ def close_sprint(db: Session, jira: JiraClient,
     # ---------- Часть 2: поиск врывов ----------
 
     intrusions: list[dict] = []
-    jira_sprint_id = _find_jira_sprint_id(jira, snapshot, sprint.tasks, target_num)
+    jira_sprint_id = _extract_jira_sprint_id(task_states)
     if jira_sprint_id is None:
         # Не страшно — просто не сможем посчитать врывы. Сохраним пустой список.
         print(f"[close_sprint] Не удалось определить Jira-ID спринта {target_num}, "

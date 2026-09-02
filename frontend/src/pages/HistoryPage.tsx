@@ -26,7 +26,7 @@ import { SprintTable } from "../components/SprintTable";
 import { StandupModal } from "../components/StandupModal";
 import { useGanttSnapshotApi, useGanttSnapshots } from "../hooks/useGanttSnapshots";
 import { useRootTasks } from "../hooks/useRootTasks";
-import { fmtDateTime } from "../lib/format";
+import { fmtDateTime, todayISO } from "../lib/format";
 import type {
   GanttItem,
   SprintOut, SprintStatus, SprintSummary,
@@ -147,10 +147,7 @@ function SprintRow({ summary, expanded, onToggle, onChanged }: RowProps) {
   const [showAiSummary, setShowAiSummary] = useState(false);
 
   // Гант
-  const [ganttDate, setGanttDate] = useState<string>(() => {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
-  });
+  const [ganttDate, setGanttDate] = useState<string>(() => todayISO());
   const [hoursPerDay, setHoursPerDay] = useState(8);
   const [ganttItems, setGanttItems] = useState<GanttItem[] | null>(null);
   const [ganttLoading, setGanttLoading] = useState(false);

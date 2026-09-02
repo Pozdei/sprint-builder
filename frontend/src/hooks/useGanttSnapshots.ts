@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GanttItem, GanttSnapshotDetail, GanttSnapshotSummary } from "../types/api";
 
 /** Набор CRUD-функций снимков Ганта — одинаковая форма для спринта и для эпика прогноза. */
@@ -81,7 +81,13 @@ export function useGanttSnapshots(api: GanttSnapshotApi, scopeKey: string | numb
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
 
+  // Счётчик последнего запроса select() — без него быстрый повторный выбор
+  // снимка мог показать данные не того снимка, на который указывает selectedId
+  // (ответ на более раннюю выборку приходил позже и перетирал detail).
+  const selectRequestRef = useRef(0);
+
   const select = useCallback(async (value: number | "current") => {
+    const requestId = ++selectRequestRef.current;
     if (value === "current") {
       setSelectedId("current");
       setDetail(null);
@@ -91,12 +97,13 @@ export function useGanttSnapshots(api: GanttSnapshotApi, scopeKey: string | numb
     setDetailLoading(true);
     try {
       const d = await api.get(value);
+      if (selectRequestRef.current !== requestId) return; // устарел — пришёл после более нового select()
       setDetail(d);
     } catch (e) {
-      setSelectedId("current");
+      if (selectRequestRef.current === requestId) setSelectedId("current");
       throw e;
     } finally {
-      setDetailLoading(false);
+      if (selectRequestRef.current === requestId) setDetailLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);

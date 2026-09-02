@@ -419,7 +419,11 @@ export function GanttChart({ items, startDate, hoursPerDay, dependencies = [], o
       const key = `${dep.from_key}[${dep.from_bucket || ""}]→${dep.to_key}[${dep.to_bucket || ""}]`;
       return [{ x1, y1, x2, y2, key }];
     });
-  }, [dependencies, items, owners, groupByStory]);
+    // hourPx (зум) и ownersTop (сдвигается при groupByEpic/groupByParent —
+    // меняется высота полос над списком исполнителей) читаются внутри через
+    // hoursToX/ownerY, но раньше не входили в deps — стрелки "зависали" на
+    // старых координатах после зума или переключения свода.
+  }, [dependencies, items, owners, groupByStory, hourPx, ownersTop]);
 
   const handleExportSvg = () => {
     const svgEl = svgRef.current;

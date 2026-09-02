@@ -1125,12 +1125,18 @@ def allocate(candidates: list[dict], cfg: SprintConfig,
     allocated: list[dict] = []
     used: dict[str, float] = {acc_id: 0.0 for acc_id in cfg.team}
     remaining: list[dict] = []
+    overflow: list[dict] = []
 
     budget = cfg.hours_per_person
 
     for task in everything:
         owner = task["owner_id"]
         if owner not in used:
+            # Исполнитель кандидата не входит в команду конфига (например,
+            # снят с внешнего Jira-поля вроде "Разработчик") — раньше такая
+            # задача молча пропадала из результата; теперь видна в overflow.
+            task["overflow_reason"] = "Исполнитель не найден в команде конфига"
+            overflow.append(task)
             continue
         if used[owner] + task["hours"] <= budget:
             used[owner] += task["hours"]
@@ -1148,7 +1154,6 @@ def allocate(candidates: list[dict], cfg: SprintConfig,
         else:
             rest2.append(task)
 
-    overflow = []
     sliced_owners: set[str] = set()
     for task in rest2:
         owner = task["owner_id"]
@@ -1164,13 +1169,15 @@ def allocate(candidates: list[dict], cfg: SprintConfig,
             overflow.append(task)
 
     for task in overflow:
+        if "overflow_reason" in task:
+            continue
         owner = task["owner_id"]
-        remaining = round(budget - used.get(owner, 0), 1)
+        remaining_budget = round(budget - used.get(owner, 0), 1)
         task_hours = task.get("hours", 0)
-        if remaining <= 0:
+        if remaining_budget <= 0:
             task["overflow_reason"] = "Бюджет исчерпан"
-        elif task_hours > remaining:
-            task["overflow_reason"] = f"Нужно {task_hours} ч, доступно {remaining} ч"
+        elif task_hours > remaining_budget:
+            task["overflow_reason"] = f"Нужно {task_hours} ч, доступно {remaining_budget} ч"
         else:
             task["overflow_reason"] = "Низкий приоритет"
 

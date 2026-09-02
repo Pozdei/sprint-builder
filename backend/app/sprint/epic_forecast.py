@@ -261,6 +261,20 @@ def collect_epic_remaining_work(
                     direction_name=direction_name, labels=labels,
                 )
 
+        # Откат статуса = переделка: если бакет ТЕКУЩЕГО шага уже проходили
+        # раньше (history_hours), кандидат, только что созданный выше через
+        # _process_issue_for_role (он не знает о history_hours — используется
+        # и в разделе "Спринт", где этого понятия нет), нужно переоценить по
+        # факт. длительности прошлого прохода — симметрично тому, как это уже
+        # сделано для будущих шагов в _generate_all_remaining_stages.
+        past_bucket_hours = history_hours.get(issue["key"])
+        if past_bucket_hours:
+            for role, bucket in role_buckets:
+                cand = by_key_role.get((issue["key"], role, bucket))
+                if cand is not None and bucket in past_bucket_hours:
+                    cand["hours"] = past_bucket_hours[bucket]
+                    cand["hours_is_default"] = False
+
         current_stage_included = bool(role_buckets)
 
         if not current_stage_included and not direction:
